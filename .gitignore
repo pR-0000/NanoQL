@@ -1,0 +1,14 @@
+# Gowin generated output
+impl/
+*.gprj.user
+
+# Logs and temporary files
+*.log
+*.jou
+*.bak
+*.tmp
+*.db
+
+# Editor metadata
+.vscode/
+.idea/

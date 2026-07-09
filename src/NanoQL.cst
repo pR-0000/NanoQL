@@ -1,0 +1,28 @@
+// Tang Nano 20K / GW2AR-LV18QN88C8/I7 constraints for NanoQL.
+
+IO_LOC "clk_27m" 4;
+IO_PORT "clk_27m" IO_TYPE=LVCMOS33 PULL_MODE=UP BANK_VCCIO=3.3;
+
+// On-board LEDs, active-low.
+IO_LOC "leds_n[0]" 15;
+IO_PORT "leds_n[0]" PULL_MODE=UP DRIVE=8 IO_TYPE=LVCMOS33 BANK_VCCIO=3.3;
+IO_LOC "leds_n[1]" 16;
+IO_PORT "leds_n[1]" PULL_MODE=UP DRIVE=8 IO_TYPE=LVCMOS33 BANK_VCCIO=3.3;
+IO_LOC "leds_n[2]" 17;
+IO_PORT "leds_n[2]" PULL_MODE=UP DRIVE=8 IO_TYPE=LVCMOS33 BANK_VCCIO=3.3;
+IO_LOC "leds_n[3]" 18;
+IO_PORT "leds_n[3]" PULL_MODE=UP DRIVE=8 IO_TYPE=LVCMOS33 BANK_VCCIO=3.3;
+IO_LOC "leds_n[4]" 19;
+IO_PORT "leds_n[4]" PULL_MODE=UP DRIVE=8 IO_TYPE=LVCMOS33 BANK_VCCIO=3.3;
+IO_LOC "leds_n[5]" 20;
+IO_PORT "leds_n[5]" PULL_MODE=UP DRIVE=8 IO_TYPE=LVCMOS33 BANK_VCCIO=3.3;
+
+// HDMI TMDS differential pairs. The *_p port constraints name both pins.
+IO_LOC "tmds_clk_p" 33,34;
+IO_PORT "tmds_clk_p" PULL_MODE=NONE DRIVE=8;
+IO_LOC "tmds_d_p[0]" 35,36;
+IO_PORT "tmds_d_p[0]" PULL_MODE=NONE DRIVE=8;
+IO_LOC "tmds_d_p[1]" 37,38;
+IO_PORT "tmds_d_p[1]" PULL_MODE=NONE DRIVE=8;
+IO_LOC "tmds_d_p[2]" 39,40;
+IO_PORT "tmds_d_p[2]" PULL_MODE=NONE DRIVE=8;
