@@ -33,7 +33,6 @@ module ql_sdram_memory(
 );
 
     localparam [18:0] SCREEN_BASE_0 = 19'h10000;
-    localparam [18:0] SCREEN_BASE_1 = 19'h14000;
 
     localparam [3:0] ST_WAIT_INIT     = 4'd0;
     localparam [3:0] ST_WRITE_START   = 4'd1;
@@ -52,7 +51,7 @@ module ql_sdram_memory(
     reg [3:0] state;
     reg [1:0] resume_state;
     reg [3:0] wait_count;
-    reg [14:0] init_index;
+    reg [15:0] init_index;
     reg [7:0] refresh_counter;
     reg refresh_pending;
 
@@ -73,9 +72,11 @@ module ql_sdram_memory(
         .data(init_pattern)
     );
 
-    wire [18:0] init_word_addr = init_index[14] ?
-                                  SCREEN_BASE_1 + {5'd0, init_index[13:0]} :
-                                  SCREEN_BASE_0 + {5'd0, init_index[13:0]};
+    // Initialize the complete 128 KiB base-RAM range deterministically. The
+    // first two 32 KiB banks retain their diagnostic screen patterns; the
+    // upper 64 KiB, which includes the JS ROM's initial stack area, is zeroed.
+    wire [18:0] init_word_addr = SCREEN_BASE_0 + {3'd0, init_index};
+    wire [15:0] init_data = init_index[15] ? 16'h0000 : init_pattern;
 
     assign client_ready = init_done && !init_fail &&
                           (state == ST_CLIENT_IDLE) && !refresh_pending;
@@ -114,7 +115,7 @@ module ql_sdram_memory(
             state <= ST_WAIT_INIT;
             resume_state <= RESUME_WRITE;
             wait_count <= 4'd0;
-            init_index <= 15'd0;
+            init_index <= 16'd0;
             refresh_counter <= 8'd0;
             refresh_pending <= 1'b0;
             ram_addr <= 22'd0;
@@ -156,7 +157,7 @@ module ql_sdram_memory(
                         state <= ST_REFRESH_START;
                     end else begin
                         ram_addr <= {3'd0, init_word_addr};
-                        ram_din <= init_pattern;
+                        ram_din <= init_data;
                         ram_we <= 1'b1;
                         ram_ds <= 2'b00;
                         ram_refresh <= 1'b0;
@@ -169,11 +170,11 @@ module ql_sdram_memory(
                 ST_WRITE_WAIT: begin
                     if (wait_count == 4'd8) begin
                         ram_cs <= 1'b0;
-                        if (init_index == 15'h7fff) begin
-                            init_index <= 15'd0;
+                        if (init_index == 16'hffff) begin
+                            init_index <= 16'd0;
                             state <= ST_VERIFY_START;
                         end else begin
-                            init_index <= init_index + 15'd1;
+                            init_index <= init_index + 16'd1;
                             state <= ST_WRITE_START;
                         end
                     end else begin
@@ -199,14 +200,14 @@ module ql_sdram_memory(
                 ST_VERIFY_WAIT: begin
                     if (wait_count == 4'd8) begin
                         ram_cs <= 1'b0;
-                        if (ram_dout != init_pattern)
+                        if (ram_dout != init_data)
                             init_fail <= 1'b1;
 
-                        if (init_index == 15'h7fff) begin
+                        if (init_index == 16'hffff) begin
                             init_done <= 1'b1;
                             state <= ST_CLIENT_IDLE;
                         end else begin
-                            init_index <= init_index + 15'd1;
+                            init_index <= init_index + 16'd1;
                             state <= ST_VERIFY_START;
                         end
                     end else begin

@@ -17,6 +17,7 @@ module hdmi
     // This flag also tends to cause receivers to treat RGB values as full
     // range (0-255).
     parameter bit IT_CONTENT = 1'b1,
+    parameter bit [1:0] PICTURE_ASPECT_RATIO = 2'b00,
 
     // As specified in Section 7.3, the minimal audio requirements are met: 16-bit or more L-PCM audio at 32 kHz, 44.1 kHz, or 48 kHz.
     // See Table 7-4 or README.md for an enumeration of sampling frequencies supported by HDMI.
@@ -233,6 +234,7 @@ generate
         packet_picker #(
             .VIDEO_RATE(VIDEO_RATE),
             .IT_CONTENT(IT_CONTENT),
+            .PICTURE_ASPECT_RATIO(PICTURE_ASPECT_RATIO),
             .AUDIO_RATE(AUDIO_RATE),
             .AUDIO_BIT_WIDTH(AUDIO_BIT_WIDTH),
             .VENDOR_NAME(VENDOR_NAME),

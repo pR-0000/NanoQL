@@ -68,6 +68,7 @@ module nanoql_top(
     wire [15:0] zx8302_wdata;
     wire [15:0] zx8302_rdata;
     wire [2:0] cpu_ipl_n;
+    wire zx8302_ipc_ready;
     wire bus_mem_req;
     wire bus_mem_we;
     wire [21:0] bus_mem_addr;
@@ -76,6 +77,7 @@ module nanoql_top(
     wire bus_mem_ready;
     wire bus_mem_data_valid;
     wire [15:0] bus_mem_data;
+    wire rom_is_diagnostic;
     wire sdram_system_req;
     wire sdram_system_we;
     wire [21:0] sdram_system_addr;
@@ -178,6 +180,7 @@ module nanoql_top(
         .bus_ready(bus_mem_ready),
         .bus_data_valid(bus_mem_data_valid),
         .bus_data(bus_mem_data),
+        .rom_is_diagnostic(rom_is_diagnostic),
         .mc_stat_wr(zx8301_mc_stat_wr),
         .mc_stat_data(zx8301_mc_stat_data),
         .zx8302_wr(zx8302_wr),
@@ -204,7 +207,8 @@ module nanoql_top(
         .ds(zx8302_ds),
         .wdata(zx8302_wdata),
         .rdata(zx8302_rdata),
-        .ipl_n(cpu_ipl_n)
+        .ipl_n(cpu_ipl_n),
+        .ipc_ready(zx8302_ipc_ready)
     );
 
     ql_cpu_fx68k ql_cpu (
@@ -268,10 +272,13 @@ module nanoql_top(
             ql_native_frame_div <= ql_native_frame_div + 6'd1;
     end
     wire memory_status_area = (x < 11'd16) && (y < 10'd16);
-    wire memory_failure = sdram_init_fail || cpu_boot_fail;
+    wire memory_failure = sdram_init_fail ||
+                          (rom_is_diagnostic && cpu_boot_fail);
     wire [23:0] memory_status_rgb = memory_failure ? 24'hff2020 :
-                                    (sdram_init_done && cpu_boot_done) ?
-                                      24'h20e060 : 24'hffc020;
+                                    !sdram_init_done ? 24'hffc020 :
+                                    !rom_is_diagnostic ?
+                                      (zx8302_ipc_ready ? 24'h20c0c0 : 24'h2080e0) :
+                                    cpu_boot_done ? 24'h20e060 : 24'hffc020;
     wire [23:0] hdmi_rgb = memory_status_area ? memory_status_rgb : rgb;
 
     nanoql_hdmi #(
@@ -298,7 +305,8 @@ module nanoql_top(
     // Board LEDs are active-low on the Tang Nano 20K.
     assign leds_n[0] = ~heartbeat[24];
     assign leds_n[1] = ~(pll_lock && sdram_init_done &&
-                         cpu_boot_done && !memory_failure);
+                         (rom_is_diagnostic ? cpu_boot_done : zx8302_ipc_ready) &&
+                         !memory_failure);
     assign leds_n[2] = ~(fetch_underflow || memory_failure);
     assign leds_n[3] = ~blank_active;
     assign leds_n[4] = ~mode8_active;

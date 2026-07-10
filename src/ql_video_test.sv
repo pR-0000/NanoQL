@@ -21,10 +21,7 @@ module ql_video_test(
     // visible area 720x576, total frame 1024x626, pixel clock 32 MHz.
     localparam [10:0] FRAME_W = 11'd1024;
     localparam [9:0]  FRAME_H = 10'd626;
-    localparam [9:0]  QL_Y0 = 10'd160;
-    localparam [9:0]  QL_Y1 = 10'd416;
-
-    assign vblank = (y < QL_Y0) || (y >= QL_Y1);
+    assign vblank = y >= 10'd576;
 
     wire visible_now;
     wire ql_area_now;

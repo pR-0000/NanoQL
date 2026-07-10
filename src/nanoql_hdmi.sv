@@ -32,6 +32,7 @@ module nanoql_hdmi #(
     wire tmds_clock;
 
     hdmi #(
+        .PICTURE_ASPECT_RATIO(2'b01),
         .AUDIO_RATE(48000),
         .AUDIO_BIT_WIDTH(16),
         .VENDOR_NAME({"NanoQL", 16'd0}),

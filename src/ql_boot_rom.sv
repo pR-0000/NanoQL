@@ -1,18 +1,25 @@
 module ql_boot_rom(
     input  wire [14:0] word_addr,
-    output reg  [15:0] data
+    output reg  [15:0] data,
+    output wire        is_diagnostic
 );
+
+    assign is_diagnostic = 1'b1;
 
     // Minimal 68000 diagnostic image. The full 48 KiB QL ROM will replace it.
     always @(*) begin
         case (word_addr)
-            // Initial supervisor stack pointer: 0x00028000.
-            15'h0000: data = 16'h0002;
-            15'h0001: data = 16'h8000;
+            // Initial supervisor stack pointer: top of 128 KiB QL RAM.
+            15'h0000: data = 16'h0004;
+            15'h0001: data = 16'h0000;
 
             // Initial program counter: 0x00000100.
             15'h0002: data = 16'h0000;
             15'h0003: data = 16'h0100;
+
+            // Level-2 autovector at vector 26: 0x00000200.
+            15'h0034: data = 16'h0000;
+            15'h0035: data = 16'h0200;
 
             // Verify mode-4 VRAM, read ZX8302 status, draw an 8x8 mode-8
             // marker, then select screen 1/mode 8 through ZX8301 MC_STAT.
@@ -72,12 +79,12 @@ module ql_boot_rom(
             15'h00af: data = 16'h0001;
             15'h00b0: data = 16'h8063;
 
-            // Report success and stop in a short loop.
-            15'h00b1: data = 16'h33fc;
-            15'h00b2: data = 16'ha55a;
-            15'h00b3: data = 16'h0002;
-            15'h00b4: data = 16'hfffc;
-            15'h00b5: data = 16'h60fe;
+            // Enable interrupts, wait in STOP, then return to STOP after RTE.
+            15'h00b1: data = 16'h46fc;
+            15'h00b2: data = 16'h2000;
+            15'h00b3: data = 16'h4e72;
+            15'h00b4: data = 16'h2000;
+            15'h00b5: data = 16'h60fa;
 
             // Failure path selected by the earlier BNE.
             15'h00b6: data = 16'h33fc;
@@ -85,6 +92,17 @@ module ql_boot_rom(
             15'h00b8: data = 16'h0002;
             15'h00b9: data = 16'hfffc;
             15'h00ba: data = 16'h60fe;
+
+            // 0x0200: acknowledge VBlank, report success, and return.
+            15'h0100: data = 16'h13fc;
+            15'h0101: data = 16'h0008;
+            15'h0102: data = 16'h0001;
+            15'h0103: data = 16'h8021;
+            15'h0104: data = 16'h33fc;
+            15'h0105: data = 16'ha55a;
+            15'h0106: data = 16'h0002;
+            15'h0107: data = 16'hfffc;
+            15'h0108: data = 16'h4e73;
 
             default: data = 16'hffff;
         endcase

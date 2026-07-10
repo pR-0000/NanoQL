@@ -12,3 +12,8 @@ impl/
 # Editor metadata
 .vscode/
 .idea/
+
+# User-supplied Sinclair QL system ROM
+/src/rom/ql_system_rom.hex
+/src/ipc/ql_ipc_rom.hex
+/private/roms/

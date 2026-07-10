@@ -5,6 +5,7 @@ module packet_picker
 #(
     parameter real VIDEO_RATE = 0,
     parameter bit IT_CONTENT = 1'b0,
+    parameter bit [1:0] PICTURE_ASPECT_RATIO = 2'b00,
     parameter int AUDIO_BIT_WIDTH = 0,
     parameter int AUDIO_RATE = 0,
     parameter bit [8*8-1:0] VENDOR_NAME = 0,
@@ -133,7 +134,8 @@ audio_sample_packet #(.SAMPLING_FREQUENCY(SAMPLING_FREQUENCY), .WORD_LENGTH({{WO
 
 
 auxiliary_video_information_info_frame #(
-    .IT_CONTENT(IT_CONTENT)
+    .IT_CONTENT(IT_CONTENT),
+    .PICTURE_ASPECT_RATIO(PICTURE_ASPECT_RATIO)
 ) auxiliary_video_information_info_frame(.stmode(stmode), .cea(cea), .header(headers[130]), .sub(subs[130]));
 
 

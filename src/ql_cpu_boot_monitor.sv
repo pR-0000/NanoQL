@@ -20,6 +20,7 @@ module ql_cpu_boot_monitor(
 
     reg mc_stat_seen;
     reg zx8302_read_seen;
+    reg irq_ack_seen;
     wire completed_write = !cpu_as_n && !cpu_rw && !cpu_dtack_n;
     wire completed_read = !cpu_as_n && cpu_rw && !cpu_dtack_n;
     wire completed_word_write = completed_write &&
@@ -31,6 +32,7 @@ module ql_cpu_boot_monitor(
             boot_fail <= 1'b0;
             mc_stat_seen <= 1'b0;
             zx8302_read_seen <= 1'b0;
+            irq_ack_seen <= 1'b0;
         end else if (completed_read && (cpu_addr == ZX8302_STATUS_ADDR) &&
                      !cpu_uds_n && !cpu_lds_n) begin
             zx8302_read_seen <= 1'b1;
@@ -40,9 +42,16 @@ module ql_cpu_boot_monitor(
                 mc_stat_seen <= 1'b1;
             else
                 boot_fail <= 1'b1;
+        end else if (completed_write &&
+                     (cpu_addr == ZX8302_STATUS_ADDR) &&
+                     cpu_uds_n && !cpu_lds_n) begin
+            if (cpu_data_out[7:0] == 8'h08)
+                irq_ack_seen <= 1'b1;
+            else
+                boot_fail <= 1'b1;
         end else if (completed_word_write && (cpu_addr == STATUS_ADDR)) begin
             if (cpu_data_out == STATUS_OK) begin
-                if (mc_stat_seen && zx8302_read_seen)
+                if (mc_stat_seen && zx8302_read_seen && irq_ack_seen)
                     boot_done <= 1'b1;
                 else
                     boot_fail <= 1'b1;

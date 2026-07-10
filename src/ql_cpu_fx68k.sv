@@ -19,6 +19,8 @@ module ql_cpu_fx68k(
     wire en_phi1 = enable && (phase_div == 2'b11);
     wire en_phi2 = enable && (phase_div == 2'b01);
     wire [23:1] cpu_word_addr;
+    wire [2:0] cpu_fc;
+    wire cpu_vpa_n = (cpu_fc != 3'b111);
 
     always @(posedge clk) begin
         if (cpu_reset)
@@ -42,14 +44,14 @@ module ql_cpu_fx68k(
         .UDSn(cpu_uds_n),
         .E(),
         .VMAn(),
-        .FC0(),
-        .FC1(),
-        .FC2(),
+        .FC0(cpu_fc[0]),
+        .FC1(cpu_fc[1]),
+        .FC2(cpu_fc[2]),
         .BGn(),
         .oRESETn(),
         .oHALTEDn(),
         .DTACKn(cpu_dtack_n),
-        .VPAn(1'b1),
+        .VPAn(cpu_vpa_n),
         .BERRn(1'b1),
         .BRn(1'b1),
         .BGACKn(1'b1),
