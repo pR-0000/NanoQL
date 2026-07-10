@@ -4,6 +4,8 @@ module ql_hdmi_window(
 
     output wire        visible,
     output wire        ql_area,
+    output wire        ql_fetch_start,
+    output wire [7:0]  ql_fetch_y,
     output wire [8:0]  ql_x,
     output wire [7:0]  ql_y
 );
@@ -20,6 +22,13 @@ module ql_hdmi_window(
     assign visible = (x < VISIBLE_W) && (y < VISIBLE_H);
     assign ql_area = (x >= QL_X0) && (x < QL_X0 + QL_W) &&
                      (y >= QL_Y0) && (y < QL_Y0 + QL_H);
+
+    // Prefetch each line one HDMI line early. The SDRAM controller handles
+    // one word at a time, so the next line is loaded while this line runs.
+    assign ql_fetch_start = (x == 11'd0) &&
+                            (y >= QL_Y0 - 10'd1) &&
+                            (y < QL_Y0 + QL_H - 10'd1);
+    assign ql_fetch_y = y[7:0] - (QL_Y0[7:0] - 8'd1);
 
     assign ql_x = x[8:0] - QL_X0[8:0];
     assign ql_y = y[7:0] - QL_Y0[7:0];

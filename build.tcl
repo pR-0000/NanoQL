@@ -6,7 +6,10 @@ add_file src/ql_hdmi_window.sv
 add_file src/ql_zx8301_lite.sv
 add_file src/ql_video_scanout.sv
 add_file src/ql_native_timing_probe.sv
-add_file src/ql_test_memory.sv
+add_file src/ql_test_pattern.sv
+add_file src/ql_sdram_memory.sv
+add_file src/ql_sdram_test_writer.sv
+add_file src/sdram/sdram.v
 add_file src/nanoql_hdmi.sv
 add_file src/gowin_rpll/pll_160m.v
 add_file src/gowin_clkdiv/gowin_clkdiv.v

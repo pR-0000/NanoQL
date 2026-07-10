@@ -1,10 +1,16 @@
 module ql_video_test(
     input  wire        clk_pixel,
     input  wire        reset,
+    output wire [18:0] mem_addr,
+    output wire        mem_rd,
+    input  wire        mem_ready,
+    input  wire        mem_data_valid,
+    input  wire [15:0] mem_data,
     output wire [23:0] rgb,
     output reg         frame_pulse,
     output wire        mode8_active,
     output wire        blank_active,
+    output wire        fetch_underflow,
     output reg  [10:0] x,
     output reg  [9:0]  y
 );
@@ -16,6 +22,8 @@ module ql_video_test(
 
     wire visible_now;
     wire ql_area_now;
+    wire ql_fetch_start_now;
+    wire [7:0] ql_fetch_y_now;
     wire [8:0] ql_x_now;
     wire [7:0] ql_y_now;
 
@@ -24,11 +32,14 @@ module ql_video_test(
         .y(y),
         .visible(visible_now),
         .ql_area(ql_area_now),
+        .ql_fetch_start(ql_fetch_start_now),
+        .ql_fetch_y(ql_fetch_y_now),
         .ql_x(ql_x_now),
         .ql_y(ql_y_now)
     );
 
     reg flash_phase;
+    reg [5:0] flash_count;
     reg [7:0] frame_count;
     reg zx_cpu_cs;
     reg [7:0] zx_cpu_data;
@@ -43,6 +54,7 @@ module ql_video_test(
             frame_pulse <= 1'b0;
             frame_count <= 8'd0;
             flash_phase <= 1'b0;
+            flash_count <= 6'd0;
             zx_cpu_cs <= 1'b1;
             zx_cpu_data <= 8'h00;
         end else begin
@@ -61,8 +73,14 @@ module ql_video_test(
                     zx_cpu_cs <= 1'b1;
                     zx_cpu_data <= {next_mode8, 3'b000, next_mode8, 1'b0, blank_test, 1'b0};
 
-                    if (frame_count == 8'd24)
+                    // Match the original core: toggle the mode 8 flash phase
+                    // after 26 video frames, independently of the test mode timer.
+                    if (flash_count == 6'd25) begin
+                        flash_count <= 6'd0;
                         flash_phase <= ~flash_phase;
+                    end else begin
+                        flash_count <= flash_count + 6'd1;
+                    end
                 end else begin
                     y <= y + 10'd1;
                 end
@@ -72,17 +90,7 @@ module ql_video_test(
         end
     end
 
-    wire [18:0] video_addr;
-    wire video_rd;
-    wire [15:0] video_din;
     wire video_membase;
-
-    ql_test_memory test_memory (
-        .clk(clk_pixel),
-        .addr(video_addr),
-        .rd(video_rd),
-        .data(video_din)
-    );
 
     ql_zx8301_lite zx8301_lite (
         .reset(reset),
@@ -92,12 +100,17 @@ module ql_video_test(
         .cpu_data(zx_cpu_data),
         .visible(visible_now),
         .ql_area(ql_area_now),
+        .ql_fetch_start(ql_fetch_start_now),
+        .ql_fetch_y(ql_fetch_y_now),
         .ql_x(ql_x_now),
         .ql_y(ql_y_now),
         .flash_phase(flash_phase),
-        .addr(video_addr),
-        .rd(video_rd),
-        .din(video_din),
+        .addr(mem_addr),
+        .rd(mem_rd),
+        .rd_ready(mem_ready),
+        .din_valid(mem_data_valid),
+        .din(mem_data),
+        .fetch_underflow(fetch_underflow),
         .mode8(mode8_active),
         .blank(blank_active),
         .membase(video_membase),

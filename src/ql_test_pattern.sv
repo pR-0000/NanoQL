@@ -1,15 +1,11 @@
-module ql_test_memory(
-    input  wire        clk,
-    input  wire [18:0] addr,
-    input  wire        rd,
+module ql_test_pattern(
+    input  wire        mode8,
+    input  wire [13:0] word_addr,
     output reg  [15:0] data
 );
 
-    wire screen_base_1 = addr[14];
-    wire [13:0] local_addr = addr[13:0];
-
     function [15:0] mode4_word;
-        input [13:0] word_addr;
+        input [13:0] addr;
         integer bit_index;
         reg [7:0] y;
         reg [5:0] word_x;
@@ -17,8 +13,8 @@ module ql_test_memory(
         reg [1:0] color_code;
         reg [15:0] word_value;
         begin
-            y = word_addr[13:6];
-            word_x = word_addr[5:0];
+            y = addr[13:6];
+            word_x = addr[5:0];
             word_value = 16'h0000;
 
             for (bit_index = 0; bit_index < 8; bit_index = bit_index + 1) begin
@@ -39,7 +35,6 @@ module ql_test_memory(
                 else
                     color_code = (pixel_x[5] ^ y[5]) ? 2'b10 : 2'b01;
 
-                // ZX8301 mode=0 packing: high byte green plane, low byte red plane.
                 word_value[15 - bit_index] = color_code[1];
                 word_value[7 - bit_index]  = color_code[0];
             end
@@ -49,7 +44,7 @@ module ql_test_memory(
     endfunction
 
     function [15:0] mode8_word;
-        input [13:0] word_addr;
+        input [13:0] addr;
         integer pixel_index;
         integer plane_shift;
         reg [7:0] y;
@@ -59,8 +54,8 @@ module ql_test_memory(
         reg flash_bit;
         reg [15:0] word_value;
         begin
-            y = word_addr[13:6];
-            word_x = word_addr[5:0];
+            y = addr[13:6];
+            word_x = addr[5:0];
             word_value = 16'h0000;
 
             for (pixel_index = 0; pixel_index < 4; pixel_index = pixel_index + 1) begin
@@ -92,7 +87,6 @@ module ql_test_memory(
                     flash_bit = pixel_x[5];
                 end
 
-                // ZX8301 mode=1 packing: high byte pairs are G,F; low byte pairs are R,B.
                 plane_shift = pixel_index * 2;
                 word_value[15 - plane_shift] = color_code[2];
                 word_value[14 - plane_shift] = flash_bit;
@@ -104,11 +98,8 @@ module ql_test_memory(
         end
     endfunction
 
-    always @(posedge clk) begin
-        if (rd)
-            data <= screen_base_1 ? mode8_word(local_addr) : mode4_word(local_addr);
-        else
-            data <= 16'h0000;
+    always @* begin
+        data = mode8 ? mode8_word(word_addr) : mode4_word(word_addr);
     end
 
 endmodule
