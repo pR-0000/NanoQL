@@ -4,11 +4,19 @@ add_file src/nanoql_top.sv
 add_file src/ql_video_test.sv
 add_file src/ql_hdmi_window.sv
 add_file src/ql_zx8301_lite.sv
+add_file src/ql_zx8302_lite.sv
 add_file src/ql_video_scanout.sv
 add_file src/ql_native_timing_probe.sv
 add_file src/ql_test_pattern.sv
 add_file src/ql_sdram_memory.sv
-add_file src/ql_sdram_test_writer.sv
+add_file src/ql_cpu_bus_bridge.sv
+add_file src/ql_memory_map.sv
+add_file src/ql_boot_rom.sv
+add_file src/ql_cpu_fx68k.sv
+add_file src/ql_cpu_boot_monitor.sv
+add_file src/fx68k/fx68k.sv
+add_file src/fx68k/fx68kAlu.sv
+add_file src/fx68k/uaddrPla.sv
 add_file src/sdram/sdram.v
 add_file src/nanoql_hdmi.sv
 add_file src/gowin_rpll/pll_160m.v
@@ -25,6 +33,8 @@ add_file src/hdmi/source_product_description_info_frame.sv
 add_file src/hdmi/tmds_channel.sv
 add_file src/NanoQL.cst
 add_file src/NanoQL.sdc
+add_file src/fx68k/microrom.mem
+add_file src/fx68k/nanorom.mem
 
 set_option -synthesis_tool gowinsynthesis
 set_option -output_base_name NanoQL

@@ -9,11 +9,19 @@
         <File path="src/ql_video_test.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_hdmi_window.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_zx8301_lite.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_zx8302_lite.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_video_scanout.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_native_timing_probe.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_test_pattern.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_sdram_memory.sv" type="file.verilog" enable="1"/>
-        <File path="src/ql_sdram_test_writer.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_cpu_bus_bridge.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_memory_map.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_boot_rom.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_cpu_fx68k.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_cpu_boot_monitor.sv" type="file.verilog" enable="1"/>
+        <File path="src/fx68k/fx68k.sv" type="file.verilog" enable="1"/>
+        <File path="src/fx68k/fx68kAlu.sv" type="file.verilog" enable="1"/>
+        <File path="src/fx68k/uaddrPla.sv" type="file.verilog" enable="1"/>
         <File path="src/sdram/sdram.v" type="file.verilog" enable="1"/>
         <File path="src/nanoql_hdmi.sv" type="file.verilog" enable="1"/>
         <File path="src/gowin_rpll/pll_160m.v" type="file.verilog" enable="1"/>
@@ -30,5 +38,7 @@
         <File path="src/hdmi/tmds_channel.sv" type="file.verilog" enable="1"/>
         <File path="src/NanoQL.cst" type="file.cst" enable="1"/>
         <File path="src/NanoQL.sdc" type="file.sdc" enable="1"/>
+        <File path="src/fx68k/microrom.mem" type="file.other" enable="1"/>
+        <File path="src/fx68k/nanorom.mem" type="file.other" enable="1"/>
     </FileList>
 </Project>
