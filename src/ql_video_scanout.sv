@@ -175,7 +175,7 @@ module ql_video_scanout(
         if (!visible_d) begin
             rgb = 24'h000000;
         end else if (!ql_area_d) begin
-            rgb = mode8_d ? 24'h202010 : 24'h102040;
+            rgb = 24'h000000;
         end else if (blank_d) begin
             rgb = 24'h000000;
         end else if (!line_ready[ql_y[0]]) begin

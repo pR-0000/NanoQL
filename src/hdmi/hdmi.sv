@@ -40,7 +40,7 @@ module hdmi
     // synchronous reset back to 0,0
     input logic			      reset,
     input logic [1:0]		      stmode, // atari st video mode, 0=60hz ntsc, 1=50hz pal, 2=mono
-    input logic [1:0]		      screen,   // try to adopt to wide (4:3) screens
+    input logic [1:0]		      screen,   // output-width mode selected by the core
     input logic [23:0]		      rgb, 
     input logic [AUDIO_BIT_WIDTH-1:0] audio_sample_word [1:0],
 
@@ -84,7 +84,7 @@ wire [7:0] cea0 = 8'd2; // CEA is HDMI mode in group 1
 // PAL     832x576@50hz  aspect 1.44   948x576@50hz
 wire [43:0] htiming1  = { 11'd1024, std?11'd720:11'd832, 11'd24, 11'd72 };  
 wire [39:0] vtiming1  = {  10'd626, 10'd576,  10'd5,  10'd5 };
-wire [7:0] cea1 = 8'd17;
+wire [7:0] cea1 = (PICTURE_ASPECT_RATIO == 2'b10) ? 8'd18 : 8'd17;
    
 // MONO    640x400@71hz  aspect 1.6    
 wire [43:0] htiming2  = { 11'd896, 11'd640, 11'd24, 11'd72 };

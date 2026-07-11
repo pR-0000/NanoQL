@@ -22,8 +22,12 @@ Fonctionnalités déjà présentes :
 - Projet Gowin pour Tang Nano 20K
 - PLL HDMI 160 MHz et horloge pixel 32 MHz, basées sur l’implémentation Tang Nano 20K de MiSTeryNano
 - Sortie HDMI en mode proche PAL 720x576@50 Hz
-- Zone active centrée de style Sinclair QL en 512x256
-- Calcul de la fenêtre HDMI/QL isolé dans `ql_hdmi_window`
+- Mise à l'échelle entière de l'image QL 512x256 vers une grille 512x512
+- Chaque pixel QL occupe exactement un échantillon HDMI sur deux lignes, sans variation de taille
+- Conservation des 512 colonnes et des 256 lignes, sans aucun recadrage
+- Centrage avec des marges noires de 104 pixels à gauche et à droite et de 32 lignes en haut et en bas
+- Mode CEA 576p 16:9 (VIC 18) annoncé au moniteur dans l'AVI InfoFrame HDMI
+- Calcul de la mise à l'échelle HDMI/QL isolé dans `ql_hdmi_window`
 - `ql_zx8301_lite`, un front-end transitoire inspiré du ZX8301 :
   - registre write-only `mc_stat`
   - bit 7 : sélection de base écran
@@ -105,7 +109,7 @@ Fonctionnalités déjà présentes :
 - `src/nanoql_top.sv` : top-level Tang Nano 20K
 - `src/nanoql_hdmi.sv` : wrapper HDMI autour du cœur HDMI de MiSTeryNano
 - `src/ql_video_test.sv` : timing HDMI de la démonstration et raccordement du front-end vidéo
-- `src/ql_hdmi_window.sv` : fenêtre visible HDMI et coordonnées de la zone QL 512x256
+- `src/ql_hdmi_window.sv` : mise à l'échelle entière, centrage et coordonnées QL 512x256
 - `src/ql_zx8301_lite.sv` : module transitoire de registre/front-end inspiré du ZX8301
 - `src/ql_zx8302_lite.sv` : RTC, registre état/IRQ et interruption VBlank de niveau 2
 - `src/ql_zx8302_ipc.sv` : variante ZX8302 raccordée au véritable IPC 8049
@@ -179,11 +183,11 @@ Ces statistiques sont mises à jour à chaque étape compilée. Elles proviennen
 
 | Ressource | Diagnostic `NanoQL` | ROM JS + IPC `NanoQL_system_rom` | Disponible |
 |---|---:|---:|---:|
-| Logique | 7 435 (36 %) | 8 077 (39 %) | 20 736 |
-| LUT seules | 7 052 | 7 685 | - |
-| ALU | 383 | 392 | - |
+| Logique | 7 392 (36 %) | 8 032 (39 %) | 20 736 |
+| LUT seules | 7 015 | 7 645 | - |
+| ALU | 377 | 387 | - |
 | Registres | 2 898 (19 %) | 3 138 (20 %) | 15 915 |
-| CLS | 4 474 (44 %) | 4 903 (48 %) | 10 368 |
+| CLS | 4 437 (43 %) | 4 895 (48 %) | 10 368 |
 | BSRAM | 5 (11 %) | 39 (85 %) | 46 |
 | Ports E/S | 15 (23 %) | 15 (23 %) | 66 |
 | IOLOGIC | 6 (5 %) | 6 (5 %) | 121 |
@@ -192,7 +196,22 @@ Ces statistiques sont mises à jour à chaque étape compilée. Elles proviennen
 | CLKDIV | 1 (13 %) | 1 (13 %) | 8 |
 | rPLL | 1 (50 %) | 1 (50 %) | 2 |
 
-Horloge principale : 31,800 MHz demandés. Fmax après placement-routage : 65,066 MHz pour la variante diagnostic et 59,451 MHz pour la variante ROM JS + IPC. Aucun endpoint de setup n'est signalé en violation. L'utilisation de 85 % des BSRAM par la variante système et de 100 % des réseaux `LW` sont les deux principaux points de vigilance.
+Horloge principale : 31,800 MHz demandés. Fmax après placement-routage : 67,324 MHz pour la variante diagnostic et 50,472 MHz pour la variante ROM JS + IPC. Aucun endpoint de setup n'est signalé en violation. L'utilisation de 85 % des BSRAM par la variante système et de 100 % des réseaux `LW` sont les deux principaux points de vigilance.
+
+### Extension clavier et joysticks prévue
+
+La carte porteuse prévue n'exposera pas une matrice clavier complète au FPGA. Un petit microcontrôleur externe lira le clavier et les ports joystick, puis transmettra leurs états à NanoQL par SPI (`SCK`, `MOSI`, `MISO`, `CS`) avec une ligne d'interruption facultative. Ce microcontrôleur jouera aussi le rôle de FPGA Companion pour le menu et la carte SD. Une variante PS/2 à deux signaux reste possible pour un clavier autonome, mais elle nécessiterait toujours un autre gestionnaire pour l'OSD et les fichiers.
+
+Architecture prévue, inspirée de MiSTeryNano et FPGA Companion :
+
+- overlay monochrome 128x64 de 1 Kio mélangé au flux vidéo ;
+- touche Menu dédiée interceptée avant la matrice QL, comme F12 dans MiSTeryNano ;
+- système de fichiers FAT/exFAT géré par le microcontrôleur Companion ;
+- sélection d'une ROM QL de 48 ou 64 Kio depuis la microSD ;
+- transfert et validation de la ROM dans une zone réservée de SDRAM avant libération du reset 68000 ;
+- paramètres persistants et futurs sélecteurs d'images disque ou de logiciels.
+
+Toute interface GPIO doit rester en logique 3,3 V. Les connecteurs joystick nécessitent des pull-up 3,3 V et une protection adaptée.
 
 ### Feuille de route
 
@@ -215,9 +234,11 @@ Horloge principale : 31,800 MHz demandés. Fmax après placement-routage : 65,06
 17. Ajout du ZX8302-lite, lecture de `$18020`, RTC provisoire et interruption VBlank niveau 2.
 18. Validation de l'autovecteur, `STOP`, acquittement `$18021` et retour `RTE`.
 19. Conversion locale, exclusion Git et construction séparée pour une ROM système utilisateur.
-20. Intégrer le cœur IPC 8049 `t48` avec une matrice clavier vide et valider le démarrage JS sur la carte. Étape actuelle.
-21. Rapprocher le séquenceur vidéo des créneaux de bus du vrai `zx8301.v`.
-22. Ajouter un transport clavier, le stockage et un OSD éventuel.
+20. Intégrer le cœur IPC 8049 `t48` avec une matrice clavier vide et valider le démarrage JS sur la carte.
+21. Ajouter une mise à l'échelle entière 1x2, centrée et sans recadrage dans un signal CEA VIC 18. Étape actuelle.
+22. Intégrer le protocole FPGA Companion, l'overlay OSD et le chargement de ROM depuis la microSD vers la SDRAM.
+23. Rapprocher le séquenceur vidéo des créneaux de bus du vrai `zx8301.v`.
+24. Ajouter le transport clavier, les joysticks et les images disque.
 
 ### Licence
 
@@ -252,8 +273,12 @@ Implemented so far:
 - Tang Nano 20K Gowin project
 - 160 MHz HDMI PLL and 32 MHz pixel clock path, based on the MiSTeryNano Tang Nano 20K implementation
 - HDMI output in a PAL-like 720x576@50 Hz mode
-- Centered Sinclair QL-style 512x256 active display area
-- HDMI/QL window calculation isolated in `ql_hdmi_window`
+- Integer scaling from the 512x256 QL image to a 512x512 grid
+- Every QL pixel occupies exactly one HDMI sample by two lines, with no size variation
+- All 512 columns and 256 lines retained, with no cropping
+- Centered with 104-pixel black margins on both sides and 32 lines above and below
+- CEA 576p 16:9 mode (VIC 18) advertised to the monitor in the HDMI AVI InfoFrame
+- HDMI/QL scaling calculation isolated in `ql_hdmi_window`
 - `ql_zx8301_lite`, a transitional ZX8301-inspired front-end:
   - write-only `mc_stat` register
   - bit 7: screen base select
@@ -335,7 +360,7 @@ Implemented so far:
 - `src/nanoql_top.sv`: Tang Nano 20K top-level
 - `src/nanoql_hdmi.sv`: HDMI wrapper around the MiSTeryNano HDMI core
 - `src/ql_video_test.sv`: demonstration HDMI timing and video front-end connection
-- `src/ql_hdmi_window.sv`: HDMI visible window and 512x256 QL-area coordinates
+- `src/ql_hdmi_window.sv`: integer scaling, centering, and 512x256 QL coordinates
 - `src/ql_zx8301_lite.sv`: transitional ZX8301-inspired register/front-end module
 - `src/ql_zx8302_lite.sv`: RTC, status/IRQ register, and level-2 VBlank interrupt
 - `src/ql_zx8302_ipc.sv`: ZX8302 variant connected to the real 8049 IPC
@@ -409,11 +434,11 @@ These statistics are updated after every compiled milestone. They come from Gowi
 
 | Resource | Diagnostic `NanoQL` | JS ROM + IPC `NanoQL_system_rom` | Available |
 |---|---:|---:|---:|
-| Logic | 7,435 (36%) | 8,077 (39%) | 20,736 |
-| LUT only | 7,052 | 7,685 | - |
-| ALU | 383 | 392 | - |
+| Logic | 7,392 (36%) | 8,032 (39%) | 20,736 |
+| LUT only | 7,015 | 7,645 | - |
+| ALU | 377 | 387 | - |
 | Registers | 2,898 (19%) | 3,138 (20%) | 15,915 |
-| CLS | 4,474 (44%) | 4,903 (48%) | 10,368 |
+| CLS | 4,437 (43%) | 4,895 (48%) | 10,368 |
 | BSRAM | 5 (11%) | 39 (85%) | 46 |
 | I/O ports | 15 (23%) | 15 (23%) | 66 |
 | IOLOGIC | 6 (5%) | 6 (5%) | 121 |
@@ -422,7 +447,22 @@ These statistics are updated after every compiled milestone. They come from Gowi
 | CLKDIV | 1 (13%) | 1 (13%) | 8 |
 | rPLL | 1 (50%) | 1 (50%) | 2 |
 
-Main clock: 31.800 MHz required. Post-place-and-route Fmax is 65.066 MHz for the diagnostic variant and 59.451 MHz for the JS-ROM + IPC variant. No setup endpoint violation is reported. The system variant's 85% BSRAM usage and the 100% use of local `LW` networks are the two main implementation watch points.
+Main clock: 31.800 MHz required. Post-place-and-route Fmax is 67.324 MHz for the diagnostic variant and 50.472 MHz for the JS-ROM + IPC variant. No setup endpoint violation is reported. The system variant's 85% BSRAM usage and the 100% use of local `LW` networks are the two main implementation watch points.
+
+### Planned Keyboard And Joystick Expansion
+
+The planned carrier board will not expose a complete keyboard matrix to the FPGA. A small external microcontroller will scan the keyboard and joystick ports, then send their state to NanoQL over SPI (`SCK`, `MOSI`, `MISO`, `CS`) with an optional interrupt line. The same microcontroller will act as the FPGA Companion for the menu and SD card. A two-signal PS/2 variant remains possible for a standalone keyboard, but it would still require another controller for the OSD and files.
+
+Planned architecture, based on MiSTeryNano and FPGA Companion:
+
+- 1 KiB monochrome 128x64 overlay mixed into the video stream;
+- dedicated Menu key intercepted before the QL matrix, like F12 in MiSTeryNano;
+- FAT/exFAT filesystem handled by the Companion microcontroller;
+- selection of a 48 or 64 KiB QL ROM from microSD;
+- ROM transfer and validation in a reserved SDRAM area before releasing 68000 reset;
+- persistent settings and future disk-image or software selectors.
+
+All GPIO interfacing must use 3.3 V logic. Joystick connectors require 3.3 V pull-ups and suitable input protection.
 
 ### Roadmap
 
@@ -445,9 +485,11 @@ Main clock: 31.800 MHz required. Post-place-and-route Fmax is 65.066 MHz for the
 17. Add ZX8302-lite, read `$18020`, provide a provisional RTC, and generate a level-2 VBlank interrupt.
 18. Validate autovectoring, `STOP`, `$18021` acknowledge, and `RTE`.
 19. Add local conversion, Git exclusion, and a separate build for a user-supplied system ROM.
-20. Integrate the `t48` 8049 IPC core with an empty keyboard matrix and validate JS startup on hardware. Current step.
-21. Move the video sequencer closer to the real `zx8301.v` bus slots.
-22. Add a keyboard transport, storage, and an optional OSD.
+20. Integrate the `t48` 8049 IPC core with an empty keyboard matrix and validate JS startup on hardware.
+21. Add centered, uncropped 1x2 integer scaling inside a CEA VIC 18 signal. Current step.
+22. Integrate the FPGA Companion protocol, OSD overlay, and microSD-to-SDRAM ROM loading.
+23. Move the video sequencer closer to the real `zx8301.v` bus slots.
+24. Add keyboard transport, joysticks, and disk images.
 
 ### License
 

@@ -12,31 +12,38 @@ module ql_hdmi_window(
 
     localparam [10:0] VISIBLE_W = 11'd720;
     localparam [9:0]  VISIBLE_H = 10'd576;
+    localparam [10:0] QL_LEFT = 11'd104;
+    localparam [10:0] QL_RIGHT = 11'd616;
+    localparam [9:0]  QL_TOP = 10'd32;
+    localparam [9:0]  QL_BOTTOM = 10'd544;
 
     assign visible = (x < VISIBLE_W) && (y < VISIBLE_H);
-    assign ql_area = visible;
+    assign ql_area = visible &&
+                     (x >= QL_LEFT) && (x < QL_RIGHT) &&
+                     (y >= QL_TOP) && (y < QL_BOTTOM);
 
-    // Present the 512x256 QL framebuffer as a 4:3 image filling the PAL
-    // frame. A virtual 768x576 image is cropped symmetrically to 720x576:
-    // 16 source pixels are omitted on each horizontal edge, with no vertical
-    // crop. Constant-ratio nearest-neighbour scaling keeps the logic small.
-    wire [11:0] virtual_x = {1'b0, x} + 12'd24;
-    wire [12:0] scaled_x = {virtual_x, 1'b0};
-    wire [11:0] scaled_y = {y, 2'b00};
-    wire [7:0] source_y = scaled_y / 12'd9;
+    // Integer scaling keeps every source pixel exactly the same size. The
+    // complete 512x256 framebuffer becomes a centered 512x512 image: one
+    // HDMI sample horizontally and two HDMI lines vertically per QL pixel.
+    wire [10:0] content_x = (x < QL_LEFT) ? 11'd0 :
+                            (x >= QL_RIGHT) ? 11'd511 : x - QL_LEFT;
+    wire [9:0] content_y = (y < QL_TOP) ? 10'd0 :
+                           (y >= QL_BOTTOM) ? 10'd511 : y - QL_TOP;
+    wire [7:0] source_y = content_y[8:1];
 
     wire [10:0] next_y = {1'b0, y} + 11'd1;
-    wire [12:0] next_scaled_y = {next_y, 2'b00};
-    wire [7:0] next_source_y = next_scaled_y / 13'd9;
+    wire [10:0] next_content_y = next_y - {1'b0, QL_TOP};
+    wire [7:0] next_source_y = next_content_y[8:1];
 
-    assign ql_x = scaled_x / 13'd3;
+    assign ql_x = content_x[8:0];
     assign ql_y = source_y;
 
     // Fetch a source line only before its first repeated HDMI line. Source
     // line zero is prefetched during the final blanking line of each frame.
     assign ql_fetch_start = (x == 11'd0) &&
                             ((y == 10'd625) ||
-                             ((y < VISIBLE_H - 10'd1) &&
+                             ((y >= QL_TOP) &&
+                              (y < QL_BOTTOM - 10'd1) &&
                               (next_source_y != source_y)));
     assign ql_fetch_y = (y == 10'd625) ? 8'd0 : next_source_y;
 
