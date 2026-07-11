@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<config name="NanoQL" version="0">
+  <actions>
+    <action name="init">
+      <load file="nanoql.ini"/>
+      <set id="R" value="1"/>
+    </action>
+    <action name="ready">
+      <set id="R" value="0"/>
+    </action>
+    <action name="reset">
+      <set id="R" value="1"/>
+      <delay ms="20"/>
+      <set id="R" value="0"/>
+      <hide/>
+    </action>
+  </actions>
+  <menu label="NanoQL">
+    <fileselector label="QL ROM:" ext="rom;bin" index="0" default="QL.rom"/>
+    <button label="Reset QL" action="reset"/>
+  </menu>
+</config>

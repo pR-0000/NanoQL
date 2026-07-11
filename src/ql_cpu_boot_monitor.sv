@@ -9,7 +9,8 @@ module ql_cpu_boot_monitor(
     input  wire        cpu_lds_n,
     input  wire        cpu_dtack_n,
     output reg         boot_done,
-    output reg         boot_fail
+    output reg         boot_fail,
+    output reg         stress_pass_pulse
 );
 
     localparam [23:0] STATUS_ADDR = 24'h02fffc;
@@ -21,6 +22,8 @@ module ql_cpu_boot_monitor(
     reg mc_stat_seen;
     reg zx8302_read_seen;
     reg irq_ack_seen;
+    reg stress_pass_seen;
+    reg cycle_seen;
     wire completed_write = !cpu_as_n && !cpu_rw && !cpu_dtack_n;
     wire completed_read = !cpu_as_n && cpu_rw && !cpu_dtack_n;
     wire completed_word_write = completed_write &&
@@ -33,33 +36,49 @@ module ql_cpu_boot_monitor(
             mc_stat_seen <= 1'b0;
             zx8302_read_seen <= 1'b0;
             irq_ack_seen <= 1'b0;
-        end else if (completed_read && (cpu_addr == ZX8302_STATUS_ADDR) &&
-                     !cpu_uds_n && !cpu_lds_n) begin
-            zx8302_read_seen <= 1'b1;
-        end else if (completed_write && (cpu_addr == MC_STAT_ADDR) &&
-                     cpu_uds_n && !cpu_lds_n) begin
-            if (cpu_data_out[7:0] == 8'h88)
-                mc_stat_seen <= 1'b1;
-            else
-                boot_fail <= 1'b1;
-        end else if (completed_write &&
-                     (cpu_addr == ZX8302_STATUS_ADDR) &&
-                     cpu_uds_n && !cpu_lds_n) begin
-            if (cpu_data_out[7:0] == 8'h08)
-                irq_ack_seen <= 1'b1;
-            else
-                boot_fail <= 1'b1;
-        end else if (completed_word_write && (cpu_addr == STATUS_ADDR)) begin
-            if (cpu_data_out == STATUS_OK) begin
-                if (mc_stat_seen && zx8302_read_seen && irq_ack_seen)
-                    boot_done <= 1'b1;
-                else
-                    boot_fail <= 1'b1;
+            stress_pass_seen <= 1'b0;
+            stress_pass_pulse <= 1'b0;
+            cycle_seen <= 1'b0;
+        end else begin
+            stress_pass_pulse <= 1'b0;
+
+            if (cpu_as_n || cpu_dtack_n)
+                cycle_seen <= 1'b0;
+            else if (!cycle_seen) begin
+                cycle_seen <= 1'b1;
+
+                if (completed_read && (cpu_addr == ZX8302_STATUS_ADDR) &&
+                    !cpu_uds_n && !cpu_lds_n) begin
+                    zx8302_read_seen <= 1'b1;
+                end else if (completed_write && (cpu_addr == MC_STAT_ADDR) &&
+                             cpu_uds_n && !cpu_lds_n) begin
+                    if (cpu_data_out[7:0] == 8'h88)
+                        mc_stat_seen <= 1'b1;
+                    else
+                        boot_fail <= 1'b1;
+                end else if (completed_write &&
+                             (cpu_addr == ZX8302_STATUS_ADDR) &&
+                             cpu_uds_n && !cpu_lds_n) begin
+                    if (cpu_data_out[7:0] == 8'h08)
+                        irq_ack_seen <= 1'b1;
+                    else
+                        boot_fail <= 1'b1;
+                end else if (completed_word_write &&
+                             (cpu_addr == STATUS_ADDR)) begin
+                    if (cpu_data_out == STATUS_OK) begin
+                        stress_pass_seen <= 1'b1;
+                        stress_pass_pulse <= 1'b1;
+                    end else if (cpu_data_out == STATUS_FAIL) begin
+                        boot_fail <= 1'b1;
+                    end else begin
+                        boot_fail <= 1'b1;
+                    end
+                end
             end
-            else if (cpu_data_out == STATUS_FAIL)
-                boot_fail <= 1'b1;
-            else
-                boot_fail <= 1'b1;
+
+            if (mc_stat_seen && zx8302_read_seen && irq_ack_seen &&
+                stress_pass_seen)
+                boot_done <= 1'b1;
         end
     end
 

@@ -15,11 +15,22 @@ NanoQL est un port FPGA progressif du Sinclair QL pour la carte Sipeed Tang Nano
 
 ### État actuel
 
-La version actuelle intègre la vidéo HDMI, la SDRAM embarquée, un vrai cœur CPU 68000 `fx68k`, une ROM de diagnostic minimale et une variante expérimentale utilisant une ROM système QL et un IPC 8049 privés. Elle n’intègre pas encore de transport clavier, la microSD ni le système QL complet.
+La version actuelle intègre la vidéo HDMI, la SDRAM embarquée, un vrai cœur CPU 68000 `fx68k`, une ROM de diagnostic minimale, une variante utilisant une ROM système locale et une variante chargeant automatiquement la ROM QL depuis la microSD par le BL616 embarqué. Le transport clavier et l'overlay OSD ne sont pas encore raccordés.
+
+### Assistant graphique recommandé
+
+L'assistant multiplateforme centralise la préparation du BL616, de la ROM et de la microSD, la compilation Gowin et la programmation FPGA :
+
+```sh
+python tools/nanoql_setup.py
+```
+
+Il utilise uniquement Python 3 et Tkinter, sans dépendance `pip`. Sous Linux, installer `python3-tk` avec le gestionnaire de paquets de la distribution si nécessaire. Le bouton **Tout préparer et compiler** enchaîne la validation de la ROM, la conversion du firmware IPC, la préparation de `QL.rom` et `nanoql.ini`, puis la construction du bitstream microSD. Le flash du BL616 reste volontairement confirmé dans FlashCube, car il exige la sélection physique du port série et du mode `UPDATE`.
 
 Fonctionnalités déjà présentes :
 
 - Projet Gowin pour Tang Nano 20K
+- Broches JTAG conservées pour le programmateur embarqué avec `set_option -use_jtag_as_gpio 0`, conformément à la configuration Tang Nano 20K de NanoMIG
 - PLL HDMI 160 MHz et horloge pixel 32 MHz, basées sur l’implémentation Tang Nano 20K de MiSTeryNano
 - Sortie HDMI en mode proche PAL 720x576@50 Hz
 - Mise à l'échelle entière de l'image QL 512x256 vers une grille 512x512
@@ -65,16 +76,14 @@ Fonctionnalités déjà présentes :
   - registre ZX8301 `mc_stat` décodé à son adresse QL réelle `0x018063`
   - écritures en ROM acquittées mais ignorées
 - Cœur `fx68k` cycle-exact issu de MiSTeryNano, cadencé provisoirement à 7,95 MHz par des clock-enables
-- ROM de démarrage diagnostique avec vecteur de pile, vecteur de reset et programme 68000 à partir de `0x000100`
-- Programme diagnostic exécuté par le CPU :
-  - écriture d'un mot rouge dans la VRAM mode 4
-  - relecture du mot depuis la SDRAM
-  - comparaison par instruction `CMPI`
-  - écriture d'un marqueur rouge dans le second écran
-  - écriture octet de `0x88` dans `mc_stat` pour sélectionner l'écran `$28000` et le mode 8
-  - branchement vers une signature de succès `0xA55A` ou d'échec `0xDEAD`
+- ROM de diagnostic autonome, écrite en assembleur 68000 et ne nécessitant aucun clavier
+- Test d'endurance exécuté en boucle par le CPU :
+  - sélection de l'écran `$28000` et du mode 8 par écriture de `0x88` dans `mc_stat`
+  - écriture puis relecture de 48 Kio entre `$30000` et `$3BFFF`, hors VRAM et pile
+  - nouveau motif déterministe à chaque passe afin de détecter les bits bloqués et corruptions transitoires
+  - lectures vidéo maintenues pendant le test pour exercer l'arbitrage CPU/scanout de la SDRAM
+  - signature `0xA55A` après chaque passe valide ou `0xDEAD` dès la première différence
 - Mode 8 et sélection de base écran désormais commandés uniquement par le programme 68000
-- Bloc rouge 8x8 fixe à partir de la ligne 130 du mode 8, dessiné par huit écritures du programme
 - Première implémentation du ZX8302 :
   - décodage de la zone `$18000-$1803F`
   - lecture des mots RTC et du registre état/interruptions à `$18020`
@@ -85,13 +94,12 @@ Fonctionnalités déjà présentes :
   - cœur OpenCores `t48` exécutant le firmware IPC 8049 dans la variante système
   - horloge IPC proche de 10,6 MHz obtenue par clock-enable
   - matrice clavier vide en attendant un transport clavier physique
-- Le programme diagnostic doit lire `$18020` avant que sa signature de succès soit acceptée
+- Le diagnostic doit valider la lecture de `$18020`, l'écriture `mc_stat`, l'interruption VBlank et une passe RAM complète
 - Validation complète de l'interruption verticale 68000 :
   - vecteur niveau 2 installé à `$000068`
   - autovecteur déclenché par `FC=111` et `VPA`
-  - attente par instruction `STOP`
   - acquittement de VBlank par écriture de `0x08` à `$18021`
-  - signature de succès écrite depuis le gestionnaire puis retour par `RTE`
+  - retour par `RTE` vers le test RAM en cours
 - Pile superviseur placée au sommet de la RAM 128 K (`$40000`) pour ne pas écraser les écrans
 - Variante ROM système sans redistribution de contenu protégé :
   - dumps binaires utilisateur de 48 Kio ou 64 Kio acceptés
@@ -100,7 +108,13 @@ Fonctionnalités déjà présentes :
   - fichier généré exclu de Git
   - construction séparée qui refuse de démarrer si la ROM privée est absente
   - ROM Sinclair JS, QDOS 1.10, sélectionnée pour le premier essai matériel
-- Carré d'état en haut à gauche : orange/vert/rouge pour le diagnostic, bleu/cyan pour le démarrage système et l'activité IPC
+- Chargement expérimental de ROM depuis la microSD :
+  - protocole SPI standard FPGA Companion, compatible Tang Nano 20K révisions 3921 et 3923 avec firmware sélectionné par révision
+  - configuration FAT/exFAT servie au BL616 et montage automatique de `QL.rom`
+  - fichiers ROM de 48 Kio ou 64 Kio acceptés
+  - copie dans une zone SDRAM réservée et vérification mot par mot
+  - reset 68000 maintenu jusqu'à la validation complète de la ROM
+- Carré d'état en haut à gauche : orange pendant le test initial, deux verts alternés à chaque passe réussie, rouge en cas d'échec ; bleu/cyan pour le démarrage système et l'activité IPC
 - Flash du mode 8 conforme au principe du ZX8301 : le bit F commute un verrou de couleur, avec une phase changée toutes les 26 images
 - Probe de timing QL natif, inspiré du timing PAL/NTSC du `zx8301.v` original, câblé en parallèle pour observation par LED
 
@@ -121,16 +135,30 @@ Fonctionnalités déjà présentes :
 - `src/ql_sdram_memory.sv` : initialisation, vérification, rafraîchissement et service des lectures vidéo SDRAM
 - `src/ql_cpu_bus_bridge.sv` : conversion des cycles 68000 en transactions du bus système interne
 - `src/ql_memory_map.sv` : décodage ROM/SDRAM et du registre ZX8301 à `0x018063`
-- `src/ql_boot_rom.sv` : petite image ROM diagnostique exécutée par `fx68k`
+- `src/ql_boot_rom.sv` : wrapper de la petite ROM diagnostique exécutée par `fx68k`
+- `src/rom/ql_diagnostic.s` : source assembleur 68000 du test autonome
+- `src/rom/ql_diagnostic_rom.vh` : image Verilog générée et versionnée pour permettre une compilation Gowin directe
 - `src/ql_system_rom.sv` : mémoire ROM 64 Kio initialisée depuis le fichier utilisateur généré
+- `src/ql_sd_boot_rom.sv` : sélection de la ROM dynamique placée en SDRAM
+- `src/companion/` : transport SPI Companion, accès microSD, chargeur ROM et configuration de menu
 - `src/ql_cpu_fx68k.sv` : wrapper d'horloge, de reset et de bus autour du cœur 68000
 - `src/ql_cpu_boot_monitor.sv` : validation de l'écriture `mc_stat` et détection des signatures du programme
 - `src/fx68k/` : cœur 68000 cycle-exact, microcode, documentation et licence GPLv3 importés de MiSTeryNano
 - `src/sdram/sdram.v` : contrôleur SDRAM Tang Nano 20K importé de MiSTeryNano, sous GPLv3
-- `build_common.tcl` : liste et options Gowin communes aux deux variantes
+- `build_common.tcl` : liste et options Gowin communes aux différentes constructions
 - `build_system_rom.tcl` : construction expérimentale avec ROM système privée
+- `build_sd_rom.tcl` : construction chargeant la ROM QL depuis la microSD
 - `tools/prepare_ql_rom.ps1` : validation et conversion du dump binaire utilisateur
 - `tools/prepare_ql_ipc_rom.ps1` : validation et conversion Intel HEX du firmware IPC privé
+- `tools/build_diagnostic_rom.ps1` : reconstruction optionnelle de l'image diagnostic avec `vasmm68k_mot`
+- `tools/prepare_sd_card.ps1` : validation de la ROM et création de `QL.rom` avec son fichier d'auto-montage `nanoql.ini`
+- `tools/build_companion_config.ps1` : compression de la configuration XML du Companion
+- `tools/prepare_bl616_firmware.ps1` : téléchargement vérifié et préparation du flasher BL616
+- `tools/prepare_bl616_firmware.py` : préparation équivalente en Python 3 multiplateforme
+- `tools/nanoql_setup.py` : assistant graphique Tkinter pour préparer, compiler et programmer NanoQL
+- `tools/prepare_sd_card.py` : préparation multiplateforme de `QL.rom` et `nanoql.ini`
+- `tools/prepare_ql_rom.py` : conversion multiplateforme d'une ROM QL locale
+- `tools/prepare_ql_ipc_rom.py` : conversion multiplateforme du firmware IPC Intel HEX
 
 ### Indicateurs LED
 
@@ -159,7 +187,14 @@ impl\pnr\NanoQL.fs
 
 Pour les essais rapides, programmer la carte avec Gowin Programmer en mode SRAM.
 
-Après programmation, la mire du second écran doit apparaître de façon stable en mode 8. La LED 4 doit être active. Le carré d'état passe de l'orange au vert après le premier VBlank, lorsque le 68000 a exécuté le gestionnaire d'interruption, acquitté `$18021` et produit la signature correcte. Le carré rouge 8x8 reste visible à gauche à partir de la ligne 130. La LED 3 reste inactive puisque le programme laisse le bit `blank` à zéro.
+Après programmation, la mire du second écran doit apparaître de façon stable en mode 8 et la LED 4 doit être active. Le carré reste orange pendant l'initialisation SDRAM et la première passe, puis alterne entre deux verts discrets après chaque écriture/relecture réussie des 48 Kio. Un carré rouge ou la LED 2 indique une différence RAM, une erreur SDRAM ou un underflow vidéo. Laisser fonctionner ce bitstream plusieurs heures constitue un premier burn-in autonome du chemin CPU/SDRAM/vidéo.
+
+L'image générée est déjà fournie. Pour la reconstruire après modification de l'assembleur, installer `vasmm68k_mot`, puis lancer :
+
+```powershell
+.\tools\build_diagnostic_rom.ps1 -VasmPath <chemin-vers-vasmm68k_mot.exe>
+gw_sh build.tcl
+```
 
 #### Variante ROM système expérimentale
 
@@ -177,30 +212,85 @@ Le convertisseur QL accepte exactement 49 152 ou 65 536 octets. Une ROM de 48 Ki
 
 Dans cette variante, le carré devient bleu après l'initialisation SDRAM, puis cyan après la première transaction complète entre JS et l'IPC. La matrice clavier étant vide, un éventuel écran demandant `F1` ou `F2` restera en attente jusqu'à l'ajout d'un clavier.
 
+#### Variante ROM microSD / BL616
+
+Cette variante cible le BL616 embarqué des Tang Nano 20K **révisions 3921 et 3923**. L'assistant graphique est la méthode recommandée :
+
+```sh
+python tools/nanoql_setup.py
+```
+
+Dans l'onglet `BL616 Companion`, choisir la révision imprimée sur la carte puis le mode normal ou test. La procédure en ligne de commande reste disponible sous Windows :
+
+```powershell
+.\tools\prepare_bl616_firmware.ps1 -Launch
+```
+
+La préparation équivalente avec Python 3 est disponible sur toutes les plateformes :
+
+```sh
+python3 tools/prepare_bl616_firmware.py --revision 3923
+```
+
+Sous Windows, ajouter `--launch` ouvre FlashCube. PowerShell Core peut être installé sous macOS, mais cela ne rend pas l'exécutable FlashCube Windows compatible. Sur macOS et Linux, le script Python prépare et vérifie le paquet complet; le flash natif en ligne de commande restera séparé jusqu'à validation matérielle de l'écriture BL616 en deux segments.
+
+Le script télécharge FPGA Companion `v1.4.22` et BouffaloLabFlashCube depuis leurs URL officielles, vérifie chaque empreinte SHA-256 et met les téléchargements en cache dans `private/bl616/`, ignoré par Git. Les configurations générées sont `1_NORMAL_3921_partner_auto.ini`, `2_TEST_3921_companion_only.ini`, `1_NORMAL_3923_partner_auto.ini` et `2_TEST_3923_companion_only.ini`. Les images génériques `nano20k` ciblent le brochage BL616 de la révision 3921 ; les images `nano20k_v3923` ciblent le brochage modifié de la révision 3923. Maintenir ensuite `UPDATE`, connecter l'USB-C, relâcher `UPDATE`, rafraîchir les ports COM, choisir le nouveau port et cliquer sur `Download`. Voir aussi la [procédure FPGA Companion](https://github.com/MiSTle-Dev/.github/wiki/Firmware-Installation-BL616-%C2%B5C), les [versions Tang Nano 20K](https://github.com/MiSTle-Dev/.github/wiki/Versions_TangNano20k) et la [documentation Sipeed](https://en.wiki.sipeed.com/hardware/en/tang/common-doc/update_debugger.html).
+
+La configuration normale conserve le programmateur Gowin et place Companion au second étage. La variante de test démarre Companion même avec un PC connecté, mais remplace temporairement le programmateur Gowin. Le bouton `UPDATE` reste toujours disponible : reflasher ensuite la configuration `1_NORMAL` correspondant à la révision restaure le fonctionnement Partner standard.
+
+Avec le firmware standard à deux étages, une liaison USB de données vers un PC fait démarrer le BL616 en mode programmateur, pas en mode Companion. Pour lancer Companion, programmer d'abord le bitstream NanoQL dans la **Flash FPGA** et non uniquement en SRAM, puis redémarrer la carte depuis une alimentation USB sans hôte de données, par exemple un chargeur USB. La variante `2_TEST_<revision>_companion_only.ini` sert aux diagnostics mais désactive le programmateur intégré tant que la configuration normale correspondante n'est pas restaurée.
+
+Préparer une carte microSD FAT32 ou exFAT et compiler :
+
+```powershell
+.\tools\prepare_sd_card.ps1 -RomPath <chemin-vers-votre-rom.bin> -Destination <racine-microSD>
+.\tools\prepare_ql_ipc_rom.ps1 -InputPath <chemin-vers-votre-firmware-ipc.hex>
+gw_sh build_sd_rom.tcl
+```
+
+Sous macOS ou Linux, préparer la ROM sans PowerShell :
+
+```sh
+python3 tools/prepare_sd_card.py /chemin/vers/js.rom /Volumes/NOM_CARTE
+python3 tools/prepare_ql_ipc_rom.py /chemin/vers/ipc8049.hex
+```
+
+La racine de la carte doit contenir `QL.rom` et `nanoql.ini`. Ce dernier contient `drive0 = /sd/QL.rom`, car l'attribut XML `default` configure le sélecteur mais ne monte pas seul le fichier. Le bitstream généré est `impl\pnr\NanoQL_sd_rom.fs`. Pendant le démarrage, deux rangées de huit cases noir et blanc sont affichées. La rangée supérieure se remplit de gauche à droite pour SDRAM, SPI, octets Companion valides, début SYS, STATUS, configuration XML, accès SDC et démarrage du chargeur. La rangée inférieure indique l'avancement de la copie et de la vérification des 128 secteurs. Un damier noir et blanc signale un échec. Le diagnostic disparaît dès que le 68000 exécute la ROM.
+
+Dans Gowin EDA, **Use JTAG as regular IO doit rester décoché**. NanoQL impose aussi ce réglage dans `build_common.tcl`; le bitstream généré contient `JTAGAsRegularIO: OFF`. Réutiliser JTAG comme GPIO couperait le chemin attendu par le programmateur BL616, sans bénéfice pour NanoQL.
+
 ### Statistiques de synthèse
 
-Ces statistiques sont mises à jour à chaque étape compilée. Elles proviennent des rapports de placement-routage Gowin V1.9.11.03 Education pour le GW2AR-LV18QN88C8/I7. Les deux variantes sont indiquées séparément afin de rendre visible le coût des ROMs et de l'IPC.
+Ces statistiques sont mises à jour à chaque étape compilée. Elles proviennent des rapports de placement-routage Gowin V1.9.11.03 Education pour le GW2AR-LV18QN88C8/I7.
 
-| Ressource | Diagnostic `NanoQL` | ROM JS + IPC `NanoQL_system_rom` | Disponible |
-|---|---:|---:|---:|
-| Logique | 7 392 (36 %) | 8 032 (39 %) | 20 736 |
-| LUT seules | 7 015 | 7 645 | - |
-| ALU | 377 | 387 | - |
-| Registres | 2 898 (19 %) | 3 138 (20 %) | 15 915 |
-| CLS | 4 437 (43 %) | 4 895 (48 %) | 10 368 |
-| BSRAM | 5 (11 %) | 39 (85 %) | 46 |
-| Ports E/S | 15 (23 %) | 15 (23 %) | 66 |
-| IOLOGIC | 6 (5 %) | 6 (5 %) | 121 |
-| Réseaux PRIMARY | 4 (50 %) | 4 (50 %) | 8 |
-| Réseaux locaux LW | 8 (100 %) | 8 (100 %) | 8 |
-| CLKDIV | 1 (13 %) | 1 (13 %) | 8 |
-| rPLL | 1 (50 %) | 1 (50 %) | 2 |
+| Ressource | Diagnostic `NanoQL` | ROM locale + IPC | ROM microSD + IPC | Disponible |
+|---|---:|---:|---:|---:|
+| Logique | 8 296 (40 %) | 8 867 (43 %) | 9 448 (46 %) | 20 736 |
+| LUT seules | 7 885 | 8 447 | 8 920 | - |
+| ALU | 405 | 414 | 474 | - |
+| Registres | 3 432 (22 %) | 3 668 (24 %) | 3 935 (25 %) | 15 915 |
+| CLS | 5 180 (50 %) | 5 496 (53 %) | 5 879 (57 %) | 10 368 |
+| BSRAM | 7 (16 %) | 41 (90 %) | 10 (22 %) | 46 |
+| Ports E/S | 26 (40 %) | 26 (40 %) | 26 (40 %) | 66 |
+| IOLOGIC | 6 (5 %) | 6 (5 %) | 6 (5 %) | 121 |
+| Réseaux PRIMARY | 5 (63 %) | 5 (63 %) | 5 (63 %) | 8 |
+| Réseaux locaux LW | 8 (100 %) | 8 (100 %) | 8 (100 %) | 8 |
+| CLKDIV | 1 (13 %) | 1 (13 %) | 1 (13 %) | 8 |
+| rPLL | 1 (50 %) | 1 (50 %) | 1 (50 %) | 2 |
 
-Horloge principale : 31,800 MHz demandés. Fmax après placement-routage : 67,324 MHz pour la variante diagnostic et 50,472 MHz pour la variante ROM JS + IPC. Aucun endpoint de setup n'est signalé en violation. L'utilisation de 85 % des BSRAM par la variante système et de 100 % des réseaux `LW` sont les deux principaux points de vigilance.
+Horloge principale : 31,800 MHz demandés. Fmax après placement-routage : 64,035 MHz (diagnostic), 61,582 MHz (ROM locale) et 50,794 MHz (microSD). Aucun endpoint de setup n'est signalé en violation. La ROM locale consomme 90 % des BSRAM, tandis que la variante microSD ramène ce chiffre à 22 % en stockant la ROM dans la SDRAM.
 
 ### Extension clavier et joysticks prévue
 
-La carte porteuse prévue n'exposera pas une matrice clavier complète au FPGA. Un petit microcontrôleur externe lira le clavier et les ports joystick, puis transmettra leurs états à NanoQL par SPI (`SCK`, `MOSI`, `MISO`, `CS`) avec une ligne d'interruption facultative. Ce microcontrôleur jouera aussi le rôle de FPGA Companion pour le menu et la carte SD. Une variante PS/2 à deux signaux reste possible pour un clavier autonome, mais elle nécessiterait toujours un autre gestionnaire pour l'OSD et les fichiers.
+Le Companion gérera les claviers, souris et joysticks USB, le menu et le système de fichiers. Le BL616 interne n'expose toutefois pas assez de GPIO libres pour câbler directement une matrice de touches custom ou plusieurs ports DB9. Ces entrées physiques seront donc lues par le FPGA, ou par un petit expander/scanner externe, puis présentées au reste du système par l'interface SPI Companion. Une variante PS/2 à deux signaux reste également possible.
+
+Ordre de préférence matériel :
+
+1. **BL616 intégré à la Tang Nano 20K** : solution privilégiée pour les révisions de carte compatibles avec le firmware `bl616_fpga_partner` et FPGA Companion. Elle ne consomme aucune broche des headers et conserve le connecteur microSD de la Tang. Elle demande une mise à jour prudente du firmware du BL616 et un adaptateur ou hub USB OTG pour les périphériques. Le lecteur microSD reste physiquement piloté par le FPGA ; le Companion échange les secteurs avec lui par SPI et gère le système de fichiers.
+2. **Ai-Thinker Ai-M62-12F-Kit** : alternative BL616 externe économique au format DIP-30, sur deux rangées au pas de 2,54 mm. Une cible firmware dédiée est nécessaire, mais le portage est réduit puisque le processeur et la pile CherryUSB sont identiques. Brochage SPI proposé : `GPIO0=CS`, `GPIO1=SCK`, `GPIO30=MISO`, `GPIO27=MOSI`, `GPIO28=IRQ`. Le `GPIO13` utilisé par le M0S Dock n'est pas exposé sur ce kit.
+3. **Raspberry Pi Pico/RP2040** : solution de repli la plus pérenne et la mieux documentée. FPGA Companion la prend déjà en charge, mais l'USB hôte utilise deux GPIO avec PIO-USB et nécessite un connecteur USB-A et son alimentation 5 V sur la carte porteuse.
+
+Pour l'Ai-M62, les lignes `USB_DP` et `USB_DM` sont disponibles sur les headers. Une carte porteuse finale devra les relier à un connecteur USB-A hôte, fournir un VBUS 5 V protégé et éviter de connecter simultanément deux sources d'alimentation USB. Le connecteur USB-C du kit reste surtout utile pour le flash et le débogage.
 
 Architecture prévue, inspirée de MiSTeryNano et FPGA Companion :
 
@@ -235,19 +325,22 @@ Toute interface GPIO doit rester en logique 3,3 V. Les connecteurs joystick néc
 18. Validation de l'autovecteur, `STOP`, acquittement `$18021` et retour `RTE`.
 19. Conversion locale, exclusion Git et construction séparée pour une ROM système utilisateur.
 20. Intégrer le cœur IPC 8049 `t48` avec une matrice clavier vide et valider le démarrage JS sur la carte.
-21. Ajouter une mise à l'échelle entière 1x2, centrée et sans recadrage dans un signal CEA VIC 18. Étape actuelle.
-22. Intégrer le protocole FPGA Companion, l'overlay OSD et le chargement de ROM depuis la microSD vers la SDRAM.
-23. Rapprocher le séquenceur vidéo des créneaux de bus du vrai `zx8301.v`.
-24. Ajouter le transport clavier, les joysticks et les images disque.
+21. Ajouter une mise à l'échelle entière 1x2, centrée et sans recadrage dans un signal CEA VIC 18.
+22. Exécuter un burn-in autonome CPU/SDRAM/vidéo avec motifs RAM variables et contrôle permanent de l'intégrité.
+23. Rapprocher l'arbitrage SDRAM des créneaux vidéo/CPU et des délais `DTACK` du QL d'origine.
+24. Intégrer le transport SPI FPGA Companion et le chargement vérifié de ROM depuis la microSD vers la SDRAM. Étape actuelle, avec firmwares 3921/3923 préparés et validation matérielle du chargement complet en cours.
+25. Ajouter l'overlay OSD et la sélection interactive de fichiers.
+26. Ajouter le transport clavier, les joysticks et les images disque.
 
 ### Licence
 
-NanoQL est distribué sous GNU GPL version 3. Voir `LICENSE`. Le dossier `src/fx68k/` conserve la documentation et la licence du cœur de Jorge Cwik. Le contrôleur SDRAM importé de MiSTeryNano conserve également son en-tête GPLv3. Les fichiers `src/ipc/t48/` conservent les en-têtes de licence BSD du cœur OpenCores.
+NanoQL est distribué sous GNU GPL version 3. Voir `LICENSE`. Le dossier `src/fx68k/` conserve la documentation et la licence du cœur de Jorge Cwik. Le contrôleur SDRAM et les modules Companion importés de MiSTeryNano conservent leurs notices GPLv3. Les fichiers `src/ipc/t48/` conservent les en-têtes de licence BSD du cœur OpenCores.
 
 ### Références amont
 
-- MiSTeryNano : référence HDMI, PLL et contraintes Tang Nano 20K
-- mist-devel/ql : référence vidéo Sinclair QL / ZX8301
+- [MiSTeryNano](https://github.com/MiSTle-Dev/MiSTeryNano) : HDMI, PLL, contraintes Tang Nano 20K et modules Companion
+- [FPGA Companion](https://github.com/MiSTle-Dev/FPGA-Companion) : firmware BL616, protocole SPI et système de fichiers
+- [mist-devel/ql](https://github.com/mist-devel/ql) : vidéo Sinclair QL / ZX8301
 
 ---
 
@@ -266,11 +359,22 @@ NanoQL is an incremental Sinclair QL FPGA port for the Sipeed Tang Nano 20K boar
 
 ### Current Status
 
-The current build integrates HDMI video, on-board SDRAM, a real `fx68k` 68000 CPU core, a minimal diagnostic ROM, and an experimental variant using private QL system and 8049 IPC ROMs. It does not yet include a keyboard transport, microSD, or the complete QL system.
+The current build integrates HDMI video, on-board SDRAM, a real `fx68k` 68000 CPU core, a minimal diagnostic ROM, a local system-ROM variant, and a variant that automatically loads the QL ROM from microSD through the on-board BL616. Keyboard transport and the visible OSD overlay are not connected yet.
+
+### Recommended Setup Assistant
+
+The cross-platform assistant centralizes BL616 firmware preparation, ROM and microSD preparation, Gowin builds, and FPGA programming:
+
+```sh
+python tools/nanoql_setup.py
+```
+
+It uses only Python 3 and Tkinter, with no `pip` dependency. On Linux, install your distribution's `python3-tk` package if required. **Tout préparer et compiler** validates the ROM, converts the IPC firmware, prepares `QL.rom` and `nanoql.ini`, and builds the microSD bitstream in sequence. BL616 flashing deliberately remains confirmed in FlashCube because it requires physical serial-port selection and the `UPDATE` boot mode.
 
 Implemented so far:
 
 - Tang Nano 20K Gowin project
+- JTAG pins kept for the on-board programmer with `set_option -use_jtag_as_gpio 0`, matching NanoMIG's Tang Nano 20K configuration
 - 160 MHz HDMI PLL and 32 MHz pixel clock path, based on the MiSTeryNano Tang Nano 20K implementation
 - HDMI output in a PAL-like 720x576@50 Hz mode
 - Integer scaling from the 512x256 QL image to a 512x512 grid
@@ -316,16 +420,14 @@ Implemented so far:
   - ZX8301 `mc_stat` register decoded at its real QL address `0x018063`
   - ROM writes acknowledged and ignored
 - Cycle-exact `fx68k` core imported from MiSTeryNano, provisionally clocked at 7.95 MHz through clock enables
-- Diagnostic boot ROM with initial stack and reset vectors and a 68000 program starting at `0x000100`
-- Diagnostic program executed by the CPU:
-  - writes a red word into mode 4 VRAM
-  - reads the word back from SDRAM
-  - compares it using a `CMPI` instruction
-  - writes a red marker into the second screen
-  - byte-writes `0x88` to `mc_stat`, selecting the `$28000` screen and mode 8
-  - branches to a `0xA55A` success signature or `0xDEAD` failure signature
+- Autonomous diagnostic ROM written in 68000 assembly and requiring no keyboard
+- CPU burn-in loop:
+  - selects screen `$28000` and QL mode 8 by writing `0x88` to `mc_stat`
+  - writes and reads back 48 KiB from `$30000` through `$3BFFF`, outside VRAM and the stack
+  - uses a new deterministic pattern on every pass to expose stuck bits and transient corruption
+  - keeps video reads active to exercise CPU/scanout SDRAM arbitration
+  - writes `0xA55A` after every valid pass or `0xDEAD` on the first mismatch
 - Mode 8 and screen-base selection now controlled exclusively by the 68000 program
-- Fixed red 8x8 block starting on mode 8 line 130, drawn by eight program writes
 - Initial ZX8302 implementation:
   - decodes the `$18000-$1803F` region
   - exposes RTC words and the status/interrupt register at `$18020`
@@ -336,13 +438,12 @@ Implemented so far:
   - OpenCores `t48` running the 8049 IPC firmware in the system variant
   - near-10.6 MHz IPC timing obtained through a clock enable
   - empty keyboard matrix until a physical keyboard transport is added
-- The diagnostic program must read `$18020` before its success signature is accepted
+- The diagnostic must validate the `$18020` read, `mc_stat` write, VBlank interrupt, and a complete RAM pass
 - Complete validation of the 68000 vertical interrupt path:
   - level-2 vector installed at `$000068`
   - autovector triggered through `FC=111` and `VPA`
-  - waits using the `STOP` instruction
   - acknowledges VBlank by writing `0x08` to `$18021`
-  - writes the success signature from the handler and returns through `RTE`
+  - returns through `RTE` to the running RAM test
 - Supervisor stack moved to the top of 128 KiB RAM (`$40000`) to preserve both screens
 - System-ROM variant without redistributing protected content:
   - accepts user-supplied 48 KiB or 64 KiB binary dumps
@@ -351,7 +452,13 @@ Implemented so far:
   - excludes the generated file from Git
   - uses a separate build that refuses to start when the private ROM is absent
   - selects the Sinclair JS QDOS 1.10 ROM for the first hardware test
-- Top-left status square: orange/green/red for diagnostics, blue/cyan for system startup and IPC activity
+- Experimental microSD ROM loading:
+  - standard FPGA Companion SPI protocol for Tang Nano 20K revisions 3921 and 3923, with revision-specific firmware
+  - FAT/exFAT configuration served to the BL616 and automatic `QL.rom` mount
+  - accepts 48 KiB or 64 KiB ROM files
+  - copies to reserved SDRAM and verifies every word
+  - holds the 68000 in reset until the complete ROM has passed verification
+- Top-left status square: orange during the initial test, alternating green shades after every successful pass, red on failure; blue/cyan for system startup and IPC activity
 - Mode 8 flash matching the ZX8301 principle: the F bit toggles a color latch, with the phase changing every 26 frames
 - Native QL timing probe, inspired by the original `zx8301.v` PAL/NTSC timing, running in parallel and observable through an LED
 
@@ -372,16 +479,30 @@ Implemented so far:
 - `src/ql_sdram_memory.sv`: SDRAM initialization, verification, refresh, and video-read service
 - `src/ql_cpu_bus_bridge.sv`: converts 68000 cycles into internal system-bus transactions
 - `src/ql_memory_map.sv`: decodes ROM/SDRAM and the ZX8301 register at `0x018063`
-- `src/ql_boot_rom.sv`: small diagnostic ROM image executed by `fx68k`
+- `src/ql_boot_rom.sv`: wrapper for the small diagnostic ROM executed by `fx68k`
+- `src/rom/ql_diagnostic.s`: 68000 assembly source for the autonomous test
+- `src/rom/ql_diagnostic_rom.vh`: generated Verilog image committed for direct Gowin builds
 - `src/ql_system_rom.sv`: 64 KiB ROM initialized from the generated user file
+- `src/ql_sd_boot_rom.sv`: selects the dynamic ROM stored in SDRAM
+- `src/companion/`: Companion SPI transport, microSD access, ROM loader, and menu configuration
 - `src/ql_cpu_fx68k.sv`: clock, reset, and bus wrapper around the 68000 core
 - `src/ql_cpu_boot_monitor.sv`: validates the `mc_stat` write and detects program signatures
 - `src/fx68k/`: cycle-exact 68000 core, microcode, documentation, and GPLv3 license imported from MiSTeryNano
 - `src/sdram/sdram.v`: Tang Nano 20K SDRAM controller imported from MiSTeryNano under GPLv3
-- `build_common.tcl`: source list and Gowin options shared by both variants
+- `build_common.tcl`: source list and Gowin options shared by all builds
 - `build_system_rom.tcl`: experimental private system-ROM build
+- `build_sd_rom.tcl`: build loading the QL ROM from microSD
 - `tools/prepare_ql_rom.ps1`: validates and converts the user's binary dump
 - `tools/prepare_ql_ipc_rom.ps1`: validates and converts the private IPC Intel HEX firmware
+- `tools/build_diagnostic_rom.ps1`: optionally rebuilds the diagnostic image with `vasmm68k_mot`
+- `tools/prepare_sd_card.ps1`: validates the ROM and creates `QL.rom` with its `nanoql.ini` auto-mount file
+- `tools/build_companion_config.ps1`: compresses the Companion XML configuration
+- `tools/prepare_bl616_firmware.ps1`: verified BL616 firmware and flasher preparation
+- `tools/prepare_bl616_firmware.py`: equivalent cross-platform Python 3 preparation
+- `tools/nanoql_setup.py`: Tkinter assistant for NanoQL preparation, building, and programming
+- `tools/prepare_sd_card.py`: prepares `QL.rom` and `nanoql.ini` on Windows, macOS, or Linux
+- `tools/prepare_ql_rom.py`: cross-platform local QL ROM conversion
+- `tools/prepare_ql_ipc_rom.py`: cross-platform Intel HEX IPC firmware conversion
 
 ### LED Indicators
 
@@ -410,7 +531,14 @@ impl\pnr\NanoQL.fs
 
 Program the board with Gowin Programmer in SRAM mode for quick tests.
 
-After programming, the second screen's test image should remain stable in mode 8. LED 4 must be active. The status square changes from orange to green after the first VBlank, once the 68000 has executed the interrupt handler, acknowledged `$18021`, and produced the correct signature. The red 8x8 square remains visible at the left starting on line 130. LED 3 remains inactive because the program leaves `blank` cleared.
+After programming, the second screen's test image must remain stable in mode 8 and LED 4 must be active. The square stays orange during SDRAM initialization and the first pass, then alternates between two subtle green shades after every successful write/readback of the 48 KiB area. A red square or LED 2 indicates a RAM mismatch, SDRAM error, or video underflow. Leaving this bitstream running for several hours provides an initial autonomous CPU/SDRAM/video burn-in.
+
+The generated image is already included. To rebuild it after editing the assembly source, install `vasmm68k_mot`, then run:
+
+```powershell
+.\tools\build_diagnostic_rom.ps1 -VasmPath <path-to-vasmm68k_mot.exe>
+gw_sh build.tcl
+```
 
 #### Experimental System-ROM Variant
 
@@ -428,30 +556,85 @@ The QL converter accepts exactly 49,152 or 65,536 bytes. A 48 KiB ROM is padded 
 
 In this variant, the status square turns blue after SDRAM initialization, then cyan after the first complete transaction between JS and the IPC. Since the keyboard matrix is empty, any screen requesting `F1` or `F2` will remain waiting until keyboard support is added.
 
+#### microSD / BL616 ROM Variant
+
+This variant targets the on-board BL616 of Tang Nano 20K **revisions 3921 and 3923**. The graphical assistant is the recommended method:
+
+```sh
+python tools/nanoql_setup.py
+```
+
+Select the revision printed on the board and either normal or test mode in the `BL616 Companion` tab. The command-line method remains available on Windows:
+
+```powershell
+.\tools\prepare_bl616_firmware.ps1 -Launch
+```
+
+Equivalent preparation with Python 3 is available on every platform; select the matching board revision:
+
+```sh
+python3 tools/prepare_bl616_firmware.py --revision 3923
+```
+
+On Windows, append `--launch` to open FlashCube. PowerShell Core can run on macOS, but it does not make the Windows FlashCube executable compatible. On macOS and Linux, the Python script prepares and verifies the complete package; native command-line flashing remains separate until the two-segment BL616 write has been validated on hardware.
+
+The script downloads FPGA Companion `v1.4.22` and BouffaloLabFlashCube from their official URLs, verifies every SHA-256 hash, and caches downloads under the Git-ignored `private/bl616/` directory. It generates `1_NORMAL_3921_partner_auto.ini`, `2_TEST_3921_companion_only.ini`, `1_NORMAL_3923_partner_auto.ini`, and `2_TEST_3923_companion_only.ini`. Generic `nano20k` images target the revision-3921 BL616 pinout; `nano20k_v3923` images target the revised 3923 pinout. Then hold `UPDATE`, connect USB-C to the PC, release `UPDATE`, refresh COM ports, select the new port, and click `Download`. Also see the [FPGA Companion procedure](https://github.com/MiSTle-Dev/.github/wiki/Firmware-Installation-BL616-%C2%B5C), [Tang Nano 20K versions](https://github.com/MiSTle-Dev/.github/wiki/Versions_TangNano20k), and [Sipeed documentation](https://en.wiki.sipeed.com/hardware/en/tang/common-doc/update_debugger.html).
+
+The normal configuration retains the Gowin programmer and places Companion in the second stage. Test mode starts Companion even while a PC is attached, but temporarily replaces the Gowin programmer. The `UPDATE` button remains available; flashing the matching `1_NORMAL` configuration restores the standard Partner setup.
+
+With the standard two-stage firmware, a USB data connection to a PC boots the BL616 as the programmer, not as Companion. To start Companion, first program the NanoQL bitstream into **FPGA Flash**, rather than SRAM only, then power-cycle the board from USB power without a data host, such as a USB charger. The `2_TEST_<revision>_companion_only.ini` variant is useful for diagnosis but disables the integrated programmer until the matching normal configuration is restored.
+
+Prepare a FAT32 or exFAT microSD card and build:
+
+```powershell
+.\tools\prepare_sd_card.ps1 -RomPath <path-to-your-rom.bin> -Destination <microSD-root>
+.\tools\prepare_ql_ipc_rom.ps1 -InputPath <path-to-your-ipc-firmware.hex>
+gw_sh build_sd_rom.tcl
+```
+
+On macOS or Linux, prepare the ROM without PowerShell:
+
+```sh
+python3 tools/prepare_sd_card.py /path/to/js.rom /Volumes/CARD_NAME
+python3 tools/prepare_ql_ipc_rom.py /path/to/ipc8049.hex
+```
+
+The card root must contain `QL.rom` and `nanoql.ini`. The latter contains `drive0 = /sd/QL.rom`, because the XML `default` attribute configures the selector but does not mount the file by itself. The resulting bitstream is `impl\pnr\NanoQL_sd_rom.fs`. During startup, two rows of eight black-and-white cells are shown. The top row fills from left to right for SDRAM, SPI, valid Companion bytes, SYS start, STATUS, XML configuration, SDC access, and loader start. The lower row shows progress while all 128 ROM sectors are copied and verified. A full-screen black-and-white checkerboard indicates failure. The display disappears as soon as the 68000 executes the ROM.
+
+In Gowin EDA, **Use JTAG as regular IO must remain unselected**. NanoQL also enforces this in `build_common.tcl`; the generated bitstream contains `JTAGAsRegularIO: OFF`. Reusing JTAG as GPIO would break the expected BL616 programmer path and provides no benefit to NanoQL.
+
 ### Synthesis Statistics
 
-These statistics are updated after every compiled milestone. They come from Gowin V1.9.11.03 Education place-and-route reports for the GW2AR-LV18QN88C8/I7. Both variants are listed separately to make the ROM and IPC costs visible.
+These statistics are updated after every compiled milestone. They come from Gowin V1.9.11.03 Education place-and-route reports for the GW2AR-LV18QN88C8/I7.
 
-| Resource | Diagnostic `NanoQL` | JS ROM + IPC `NanoQL_system_rom` | Available |
-|---|---:|---:|---:|
-| Logic | 7,392 (36%) | 8,032 (39%) | 20,736 |
-| LUT only | 7,015 | 7,645 | - |
-| ALU | 377 | 387 | - |
-| Registers | 2,898 (19%) | 3,138 (20%) | 15,915 |
-| CLS | 4,437 (43%) | 4,895 (48%) | 10,368 |
-| BSRAM | 5 (11%) | 39 (85%) | 46 |
-| I/O ports | 15 (23%) | 15 (23%) | 66 |
-| IOLOGIC | 6 (5%) | 6 (5%) | 121 |
-| PRIMARY networks | 4 (50%) | 4 (50%) | 8 |
-| Local LW networks | 8 (100%) | 8 (100%) | 8 |
-| CLKDIV | 1 (13%) | 1 (13%) | 8 |
-| rPLL | 1 (50%) | 1 (50%) | 2 |
+| Resource | Diagnostic `NanoQL` | Local ROM + IPC | microSD ROM + IPC | Available |
+|---|---:|---:|---:|---:|
+| Logic | 8,296 (40%) | 8,867 (43%) | 9,448 (46%) | 20,736 |
+| LUT only | 7,885 | 8,447 | 8,920 | - |
+| ALU | 405 | 414 | 474 | - |
+| Registers | 3,432 (22%) | 3,668 (24%) | 3,935 (25%) | 15,915 |
+| CLS | 5,180 (50%) | 5,496 (53%) | 5,879 (57%) | 10,368 |
+| BSRAM | 7 (16%) | 41 (90%) | 10 (22%) | 46 |
+| I/O ports | 26 (40%) | 26 (40%) | 26 (40%) | 66 |
+| IOLOGIC | 6 (5%) | 6 (5%) | 6 (5%) | 121 |
+| PRIMARY networks | 5 (63%) | 5 (63%) | 5 (63%) | 8 |
+| Local LW networks | 8 (100%) | 8 (100%) | 8 (100%) | 8 |
+| CLKDIV | 1 (13%) | 1 (13%) | 1 (13%) | 8 |
+| rPLL | 1 (50%) | 1 (50%) | 1 (50%) | 2 |
 
-Main clock: 31.800 MHz required. Post-place-and-route Fmax is 67.324 MHz for the diagnostic variant and 50.472 MHz for the JS-ROM + IPC variant. No setup endpoint violation is reported. The system variant's 85% BSRAM usage and the 100% use of local `LW` networks are the two main implementation watch points.
+Main clock: 31.800 MHz required. Post-place-and-route Fmax is 64.035 MHz (diagnostic), 61.582 MHz (local ROM), and 50.794 MHz (microSD). No setup endpoint violation is reported. The local ROM uses 90% of BSRAM, while the microSD variant reduces this to 22% by storing the ROM in SDRAM.
 
 ### Planned Keyboard And Joystick Expansion
 
-The planned carrier board will not expose a complete keyboard matrix to the FPGA. A small external microcontroller will scan the keyboard and joystick ports, then send their state to NanoQL over SPI (`SCK`, `MOSI`, `MISO`, `CS`) with an optional interrupt line. The same microcontroller will act as the FPGA Companion for the menu and SD card. A two-signal PS/2 variant remains possible for a standalone keyboard, but it would still require another controller for the OSD and files.
+The Companion will handle USB keyboards, mice and joysticks, the menu, and the filesystem. However, the on-board BL616 does not expose enough free GPIOs for a custom key matrix or several physical DB9 ports. Those inputs will therefore be scanned by the FPGA or a small external expander/scanner, then exposed to the rest of the system through the Companion SPI interface. A two-signal PS/2 option also remains possible.
+
+Hardware preference order:
+
+1. **Tang Nano 20K on-board BL616**: preferred on board revisions compatible with the `bl616_fpga_partner` firmware and FPGA Companion. It consumes no header pins and keeps the Tang microSD slot. It requires a careful BL616 firmware update and a USB OTG adapter or hub for peripherals. The microSD slot remains physically driven by the FPGA; the Companion exchanges sectors over SPI and manages the filesystem.
+2. **Ai-Thinker Ai-M62-12F-Kit**: inexpensive external BL616 alternative in a DIP-30, dual 2.54 mm header format. It needs a dedicated firmware target, but the port is small because the processor and CherryUSB stack are identical. Proposed SPI mapping: `GPIO0=CS`, `GPIO1=SCK`, `GPIO30=MISO`, `GPIO27=MOSI`, `GPIO28=IRQ`. The M0S Dock's `GPIO13` is not exposed by this kit.
+3. **Raspberry Pi Pico/RP2040**: the most durable and best-documented fallback. FPGA Companion already supports it, but USB host uses two GPIO through PIO-USB and requires a USB-A connector with 5 V power on the carrier PCB.
+
+The Ai-M62 exposes `USB_DP` and `USB_DM` on its headers. A final carrier should route them to a USB-A host connector, provide protected 5 V VBUS, and prevent two USB power sources from being connected at once. The kit's USB-C connector remains primarily useful for flashing and debugging.
 
 Planned architecture, based on MiSTeryNano and FPGA Companion:
 
@@ -486,16 +669,19 @@ All GPIO interfacing must use 3.3 V logic. Joystick connectors require 3.3 V pul
 18. Validate autovectoring, `STOP`, `$18021` acknowledge, and `RTE`.
 19. Add local conversion, Git exclusion, and a separate build for a user-supplied system ROM.
 20. Integrate the `t48` 8049 IPC core with an empty keyboard matrix and validate JS startup on hardware.
-21. Add centered, uncropped 1x2 integer scaling inside a CEA VIC 18 signal. Current step.
-22. Integrate the FPGA Companion protocol, OSD overlay, and microSD-to-SDRAM ROM loading.
-23. Move the video sequencer closer to the real `zx8301.v` bus slots.
-24. Add keyboard transport, joysticks, and disk images.
+21. Add centered, uncropped 1x2 integer scaling inside a CEA VIC 18 signal.
+22. Run an autonomous CPU/SDRAM/video burn-in with changing RAM patterns and continuous integrity checks.
+23. Move SDRAM arbitration closer to the original QL video/CPU slots and `DTACK` delays.
+24. Integrate FPGA Companion SPI transport and verified microSD-to-SDRAM ROM loading. Current step, with 3921/3923 firmware packages prepared and complete hardware loading validation in progress.
+25. Add the visible OSD overlay and interactive file selection.
+26. Add keyboard transport, joysticks, and disk images.
 
 ### License
 
-NanoQL is distributed under GNU GPL version 3. See `LICENSE`. The `src/fx68k/` directory retains the documentation and license for Jorge Cwik's core. The SDRAM controller imported from MiSTeryNano also retains its GPLv3 header. Files under `src/ipc/t48/` retain the OpenCores core's BSD license headers.
+NanoQL is distributed under GNU GPL version 3. See `LICENSE`. The `src/fx68k/` directory retains the documentation and license for Jorge Cwik's core. The SDRAM controller and Companion modules imported from MiSTeryNano retain their GPLv3 notices. Files under `src/ipc/t48/` retain the OpenCores core's BSD license headers.
 
 ### Upstream References
 
-- MiSTeryNano: Tang Nano 20K HDMI, PLL, and board constraints reference
-- mist-devel/ql: Sinclair QL / ZX8301 video reference
+- [MiSTeryNano](https://github.com/MiSTle-Dev/MiSTeryNano): Tang Nano 20K HDMI, PLL, constraints, and Companion modules
+- [FPGA Companion](https://github.com/MiSTle-Dev/FPGA-Companion): BL616 firmware, SPI protocol, and filesystem
+- [mist-devel/ql](https://github.com/mist-devel/ql): Sinclair QL / ZX8301 video reference

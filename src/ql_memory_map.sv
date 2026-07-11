@@ -11,6 +11,7 @@ module ql_memory_map(
     output wire        bus_data_valid,
     output wire [15:0] bus_data,
     output wire        rom_is_diagnostic,
+    output wire        rom_is_dynamic,
 
     output reg         mc_stat_wr,
     output reg  [7:0]  mc_stat_data,
@@ -43,6 +44,7 @@ module ql_memory_map(
     localparam [21:0] MC_STAT_WORD = 22'h00c031;
 
     wire rom_selected = bus_addr <= ROM_LAST_WORD;
+    wire dynamic_rom_read = rom_selected && rom_is_dynamic && !bus_we;
     wire ram_selected = (bus_addr >= RAM_FIRST_WORD) &&
                         (bus_addr <= RAM_LAST_WORD);
     wire internal_io_selected = (bus_addr >= IO_FIRST_WORD) &&
@@ -63,19 +65,24 @@ module ql_memory_map(
     ql_boot_rom boot_rom (
         .word_addr(rom_addr),
         .data(rom_data),
-        .is_diagnostic(rom_is_diagnostic)
+        .is_diagnostic(rom_is_diagnostic),
+        .is_dynamic(rom_is_dynamic)
     );
 
     // ROM writes are acknowledged and ignored, like writes to physical ROM.
-    assign bus_ready = rom_selected ? !rom_read_pending :
+    assign bus_ready = rom_selected ?
+                         (rom_is_dynamic ?
+                           (bus_we ? 1'b1 : ram_ready) :
+                           !rom_read_pending) :
                        ram_selected ? ram_ready : !io_read_pending;
     assign bus_data_valid = rom_data_valid || io_data_valid || ram_data_valid;
     assign bus_data = rom_data_valid ? rom_data_latched :
                       io_data_valid ? io_data_latched : ram_data;
 
-    assign ram_req = bus_req && ram_selected;
-    assign ram_we = bus_we;
-    assign ram_addr = bus_addr;
+    assign ram_req = bus_req && (ram_selected || dynamic_rom_read);
+    assign ram_we = ram_selected && bus_we;
+    // Dynamic ROM occupies byte offset 0x400000 in the 8 MiB SDRAM.
+    assign ram_addr = dynamic_rom_read ? (22'h200000 + bus_addr) : bus_addr;
     assign ram_ds = bus_ds;
     assign ram_wdata = bus_wdata;
     assign zx8302_addr = {bus_addr[4], bus_addr[0]};
@@ -104,7 +111,8 @@ module ql_memory_map(
                 rom_data_latched <= rom_data;
                 rom_data_valid <= 1'b1;
                 rom_read_pending <= 1'b0;
-            end else if (bus_req && rom_selected && !bus_we) begin
+            end else if (bus_req && rom_selected && !rom_is_dynamic &&
+                         !bus_we) begin
                 rom_addr <= bus_addr[14:0];
                 rom_read_pending <= 1'b1;
             end

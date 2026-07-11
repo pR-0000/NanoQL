@@ -17,3 +17,7 @@ impl/
 /src/rom/ql_system_rom.hex
 /src/ipc/ql_ipc_rom.hex
 /private/roms/
+/private/sdcard/
+/private/bl616/
+__pycache__/
+*.pyc

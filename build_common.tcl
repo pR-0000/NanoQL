@@ -26,6 +26,15 @@ add_file src/ql_memory_map.sv
 add_file $rom_source
 add_file src/ql_cpu_fx68k.sv
 add_file src/ql_cpu_boot_monitor.sv
+add_file src/companion/ql_companion_sysctrl.sv
+add_file src/companion/ql_rom_sector_buffer.sv
+add_file src/companion/ql_sd_rom_loader.sv
+add_file src/companion/vendor/mcu_spi.v
+add_file src/companion/vendor/sd_card.v
+add_file src/companion/vendor/sd_rw.v
+add_file src/companion/vendor/sdcmd_ctrl.v
+add_file src/companion/vendor/sector_dpram.v
+add_file src/companion/nanoql_xml.hex
 add_file src/fx68k/fx68k.sv
 add_file src/fx68k/fx68kAlu.sv
 add_file src/fx68k/uaddrPla.sv
@@ -94,6 +103,9 @@ set_option -loading_rate 25.000
 set_option -top_module nanoql_top
 set_option -use_mspi_as_gpio 1
 set_option -use_sspi_as_gpio 1
+# Keep the Tang Nano 20K JTAG pins dedicated to the on-board programmer.
+# FPGA Companion relies on this path when the BL616 Partner is active.
+set_option -use_jtag_as_gpio 0
 set_option -bit_compress 1
 
 run all
