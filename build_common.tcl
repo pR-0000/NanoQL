@@ -27,6 +27,7 @@ add_file $rom_source
 add_file src/ql_cpu_fx68k.sv
 add_file src/ql_cpu_boot_monitor.sv
 add_file src/companion/ql_companion_sysctrl.sv
+add_file src/companion/ql_companion_hid.sv
 add_file src/companion/ql_rom_sector_buffer.sv
 add_file src/companion/ql_sd_rom_loader.sv
 add_file src/companion/vendor/mcu_spi.v

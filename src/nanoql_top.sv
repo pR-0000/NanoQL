@@ -128,7 +128,10 @@ module nanoql_top(
     wire mcu_start;
     wire [7:0] mcu_data;
     wire [7:0] companion_sys_data;
+    wire [7:0] companion_hid_data;
     wire [7:0] companion_sd_data;
+    wire [63:0] companion_keyboard_matrix;
+    wire companion_key_event;
     wire companion_miso;
     wire companion_sd_irq;
     wire companion_sd_iack;
@@ -197,7 +200,7 @@ module nanoql_top(
         .mcu_sdc_strobe(mcu_sdc_strobe),
         .mcu_start(mcu_start),
         .mcu_sys_din(companion_sys_data),
-        .mcu_hid_din(8'h00),
+        .mcu_hid_din(companion_hid_data),
         .mcu_osd_din(8'h00),
         .mcu_sdc_din(companion_sd_data),
         .mcu_dout(mcu_data)
@@ -218,6 +221,17 @@ module nanoql_top(
         .system_reset(companion_system_reset),
         .status_seen(companion_status_seen),
         .config_seen(companion_config_seen)
+    );
+
+    ql_companion_hid companion_hid (
+        .clk(clk_pixel),
+        .reset(video_reset),
+        .data_strobe(mcu_hid_strobe),
+        .data_start(mcu_start),
+        .data_in(mcu_data),
+        .data_out(companion_hid_data),
+        .matrix(companion_keyboard_matrix),
+        .key_event(companion_key_event)
     );
 
     always @(posedge clk_pixel) begin
@@ -404,6 +418,7 @@ module nanoql_top(
         .clk(clk_pixel),
         .reset(video_reset),
         .vblank(video_vblank),
+        .keyboard_matrix(companion_keyboard_matrix),
         .write(zx8302_wr),
         .addr(zx8302_addr),
         .ds(zx8302_ds),
@@ -560,11 +575,18 @@ module nanoql_top(
     );
 
     reg [24:0] heartbeat = 25'd0;
+    reg [23:0] keyboard_activity = 24'd0;
     always @(posedge clk_pixel or negedge pll_lock) begin
-        if (!pll_lock)
+        if (!pll_lock) begin
             heartbeat <= 25'd0;
-        else
+            keyboard_activity <= 24'd0;
+        end else begin
             heartbeat <= heartbeat + 25'd1;
+            if (companion_key_event)
+                keyboard_activity <= 24'hffffff;
+            else if (keyboard_activity != 24'd0)
+                keyboard_activity <= keyboard_activity - 24'd1;
+        end
     end
 
     // Board LEDs are active-low on the Tang Nano 20K.
@@ -576,7 +598,8 @@ module nanoql_top(
     assign leds_n[2] = ~(fetch_underflow || memory_failure);
     assign leds_n[3] = ~blank_active;
     assign leds_n[4] = ~mode8_active;
-    assign leds_n[5] = ~ql_native_frame_div[5];
+    assign leds_n[5] = rom_is_diagnostic ? ~ql_native_frame_div[5] :
+                                             ~(|keyboard_activity);
 
 endmodule
 

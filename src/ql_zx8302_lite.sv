@@ -2,6 +2,7 @@ module ql_zx8302_lite(
     input  wire        clk,
     input  wire        reset,
     input  wire        vblank,
+    input  wire [63:0] keyboard_matrix,
 
     input  wire        write,
     input  wire [1:0]  addr,

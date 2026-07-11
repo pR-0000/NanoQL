@@ -18,5 +18,11 @@ attribute alone only configures the selector and does not mount a file.
 image to 64 KiB with `0xff`, stores it at SDRAM byte offset `0x400000`, and
 verifies every word before releasing the 68000.
 
+`ql_companion_hid.sv` consumes the first raw USB event in FPGA Companion HID
+command 1 packets. It maintains the original QL 8x8 matrix and feeds it to the
+8049 data bus according to the row selected on `P1`. Later PS/2 compatibility
+bytes in each packet are ignored. The mapping is adapted from the MiST QL
+keyboard implementation and retains its delayed modifier combinations.
+
 The vendor modules were imported from MiSTeryNano revision
 `1b4432869e3c4bcedf68f138e1a3beb7421c43aa`.

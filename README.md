@@ -15,7 +15,7 @@ NanoQL est un port FPGA progressif du Sinclair QL pour la carte Sipeed Tang Nano
 
 ### État actuel
 
-La version actuelle intègre la vidéo HDMI, la SDRAM embarquée, un vrai cœur CPU 68000 `fx68k`, une ROM de diagnostic minimale, une variante utilisant une ROM système locale et une variante chargeant automatiquement la ROM QL depuis la microSD par le BL616 embarqué. Le transport clavier et l'overlay OSD ne sont pas encore raccordés.
+La version actuelle intègre la vidéo HDMI, la SDRAM embarquée, un vrai cœur CPU 68000 `fx68k`, une ROM de diagnostic minimale, une variante utilisant une ROM système locale, une variante chargeant automatiquement la ROM QL depuis la microSD et le clavier USB via le BL616 embarqué. L'overlay OSD visible n'est pas encore raccordé.
 
 ### Assistant graphique recommandé
 
@@ -93,7 +93,14 @@ Fonctionnalités déjà présentes :
   - `ZX8302-lite` autonome pour la variante diagnostic
   - cœur OpenCores `t48` exécutant le firmware IPC 8049 dans la variante système
   - horloge IPC proche de 10,6 MHz obtenue par clock-enable
-  - matrice clavier vide en attendant un transport clavier physique
+  - matrice clavier QL 8x8 alimentée par les événements USB HID de FPGA Companion
+  - scan de la matrice par les ports `P1` et `DB` du véritable IPC 8049
+  - interruptions clavier IPC réinjectées sur les entrées IPL du 68000
+- Clavier USB par le BL616 embarqué :
+  - événements HID bruts décodés sans émulation d'un port PS/2 physique
+  - lettres, chiffres, ponctuation, F1-F10, flèches et modificateurs
+  - Retour arrière, Suppr, Home, End et Page Up/Down convertis en combinaisons QL avec temporisation
+  - témoin d'activité d'environ une demi-seconde sur le signal LED `leds_n[5]`
 - Le diagnostic doit valider la lecture de `$18020`, l'écriture `mc_stat`, l'interruption VBlank et une passe RAM complète
 - Validation complète de l'interruption verticale 68000 :
   - vecteur niveau 2 installé à `$000068`
@@ -141,6 +148,7 @@ Fonctionnalités déjà présentes :
 - `src/ql_system_rom.sv` : mémoire ROM 64 Kio initialisée depuis le fichier utilisateur généré
 - `src/ql_sd_boot_rom.sv` : sélection de la ROM dynamique placée en SDRAM
 - `src/companion/` : transport SPI Companion, accès microSD, chargeur ROM et configuration de menu
+- `src/companion/ql_companion_hid.sv` : décodage HID Companion et matrice clavier QL
 - `src/ql_cpu_fx68k.sv` : wrapper d'horloge, de reset et de bus autour du cœur 68000
 - `src/ql_cpu_boot_monitor.sv` : validation de l'écriture `mc_stat` et détection des signatures du programme
 - `src/fx68k/` : cœur 68000 cycle-exact, microcode, documentation et licence GPLv3 importés de MiSTeryNano
@@ -210,7 +218,7 @@ gw_sh build_system_rom.tcl
 
 Le convertisseur QL accepte exactement 49 152 ou 65 536 octets. Une ROM de 48 Kio est complétée par `0xFF` jusqu'à 64 Kio. Le convertisseur IPC accepte une image Intel HEX complète de 2 Kio. Les fichiers générés `src/rom/ql_system_rom.hex` et `src/ipc/ql_ipc_rom.hex` sont ignorés par Git. Le bitstream expérimental est `impl\pnr\NanoQL_system_rom.fs`.
 
-Dans cette variante, le carré devient bleu après l'initialisation SDRAM, puis cyan après la première transaction complète entre JS et l'IPC. La matrice clavier étant vide, un éventuel écran demandant `F1` ou `F2` restera en attente jusqu'à l'ajout d'un clavier.
+Dans cette variante, le carré devient bleu après l'initialisation SDRAM, puis cyan après la première transaction complète entre JS et l'IPC. Un clavier USB relié au BL616 permet désormais de répondre avec `F1` ou `F2` et d'utiliser QDOS.
 
 #### Variante ROM microSD / BL616
 
@@ -265,12 +273,12 @@ Ces statistiques sont mises à jour à chaque étape compilée. Elles proviennen
 
 | Ressource | Diagnostic `NanoQL` | ROM locale + IPC | ROM microSD + IPC | Disponible |
 |---|---:|---:|---:|---:|
-| Logique | 8 296 (40 %) | 8 867 (43 %) | 9 448 (46 %) | 20 736 |
-| LUT seules | 7 885 | 8 447 | 8 920 | - |
-| ALU | 405 | 414 | 474 | - |
-| Registres | 3 432 (22 %) | 3 668 (24 %) | 3 935 (25 %) | 15 915 |
-| CLS | 5 180 (50 %) | 5 496 (53 %) | 5 879 (57 %) | 10 368 |
-| BSRAM | 7 (16 %) | 41 (90 %) | 10 (22 %) | 46 |
+| Logique | 8 353 (41 %) | 8 877 (43 %) | 9 633 (47 %) | 20 736 |
+| LUT seules | 7 943 | 8 448 | 9 096 | - |
+| ALU | 404 | 423 | 483 | - |
+| Registres | 3 444 (22 %) | 3 689 (24 %) | 3 957 (25 %) | 15 915 |
+| CLS | 5 169 (50 %) | 5 555 (54 %) | 6 056 (59 %) | 10 368 |
+| BSRAM | 7 (16 %) | 43 (94 %) | 12 (27 %) | 46 |
 | Ports E/S | 26 (40 %) | 26 (40 %) | 26 (40 %) | 66 |
 | IOLOGIC | 6 (5 %) | 6 (5 %) | 6 (5 %) | 121 |
 | Réseaux PRIMARY | 5 (63 %) | 5 (63 %) | 5 (63 %) | 8 |
@@ -278,11 +286,13 @@ Ces statistiques sont mises à jour à chaque étape compilée. Elles proviennen
 | CLKDIV | 1 (13 %) | 1 (13 %) | 1 (13 %) | 8 |
 | rPLL | 1 (50 %) | 1 (50 %) | 1 (50 %) | 2 |
 
-Horloge principale : 31,800 MHz demandés. Fmax après placement-routage : 64,035 MHz (diagnostic), 61,582 MHz (ROM locale) et 50,794 MHz (microSD). Aucun endpoint de setup n'est signalé en violation. La ROM locale consomme 90 % des BSRAM, tandis que la variante microSD ramène ce chiffre à 22 % en stockant la ROM dans la SDRAM.
+Horloge principale : 31,800 MHz demandés. Fmax après placement-routage : 58,660 MHz (diagnostic), 60,646 MHz (ROM locale) et 60,660 MHz (microSD). Aucun endpoint de setup n'est signalé en violation. La ROM locale consomme 94 % des BSRAM ; la variante microSD recommandée ramène ce chiffre à 27 % en stockant la ROM système dans la SDRAM.
 
-### Extension clavier et joysticks prévue
+### Clavier USB et extensions prévues
 
-Le Companion gérera les claviers, souris et joysticks USB, le menu et le système de fichiers. Le BL616 interne n'expose toutefois pas assez de GPIO libres pour câbler directement une matrice de touches custom ou plusieurs ports DB9. Ces entrées physiques seront donc lues par le FPGA, ou par un petit expander/scanner externe, puis présentées au reste du système par l'interface SPI Companion. Une variante PS/2 à deux signaux reste également possible.
+Le Companion gère maintenant les claviers USB et le système de fichiers. Le firmware BL616 autorise jusqu'à deux hubs USB externes. Pour un clavier sur la prise USB-C de la Tang, utiliser un adaptateur ou hub **USB OTG alimenté** : la Tang doit être le périphérique hôte et recevoir simultanément son alimentation. Avec le firmware `partner auto`, ne pas relier le port amont du hub à un PC, sinon le BL616 démarre en mode programmateur. La souris, les joysticks, l'OSD visible et les sélecteurs de logiciels restent à intégrer au core QL.
+
+Le BL616 interne n'expose pas assez de GPIO libres pour câbler directement une matrice de touches custom ou plusieurs ports DB9. Ces futures entrées physiques seront donc lues par le FPGA, ou par un petit expander/scanner externe, puis présentées au reste du système par l'interface SPI Companion. Une variante PS/2 à deux signaux reste également possible.
 
 Ordre de préférence matériel :
 
@@ -324,13 +334,14 @@ Toute interface GPIO doit rester en logique 3,3 V. Les connecteurs joystick néc
 17. Ajout du ZX8302-lite, lecture de `$18020`, RTC provisoire et interruption VBlank niveau 2.
 18. Validation de l'autovecteur, `STOP`, acquittement `$18021` et retour `RTE`.
 19. Conversion locale, exclusion Git et construction séparée pour une ROM système utilisateur.
-20. Intégrer le cœur IPC 8049 `t48` avec une matrice clavier vide et valider le démarrage JS sur la carte.
+20. Intégrer le cœur IPC 8049 `t48` et valider le démarrage JS sur la carte.
 21. Ajouter une mise à l'échelle entière 1x2, centrée et sans recadrage dans un signal CEA VIC 18.
 22. Exécuter un burn-in autonome CPU/SDRAM/vidéo avec motifs RAM variables et contrôle permanent de l'intégrité.
 23. Rapprocher l'arbitrage SDRAM des créneaux vidéo/CPU et des délais `DTACK` du QL d'origine.
-24. Intégrer le transport SPI FPGA Companion et le chargement vérifié de ROM depuis la microSD vers la SDRAM. Étape actuelle, avec firmwares 3921/3923 préparés et validation matérielle du chargement complet en cours.
+24. Intégrer le transport SPI FPGA Companion et le chargement vérifié de ROM depuis la microSD vers la SDRAM. Validé sur matériel.
 25. Ajouter l'overlay OSD et la sélection interactive de fichiers.
-26. Ajouter le transport clavier, les joysticks et les images disque.
+26. Ajouter le transport clavier USB vers la matrice du véritable IPC 8049. Étape actuelle, prête pour validation matérielle.
+27. Ajouter la souris, les joysticks et les images disque.
 
 ### Licence
 
@@ -359,7 +370,7 @@ NanoQL is an incremental Sinclair QL FPGA port for the Sipeed Tang Nano 20K boar
 
 ### Current Status
 
-The current build integrates HDMI video, on-board SDRAM, a real `fx68k` 68000 CPU core, a minimal diagnostic ROM, a local system-ROM variant, and a variant that automatically loads the QL ROM from microSD through the on-board BL616. Keyboard transport and the visible OSD overlay are not connected yet.
+The current build integrates HDMI video, on-board SDRAM, a real `fx68k` 68000 CPU core, a minimal diagnostic ROM, a local system-ROM variant, a variant that automatically loads the QL ROM from microSD, and USB keyboard support through the on-board BL616. The visible OSD overlay is not connected yet.
 
 ### Recommended Setup Assistant
 
@@ -437,7 +448,14 @@ Implemented so far:
   - standalone `ZX8302-lite` for the diagnostic variant
   - OpenCores `t48` running the 8049 IPC firmware in the system variant
   - near-10.6 MHz IPC timing obtained through a clock enable
-  - empty keyboard matrix until a physical keyboard transport is added
+  - QL 8x8 keyboard matrix fed by FPGA Companion USB HID events
+  - matrix scanned through the real 8049 IPC's `P1` and `DB` ports
+  - IPC keyboard interrupts fed back to the 68000 IPL inputs
+- USB keyboard through the on-board BL616:
+  - raw HID events decoded without emulating a physical PS/2 port
+  - letters, digits, punctuation, F1-F10, arrows, and modifiers
+  - Backspace, Delete, Home, End, and Page Up/Down translated into delayed QL combinations
+  - roughly half-second activity indicator on LED signal `leds_n[5]`
 - The diagnostic must validate the `$18020` read, `mc_stat` write, VBlank interrupt, and a complete RAM pass
 - Complete validation of the 68000 vertical interrupt path:
   - level-2 vector installed at `$000068`
@@ -485,6 +503,7 @@ Implemented so far:
 - `src/ql_system_rom.sv`: 64 KiB ROM initialized from the generated user file
 - `src/ql_sd_boot_rom.sv`: selects the dynamic ROM stored in SDRAM
 - `src/companion/`: Companion SPI transport, microSD access, ROM loader, and menu configuration
+- `src/companion/ql_companion_hid.sv`: Companion HID decoding and QL keyboard matrix
 - `src/ql_cpu_fx68k.sv`: clock, reset, and bus wrapper around the 68000 core
 - `src/ql_cpu_boot_monitor.sv`: validates the `mc_stat` write and detects program signatures
 - `src/fx68k/`: cycle-exact 68000 core, microcode, documentation, and GPLv3 license imported from MiSTeryNano
@@ -554,7 +573,7 @@ gw_sh build_system_rom.tcl
 
 The QL converter accepts exactly 49,152 or 65,536 bytes. A 48 KiB ROM is padded with `0xFF` to 64 KiB. The IPC converter accepts a complete 2 KiB Intel HEX image. The generated `src/rom/ql_system_rom.hex` and `src/ipc/ql_ipc_rom.hex` files are ignored by Git. The experimental bitstream is `impl\pnr\NanoQL_system_rom.fs`.
 
-In this variant, the status square turns blue after SDRAM initialization, then cyan after the first complete transaction between JS and the IPC. Since the keyboard matrix is empty, any screen requesting `F1` or `F2` will remain waiting until keyboard support is added.
+In this variant, the status square turns blue after SDRAM initialization, then cyan after the first complete transaction between JS and the IPC. A USB keyboard connected to the BL616 can now answer the `F1` or `F2` prompt and operate QDOS.
 
 #### microSD / BL616 ROM Variant
 
@@ -609,12 +628,12 @@ These statistics are updated after every compiled milestone. They come from Gowi
 
 | Resource | Diagnostic `NanoQL` | Local ROM + IPC | microSD ROM + IPC | Available |
 |---|---:|---:|---:|---:|
-| Logic | 8,296 (40%) | 8,867 (43%) | 9,448 (46%) | 20,736 |
-| LUT only | 7,885 | 8,447 | 8,920 | - |
-| ALU | 405 | 414 | 474 | - |
-| Registers | 3,432 (22%) | 3,668 (24%) | 3,935 (25%) | 15,915 |
-| CLS | 5,180 (50%) | 5,496 (53%) | 5,879 (57%) | 10,368 |
-| BSRAM | 7 (16%) | 41 (90%) | 10 (22%) | 46 |
+| Logic | 8,353 (41%) | 8,877 (43%) | 9,633 (47%) | 20,736 |
+| LUT only | 7,943 | 8,448 | 9,096 | - |
+| ALU | 404 | 423 | 483 | - |
+| Registers | 3,444 (22%) | 3,689 (24%) | 3,957 (25%) | 15,915 |
+| CLS | 5,169 (50%) | 5,555 (54%) | 6,056 (59%) | 10,368 |
+| BSRAM | 7 (16%) | 43 (94%) | 12 (27%) | 46 |
 | I/O ports | 26 (40%) | 26 (40%) | 26 (40%) | 66 |
 | IOLOGIC | 6 (5%) | 6 (5%) | 6 (5%) | 121 |
 | PRIMARY networks | 5 (63%) | 5 (63%) | 5 (63%) | 8 |
@@ -622,11 +641,13 @@ These statistics are updated after every compiled milestone. They come from Gowi
 | CLKDIV | 1 (13%) | 1 (13%) | 1 (13%) | 8 |
 | rPLL | 1 (50%) | 1 (50%) | 1 (50%) | 2 |
 
-Main clock: 31.800 MHz required. Post-place-and-route Fmax is 64.035 MHz (diagnostic), 61.582 MHz (local ROM), and 50.794 MHz (microSD). No setup endpoint violation is reported. The local ROM uses 90% of BSRAM, while the microSD variant reduces this to 22% by storing the ROM in SDRAM.
+Main clock: 31.800 MHz required. Post-place-and-route Fmax is 58.660 MHz (diagnostic), 60.646 MHz (local ROM), and 60.660 MHz (microSD). No setup endpoint violation is reported. The local-ROM build uses 94% of BSRAM; the recommended microSD build reduces this to 27% by storing the system ROM in SDRAM.
 
-### Planned Keyboard And Joystick Expansion
+### USB Keyboard And Planned Expansion
 
-The Companion will handle USB keyboards, mice and joysticks, the menu, and the filesystem. However, the on-board BL616 does not expose enough free GPIOs for a custom key matrix or several physical DB9 ports. Those inputs will therefore be scanned by the FPGA or a small external expander/scanner, then exposed to the rest of the system through the Companion SPI interface. A two-signal PS/2 option also remains possible.
+Companion now handles USB keyboards and the filesystem. The BL616 firmware permits up to two external USB hubs. To connect a keyboard through the Tang USB-C connector, use a **powered USB OTG hub or adapter**: the Tang must act as USB host while receiving power. With `partner auto` firmware, do not attach the hub upstream port to a PC, or the BL616 will boot into programmer mode. Mouse, joystick, visible OSD, and software-selection support remain to be connected to the QL core.
+
+The on-board BL616 does not expose enough free GPIOs for a custom key matrix or several physical DB9 ports. Those future physical inputs will therefore be scanned by the FPGA or a small external expander, then exposed through the Companion SPI interface. A two-signal PS/2 option also remains possible.
 
 Hardware preference order:
 
@@ -668,13 +689,14 @@ All GPIO interfacing must use 3.3 V logic. Joystick connectors require 3.3 V pul
 17. Add ZX8302-lite, read `$18020`, provide a provisional RTC, and generate a level-2 VBlank interrupt.
 18. Validate autovectoring, `STOP`, `$18021` acknowledge, and `RTE`.
 19. Add local conversion, Git exclusion, and a separate build for a user-supplied system ROM.
-20. Integrate the `t48` 8049 IPC core with an empty keyboard matrix and validate JS startup on hardware.
+20. Integrate the `t48` 8049 IPC core and validate JS startup on hardware.
 21. Add centered, uncropped 1x2 integer scaling inside a CEA VIC 18 signal.
 22. Run an autonomous CPU/SDRAM/video burn-in with changing RAM patterns and continuous integrity checks.
 23. Move SDRAM arbitration closer to the original QL video/CPU slots and `DTACK` delays.
-24. Integrate FPGA Companion SPI transport and verified microSD-to-SDRAM ROM loading. Current step, with 3921/3923 firmware packages prepared and complete hardware loading validation in progress.
+24. Integrate FPGA Companion SPI transport and verified microSD-to-SDRAM ROM loading. Validated on hardware.
 25. Add the visible OSD overlay and interactive file selection.
-26. Add keyboard transport, joysticks, and disk images.
+26. Add USB keyboard transport to the real 8049 IPC matrix. Current step, ready for hardware validation.
+27. Add mouse, joysticks, and disk images.
 
 ### License
 

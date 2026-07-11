@@ -2,6 +2,7 @@ module ql_ipc_t48(
     input  wire       clk,
     input  wire       reset,
     input  wire       comdata_in,
+    input  wire [63:0] keyboard_matrix,
     output wire       comctrl,
     output wire       comdata_out,
     output wire       audio,
@@ -38,6 +39,15 @@ module ql_ipc_t48(
     assign comdata_out = p2_out[7];
     assign audio = p2_out[1];
     assign ipl = p2_out[3:2];
+    wire [7:0] keyboard_data =
+        (p1_out[0] ? keyboard_matrix[7:0] : 8'h00) |
+        (p1_out[1] ? keyboard_matrix[15:8] : 8'h00) |
+        (p1_out[2] ? keyboard_matrix[23:16] : 8'h00) |
+        (p1_out[3] ? keyboard_matrix[31:24] : 8'h00) |
+        (p1_out[4] ? keyboard_matrix[39:32] : 8'h00) |
+        (p1_out[5] ? keyboard_matrix[47:40] : 8'h00) |
+        (p1_out[6] ? keyboard_matrix[55:48] : 8'h00) |
+        (p1_out[7] ? keyboard_matrix[63:56] : 8'h00);
 
     t8049_notri #(
         .gate_port_input_g(0)
@@ -54,7 +64,7 @@ module ql_ipc_t48(
         .psen_n_o(unused_psen_n),
         .wr_n_o(comctrl),
         .ale_o(unused_ale),
-        .db_i(8'h00),
+        .db_i(keyboard_data),
         .db_o(unused_db),
         .db_dir_o(unused_db_dir),
         .t1_i(1'b0),

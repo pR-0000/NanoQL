@@ -2,6 +2,7 @@ module ql_zx8302_lite(
     input  wire        clk,
     input  wire        reset,
     input  wire        vblank,
+    input  wire [63:0] keyboard_matrix,
 
     input  wire        write,
     input  wire [1:0]  addr,
@@ -36,6 +37,7 @@ module ql_zx8302_lite(
         .clk(clk),
         .reset(reset),
         .comdata_in(ipc_comdata_in),
+        .keyboard_matrix(keyboard_matrix),
         .comctrl(ipc_comctrl),
         .comdata_out(ipc_comdata_out),
         .audio(ipc_audio),
@@ -45,10 +47,10 @@ module ql_zx8302_lite(
     wire [7:0] irq_pending = {4'b0000, vsync_irq, 3'b000};
     wire [7:0] io_status = {comdata_to_cpu, ipc_busy[0], 6'b000000};
 
-    // The keyboard matrix is currently empty, so only the video interrupt is
-    // exposed to the 68000. IPC-generated key interrupts will be added with
-    // the first physical keyboard transport.
-    assign ipl_n = vsync_irq ? 3'b101 : 3'b111;
+    // Preserve the QL's 68008 IPL wiring while presenting three active-low
+    // inputs to fx68k. VBlank forces level 2; otherwise the IPC controls IPL.
+    wire [1:0] ql_ipl_n = {ipc_ipl[1] && !vsync_irq, ipc_ipl[0]};
+    assign ipl_n = {ql_ipl_n[0], ql_ipl_n[1], ql_ipl_n[0]};
     assign ipc_ready = ipc_transaction_seen && !ipc_busy[0];
 
     always @(*) begin
