@@ -1,5 +1,5 @@
-# QL IPC firmware / Firmware IPC QL
+# Firmware IPC QL / QL IPC firmware
 
-The OpenCores `t48` source is included, but its 8049 firmware is not. Run `tools/prepare_ql_ipc_rom.ps1` with a legally obtained 2 KiB Intel HEX firmware image. The generated `ql_ipc_rom.hex` is ignored by Git.
+Le cœur OpenCores `t48` est inclus. Utilisez `tools/nanoql_setup.py` pour convertir le fichier Intel HEX `ipc8049-hermes.hex` fourni par le core QL MiSTer. Hermes est recommandé pour améliorer l’anti-rebond et le roulement de touches.
 
-Le cœur OpenCores `t48` est inclus, mais pas son firmware 8049. Lancez `tools/prepare_ql_ipc_rom.ps1` avec une image Intel HEX de 2 Kio obtenue légalement. Le fichier généré `ql_ipc_rom.hex` est ignoré par Git.
+The OpenCores `t48` source is included. Use `tools/nanoql_setup.py` to convert the `ipc8049-hermes.hex` Intel HEX file supplied by the MiSTer QL core. Hermes is recommended for improved debouncing and key rollover.

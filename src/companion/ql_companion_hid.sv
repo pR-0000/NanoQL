@@ -9,7 +9,8 @@ module ql_companion_hid (
     input  wire [7:0]  data_in,
     output reg  [7:0]  data_out,
     output wire [63:0] matrix,
-    output reg         key_event
+    output reg         key_event,
+    output reg         key_press_event
 );
 
     reg [3:0] state;
@@ -85,8 +86,10 @@ module ql_companion_hid (
             modifiers <= 6'd0;
             special <= 11'd0;
             key_event <= 1'b0;
+            key_press_event <= 1'b0;
         end else begin
             key_event <= 1'b0;
+            key_press_event <= 1'b0;
             if (data_strobe) begin
                 if (data_start) begin
                     state <= 4'd0;
@@ -109,6 +112,7 @@ module ql_companion_hid (
                     // data and are intentionally ignored.
                     if ((command == 8'd1) && (state == 4'd0)) begin
                         key_event <= 1'b1;
+                        key_press_event <= !data_in[7];
                         case (data_in[6:0])
                             // A-Z
                             7'h04: ql_matrix[36] <= !data_in[7];

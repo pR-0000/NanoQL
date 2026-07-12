@@ -1,7 +1,7 @@
 set ipc_rom_data_file src/ipc/ql_ipc_rom.hex
 
 if {![file exists $ipc_rom_data_file]} {
-    error "Missing src/ipc/ql_ipc_rom.hex. Run tools/prepare_ql_ipc_rom.ps1 with your own 8049 IPC firmware dump first."
+    error "Missing src/ipc/ql_ipc_rom.hex. Use tools/nanoql_setup.py to convert MiSTer's ipc8049-hermes.hex first."
 }
 
 set rom_source src/ql_sd_boot_rom.sv

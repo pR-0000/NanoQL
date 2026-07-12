@@ -43,6 +43,8 @@ module ql_sdram_memory(
     localparam [3:0] ST_CLIENT_WAIT   = 4'd6;
     localparam [3:0] ST_REFRESH_START = 4'd7;
     localparam [3:0] ST_REFRESH_WAIT  = 4'd8;
+    localparam [3:0] ST_BYTE_WRITE_START = 4'd9;
+    localparam [3:0] ST_BYTE_WRITE_WAIT  = 4'd10;
 
     localparam [1:0] RESUME_WRITE  = 2'd0;
     localparam [1:0] RESUME_VERIFY = 2'd1;
@@ -63,6 +65,10 @@ module ql_sdram_memory(
     reg [1:0] ram_ds;
     reg ram_refresh;
     reg transaction_system;
+    reg byte_write_pending;
+    reg [21:0] byte_write_addr;
+    reg [15:0] byte_write_data;
+    reg [1:0] byte_write_ds;
     wire ram_ready;
 
     wire [15:0] init_pattern;
@@ -125,6 +131,10 @@ module ql_sdram_memory(
             ram_ds <= 2'b00;
             ram_refresh <= 1'b0;
             transaction_system <= 1'b0;
+            byte_write_pending <= 1'b0;
+            byte_write_addr <= 22'd0;
+            byte_write_data <= 16'd0;
+            byte_write_ds <= 2'b00;
             client_data_valid <= 1'b0;
             client_data <= 16'd0;
             system_data_valid <= 1'b0;
@@ -231,9 +241,22 @@ module ql_sdram_memory(
                         state <= ST_CLIENT_WAIT;
                     end else if (system_req && !init_fail) begin
                         ram_addr <= system_addr;
-                        ram_din <= system_wdata;
-                        ram_we <= system_we;
-                        ram_ds <= system_ds;
+                        if (system_we && (system_ds != 2'b00)) begin
+                            // Perform byte writes as an atomic read-modify-write.
+                            // This keeps CPU byte lanes coherent independently of
+                            // the external SDRAM controller's DQM implementation.
+                            byte_write_pending <= 1'b1;
+                            byte_write_addr <= system_addr;
+                            byte_write_data <= system_wdata;
+                            byte_write_ds <= system_ds;
+                            ram_we <= 1'b0;
+                            ram_ds <= 2'b00;
+                        end else begin
+                            byte_write_pending <= 1'b0;
+                            ram_din <= system_wdata;
+                            ram_we <= system_we;
+                            ram_ds <= system_ds;
+                        end
                         ram_refresh <= 1'b0;
                         ram_cs <= 1'b1;
                         transaction_system <= 1'b1;
@@ -245,15 +268,43 @@ module ql_sdram_memory(
                 ST_CLIENT_WAIT: begin
                     if (wait_count == 4'd8) begin
                         ram_cs <= 1'b0;
-                        if (transaction_system) begin
+                        if (transaction_system && byte_write_pending) begin
+                            state <= ST_BYTE_WRITE_START;
+                        end else if (transaction_system) begin
                             if (!ram_we) begin
                                 system_data <= ram_dout;
                                 system_data_valid <= 1'b1;
                             end
+                            state <= ST_CLIENT_IDLE;
                         end else begin
                             client_data <= ram_dout;
                             client_data_valid <= 1'b1;
+                            state <= ST_CLIENT_IDLE;
                         end
+                    end else begin
+                        wait_count <= wait_count + 4'd1;
+                    end
+                end
+
+                ST_BYTE_WRITE_START: begin
+                    ram_addr <= byte_write_addr;
+                    ram_din <= {
+                        byte_write_ds[1] ? ram_dout[15:8] : byte_write_data[15:8],
+                        byte_write_ds[0] ? ram_dout[7:0]  : byte_write_data[7:0]
+                    };
+                    ram_we <= 1'b1;
+                    ram_ds <= 2'b00;
+                    ram_refresh <= 1'b0;
+                    ram_cs <= 1'b1;
+                    wait_count <= 4'd0;
+                    state <= ST_BYTE_WRITE_WAIT;
+                end
+
+                ST_BYTE_WRITE_WAIT: begin
+                    if (wait_count == 4'd8) begin
+                        ram_cs <= 1'b0;
+                        ram_we <= 1'b0;
+                        byte_write_pending <= 1'b0;
                         state <= ST_CLIENT_IDLE;
                     end else begin
                         wait_count <= wait_count + 4'd1;

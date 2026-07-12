@@ -132,6 +132,7 @@ module nanoql_top(
     wire [7:0] companion_sd_data;
     wire [63:0] companion_keyboard_matrix;
     wire companion_key_event;
+    wire companion_key_press_event;
     wire companion_miso;
     wire companion_sd_irq;
     wire companion_sd_iack;
@@ -231,7 +232,8 @@ module nanoql_top(
         .data_in(mcu_data),
         .data_out(companion_hid_data),
         .matrix(companion_keyboard_matrix),
-        .key_event(companion_key_event)
+        .key_event(companion_key_event),
+        .key_press_event(companion_key_press_event)
     );
 
     always @(posedge clk_pixel) begin
@@ -384,6 +386,11 @@ module nanoql_top(
         .system_data(bus_mem_data)
     );
 
+    wire cpu_run_enable = sdram_init_done && !sdram_init_fail &&
+                          (!rom_is_dynamic ||
+                           (rom_load_done &&
+                            (companion_system_reset == 2'd0)));
+
     ql_memory_map memory_map (
         .clk(clk_pixel),
         .reset(video_reset),
@@ -431,9 +438,7 @@ module nanoql_top(
     ql_cpu_fx68k ql_cpu (
         .clk(clk_pixel),
         .reset(video_reset),
-        .enable(sdram_init_done && !sdram_init_fail &&
-                (!rom_is_dynamic ||
-                 (rom_load_done && (companion_system_reset == 2'd0)))),
+        .enable(cpu_run_enable),
         .cpu_addr(cpu_addr),
         .cpu_data_out(cpu_data_out),
         .cpu_data_in(cpu_data_in),
@@ -557,6 +562,290 @@ module nanoql_top(
                         (boot_row_steps && boot_step_fill) ||
                         (boot_row_progress && boot_progress_fill)));
     wire [23:0] companion_diag_rgb = boot_white ? 24'hffffff : 24'h000000;
+
+    // After a USB key event, briefly expose the four stages needed by QDOS:
+    // HID event, non-empty matrix, 50 Hz IRQ acknowledgement, IPC command.
+    wire vblank_ack_pulse = zx8302_wr && (zx8302_addr == 2'b10) &&
+                            !zx8302_ds[0] && zx8302_wdata[3];
+    wire ipc_command_pulse = zx8302_wr && (zx8302_addr == 2'b01) &&
+                             !zx8302_ds[0];
+    reg [15:0] vblank_ack_count = 16'd0;
+    reg [15:0] ipc_command_count = 16'd0;
+    reg [15:0] key_vblank_snapshot = 16'd0;
+    reg [15:0] key_ipc_snapshot = 16'd0;
+    reg [26:0] keyboard_diag_timer = 27'd0;
+    reg [25:0] keyboard_diag_collect_timer = 26'd0;
+    reg keyboard_diag_collecting = 1'b0;
+    reg keyboard_matrix_seen = 1'b0;
+    reg [15:0] ipc_write_idle = 16'hffff;
+    reg [1:0] ipc_command_bit_count = 2'd0;
+    reg [3:0] ipc_command_shift = 4'd0;
+    reg ipc_status_command_seen = 1'b0;
+    reg ipc_keyboard_command_seen = 1'b0;
+    reg ipc_keyboard_response = 1'b0;
+    reg [4:0] ipc_keyboard_read_count = 5'd0;
+    reg [7:0] ipc_keyboard_keycode_shift = 8'd0;
+    reg [7:0] ipc_keyboard_keycode = 8'd0;
+    reg ipc_data_read_armed = 1'b0;
+    reg [3:0] ipc_keyboard_count_shift = 4'd0;
+    reg [3:0] ipc_keyboard_count = 4'd0;
+    reg [3:0] ipc_keyboard_modifier_shift = 4'd0;
+    reg [3:0] ipc_keyboard_modifier = 4'd0;
+    reg [24:0] qdos_monitor_timer = 25'd0;
+    reg qdos_ascii_write_seen = 1'b0;
+    reg qdos_ascii_read_seen = 1'b0;
+    reg qdos_screen_write_seen = 1'b0;
+    reg [21:0] qdos_ascii_address = 22'd0;
+    reg [1:0] qdos_ascii_ds = 2'b11;
+    reg ipc_keyboard_result_latched = 1'b0;
+
+    wire zx8302_status_read = bus_mem_data_valid && !bus_mem_we &&
+                              (bus_mem_addr == 22'h00c010) &&
+                              !bus_mem_ds[1];
+    wire ipc_serial_data_read = zx8302_status_read && ipc_data_read_armed;
+    wire [3:0] ipc_command_next = {ipc_command_shift[2:0],
+                                   zx8302_wdata[1]};
+    wire [3:0] ipc_keyboard_count_next = {
+        ipc_keyboard_count_shift[2:0], bus_mem_data[15]
+    };
+    wire cpu_write_p = bus_mem_req && bus_mem_we &&
+                       (bus_mem_addr >= 22'h010000) &&
+                       (bus_mem_addr <= 22'h01ffff) &&
+                       ((bus_mem_ds == 2'b01) ||
+                        (bus_mem_ds == 2'b10)) &&
+                       ((!bus_mem_ds[1] &&
+                         ((bus_mem_wdata[15:8] == 8'h70) ||
+                          (bus_mem_wdata[15:8] == 8'h50))) ||
+                        (!bus_mem_ds[0] &&
+                         ((bus_mem_wdata[7:0] == 8'h70) ||
+                          (bus_mem_wdata[7:0] == 8'h50))));
+    wire cpu_read_p = bus_mem_data_valid && !bus_mem_we &&
+                      (bus_mem_addr >= 22'h010000) &&
+                      (bus_mem_addr <= 22'h01ffff) &&
+                      ((bus_mem_ds == 2'b01) ||
+                       (bus_mem_ds == 2'b10)) &&
+                      ((!bus_mem_ds[1] &&
+                        ((bus_mem_data[15:8] == 8'h70) ||
+                         (bus_mem_data[15:8] == 8'h50))) ||
+                       (!bus_mem_ds[0] &&
+                        ((bus_mem_data[7:0] == 8'h70) ||
+                         (bus_mem_data[7:0] == 8'h50))));
+    wire cpu_screen_write = bus_mem_req && bus_mem_we &&
+                            (bus_mem_addr >= 22'h010000) &&
+                            (bus_mem_addr <= 22'h013fff);
+
+    always @(posedge clk_pixel or posedge video_reset) begin
+        if (video_reset) begin
+            vblank_ack_count <= 16'd0;
+            ipc_command_count <= 16'd0;
+            key_vblank_snapshot <= 16'd0;
+            key_ipc_snapshot <= 16'd0;
+            keyboard_diag_timer <= 27'd0;
+            keyboard_diag_collect_timer <= 26'd0;
+            keyboard_diag_collecting <= 1'b0;
+            keyboard_matrix_seen <= 1'b0;
+            ipc_write_idle <= 16'hffff;
+            ipc_command_bit_count <= 2'd0;
+            ipc_command_shift <= 4'd0;
+            ipc_status_command_seen <= 1'b0;
+            ipc_keyboard_command_seen <= 1'b0;
+            ipc_keyboard_response <= 1'b0;
+            ipc_keyboard_read_count <= 5'd0;
+            ipc_keyboard_keycode_shift <= 8'd0;
+            ipc_keyboard_keycode <= 8'd0;
+            ipc_data_read_armed <= 1'b0;
+            ipc_keyboard_count_shift <= 4'd0;
+            ipc_keyboard_count <= 4'd0;
+            ipc_keyboard_modifier_shift <= 4'd0;
+            ipc_keyboard_modifier <= 4'd0;
+            qdos_monitor_timer <= 25'd0;
+            qdos_ascii_write_seen <= 1'b0;
+            qdos_ascii_read_seen <= 1'b0;
+            qdos_screen_write_seen <= 1'b0;
+            qdos_ascii_address <= 22'd0;
+            qdos_ascii_ds <= 2'b11;
+            ipc_keyboard_result_latched <= 1'b0;
+        end else begin
+            if (vblank_ack_pulse)
+                vblank_ack_count <= vblank_ack_count + 16'd1;
+            if (ipc_command_pulse)
+                ipc_command_count <= ipc_command_count + 16'd1;
+
+            if (ipc_command_pulse) begin
+                ipc_data_read_armed <= 1'b0;
+                ipc_write_idle <= 16'd0;
+                if (ipc_write_idle == 16'hffff) begin
+                    ipc_command_bit_count <= 2'd1;
+                    ipc_command_shift <= {3'b000, zx8302_wdata[1]};
+                end else begin
+                    ipc_command_shift <= ipc_command_next;
+                    ipc_command_bit_count <= ipc_command_bit_count + 2'd1;
+                    if (ipc_command_bit_count == 2'd3) begin
+                        ipc_command_bit_count <= 2'd0;
+                        if (ipc_command_next == 4'h1) begin
+                            ipc_status_command_seen <= 1'b1;
+                            ipc_keyboard_response <= 1'b0;
+                        end
+                        if (ipc_command_next == 4'h8) begin
+                            ipc_keyboard_command_seen <= 1'b1;
+                            ipc_keyboard_response <= 1'b1;
+                            ipc_keyboard_read_count <= 5'd0;
+                        end
+                    end
+                end
+            end else if (ipc_write_idle != 16'hffff) begin
+                ipc_write_idle <= ipc_write_idle + 16'd1;
+            end
+
+            // QDOS polls IPC BUSY with BTST, then performs a separate read
+            // of the same byte to consume COMDATA. Count only that final read.
+            if (!ipc_command_pulse && zx8302_status_read) begin
+                if (ipc_data_read_armed)
+                    ipc_data_read_armed <= 1'b0;
+                else if (!bus_mem_data[14])
+                    ipc_data_read_armed <= 1'b1;
+            end
+
+            if (ipc_keyboard_response && ipc_serial_data_read &&
+                (ipc_keyboard_read_count != 5'h1f)) begin
+                ipc_keyboard_read_count <= ipc_keyboard_read_count + 5'd1;
+                if (ipc_keyboard_read_count <= 5'd3)
+                    ipc_keyboard_count_shift <= {
+                        ipc_keyboard_count_shift[2:0], bus_mem_data[15]
+                    };
+                if ((ipc_keyboard_read_count == 5'd3) &&
+                    !ipc_keyboard_result_latched &&
+                    (ipc_keyboard_count_next[2:0] != 3'd0))
+                    ipc_keyboard_count <= ipc_keyboard_count_next;
+                if ((ipc_keyboard_read_count >= 5'd4) &&
+                    (ipc_keyboard_read_count <= 5'd7))
+                    ipc_keyboard_modifier_shift <= {
+                        ipc_keyboard_modifier_shift[2:0], bus_mem_data[15]
+                    };
+                if ((ipc_keyboard_read_count == 5'd7) &&
+                    !ipc_keyboard_result_latched)
+                    ipc_keyboard_modifier <= {
+                        ipc_keyboard_modifier_shift[2:0], bus_mem_data[15]
+                    };
+                if ((ipc_keyboard_read_count >= 5'd8) &&
+                    (ipc_keyboard_read_count <= 5'd15))
+                    ipc_keyboard_keycode_shift <= {
+                        ipc_keyboard_keycode_shift[6:0], bus_mem_data[15]
+                    };
+                if ((ipc_keyboard_read_count == 5'd15) &&
+                    !ipc_keyboard_result_latched) begin
+                    ipc_keyboard_keycode <= {
+                        ipc_keyboard_keycode_shift[6:0], bus_mem_data[15]
+                    };
+                    ipc_keyboard_result_latched <= 1'b1;
+                    keyboard_diag_collecting <= 1'b0;
+                    qdos_monitor_timer <= 25'h1ffffff;
+                end
+            end
+
+            if (qdos_monitor_timer != 25'd0) begin
+                qdos_monitor_timer <= qdos_monitor_timer - 25'd1;
+                if (cpu_write_p && !qdos_ascii_write_seen) begin
+                    qdos_ascii_write_seen <= 1'b1;
+                    qdos_ascii_address <= bus_mem_addr;
+                    qdos_ascii_ds <= bus_mem_ds;
+                end
+                if (cpu_read_p && qdos_ascii_write_seen &&
+                    (bus_mem_addr == qdos_ascii_address) &&
+                    (bus_mem_ds == qdos_ascii_ds))
+                    qdos_ascii_read_seen <= 1'b1;
+                if (qdos_ascii_read_seen && cpu_screen_write)
+                    qdos_screen_write_seen <= 1'b1;
+                if (qdos_monitor_timer == 25'd1)
+                    keyboard_diag_timer <= 27'h7ffffff;
+            end
+
+            if (keyboard_diag_timer != 27'd0)
+                keyboard_diag_timer <= keyboard_diag_timer - 27'd1;
+
+            if (keyboard_diag_collecting) begin
+                if (|companion_keyboard_matrix)
+                    keyboard_matrix_seen <= 1'b1;
+                if (keyboard_diag_collect_timer != 26'd0)
+                    keyboard_diag_collect_timer <=
+                        keyboard_diag_collect_timer - 26'd1;
+                else begin
+                    keyboard_diag_collecting <= 1'b0;
+                    keyboard_diag_timer <= 27'h7ffffff;
+                end
+            end
+
+            if (companion_key_press_event) begin
+                keyboard_diag_timer <= 27'd0;
+                keyboard_diag_collect_timer <= 26'h3ffffff;
+                keyboard_diag_collecting <= 1'b1;
+                keyboard_matrix_seen <= |companion_keyboard_matrix;
+                key_vblank_snapshot <= vblank_ack_count;
+                key_ipc_snapshot <= ipc_command_count;
+                ipc_status_command_seen <= 1'b0;
+                ipc_keyboard_command_seen <= 1'b0;
+                ipc_keyboard_response <= 1'b0;
+                ipc_keyboard_read_count <= 5'd0;
+                ipc_keyboard_keycode_shift <= 8'd0;
+                ipc_keyboard_keycode <= 8'd0;
+                ipc_keyboard_count_shift <= 4'd0;
+                ipc_keyboard_count <= 4'd0;
+                ipc_keyboard_modifier_shift <= 4'd0;
+                ipc_keyboard_modifier <= 4'd0;
+                qdos_monitor_timer <= 25'd0;
+                qdos_ascii_write_seen <= 1'b0;
+                qdos_ascii_read_seen <= 1'b0;
+                qdos_screen_write_seen <= 1'b0;
+                qdos_ascii_address <= 22'd0;
+                qdos_ascii_ds <= 2'b11;
+                ipc_keyboard_result_latched <= 1'b0;
+            end
+        end
+    end
+
+    wire [3:0] keyboard_diag_bits = {
+        1'b1,
+        keyboard_matrix_seen,
+        vblank_ack_count != key_vblank_snapshot,
+        ipc_command_count != key_ipc_snapshot
+    };
+    wire [3:0] qdos_keyboard_bits = {
+        ipc_keyboard_count[2:0] != 3'd0,
+        qdos_ascii_write_seen,
+        qdos_ascii_read_seen,
+        qdos_screen_write_seen
+    };
+    wire [3:0] keyboard_keycode_high = ipc_keyboard_keycode[7:4];
+    wire [3:0] keyboard_keycode_low = ipc_keyboard_keycode[3:0];
+    wire keyboard_diag_area = (keyboard_diag_timer != 27'd0) &&
+                              (x >= 11'd232) && (x < 11'd488) &&
+                              (y >= 10'd32) && (y < 10'd352);
+    wire [1:0] keyboard_diag_slot = (x - 11'd232) >> 6;
+    wire [5:0] keyboard_diag_cell_x = (x - 11'd232) & 11'h03f;
+    wire [5:0] keyboard_diag_cell_y = (y - 10'd32) & 10'h03f;
+    wire [2:0] keyboard_diag_row = (y - 10'd32) >> 6;
+    wire keyboard_diag_border = (keyboard_diag_cell_x < 6'd3) ||
+                                (keyboard_diag_cell_x >= 6'd61) ||
+                                (keyboard_diag_cell_y < 6'd3) ||
+                                (keyboard_diag_cell_y >= 6'd61);
+    reg keyboard_diag_value;
+    always @(*) begin
+        case (keyboard_diag_row)
+            3'd0: keyboard_diag_value =
+                    qdos_keyboard_bits[3 - keyboard_diag_slot];
+            3'd1: keyboard_diag_value =
+                    ipc_keyboard_count[3 - keyboard_diag_slot];
+            3'd2: keyboard_diag_value =
+                    ipc_keyboard_modifier[3 - keyboard_diag_slot];
+            3'd3: keyboard_diag_value =
+                    keyboard_keycode_high[3 - keyboard_diag_slot];
+            default: keyboard_diag_value =
+                    keyboard_keycode_low[3 - keyboard_diag_slot];
+        endcase
+    end
+    wire [23:0] keyboard_diag_rgb = keyboard_diag_border ? 24'hffffff :
+                                    keyboard_diag_value ? 24'h20e060 :
+                                                          24'h000000;
 
     wire [23:0] hdmi_rgb = dynamic_rom_wait ? companion_diag_rgb :
                            memory_status_area ? memory_status_rgb : rgb;

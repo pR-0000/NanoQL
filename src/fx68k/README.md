@@ -1,8 +1,8 @@
 # fx68k
+
 FX68K 68000 cycle accurate SystemVerilog core
 
-Copyright (c) 2018 by Jorge Cwik
-fx68k@fxatari.com
+Copyright (c) 2018 by Jorge Cwik fx68k@fxatari.com
 
 FX68K is a 68000 cycle exact compatible core. At least in theory, it should be impossible to distinguish functionally from a real 68K processor.
 

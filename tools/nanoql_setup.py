@@ -24,11 +24,7 @@ except ImportError as error:
 REPOSITORY = Path(__file__).resolve().parent.parent
 TOOLS = REPOSITORY / "tools"
 CREATE_NO_WINDOW = 0x08000000 if platform.system() == "Windows" else 0
-BUILD_VARIANTS = {
-    "microSD ROM": ("build_sd_rom.tcl", "NanoQL_sd_rom.fs"),
-    "Diagnostic": ("build.tcl", "NanoQL.fs"),
-    "Local ROM": ("build_system_rom.tcl", "NanoQL_system_rom.fs"),
-}
+BUILD_SCRIPT = "build_sd_rom.tcl"
 
 
 def find_gowin() -> str:
@@ -62,7 +58,6 @@ class NanoQLSetup(tk.Tk):
         self.ipc_path = tk.StringVar()
         self.gowin_path = tk.StringVar(value=find_gowin())
         self.loader_path = tk.StringVar(value=shutil.which("openFPGALoader") or "")
-        self.build_variant = tk.StringVar(value="microSD ROM")
         self.bitstream_path = tk.StringVar(
             value=str(REPOSITORY / "impl" / "pnr" / "NanoQL_sd_rom.fs")
         )
@@ -161,7 +156,7 @@ class NanoQLSetup(tk.Tk):
         parent.columnconfigure(1, weight=1)
         self._path_row(parent, 0, "ROM QL 48/64 Kio", self.rom_path, self._browse_rom)
         self._path_row(parent, 1, "Racine microSD", self.sd_path, self._browse_sd)
-        self._path_row(parent, 2, "Firmware IPC Intel HEX", self.ipc_path, self._browse_ipc)
+        self._path_row(parent, 2, "Firmware IPC Hermes Intel HEX", self.ipc_path, self._browse_ipc)
 
         actions = ttk.Frame(parent)
         actions.grid(row=3, column=0, columnspan=3, sticky="w", pady=(18, 8))
@@ -186,28 +181,15 @@ class NanoQLSetup(tk.Tk):
             parent, 1, "openFPGALoader", self.loader_path, self._browse_loader
         )
 
-        ttk.Label(parent, text="Variante / Build", style="Section.TLabel").grid(
+        ttk.Label(parent, text="Bitstream", style="Section.TLabel").grid(
             row=2, column=0, sticky="w", pady=8
         )
-        variant = ttk.Combobox(
-            parent,
-            textvariable=self.build_variant,
-            values=tuple(BUILD_VARIANTS),
-            state="readonly",
-            width=24,
-        )
-        variant.grid(row=2, column=1, sticky="w", pady=8)
-        variant.bind("<<ComboboxSelected>>", lambda _event: self._update_bitstream())
-
-        ttk.Label(parent, text="Bitstream", style="Section.TLabel").grid(
-            row=3, column=0, sticky="w", pady=8
-        )
         ttk.Entry(parent, textvariable=self.bitstream_path, state="readonly").grid(
-            row=3, column=1, columnspan=2, sticky="ew", pady=8
+            row=2, column=1, columnspan=2, sticky="ew", pady=8
         )
 
         actions = ttk.Frame(parent)
-        actions.grid(row=4, column=0, columnspan=3, sticky="w", pady=(18, 8))
+        actions.grid(row=3, column=0, columnspan=3, sticky="w", pady=(18, 8))
         self._button(actions, "Compiler", self.build_fpga).pack(side="left", padx=(0, 8))
         self._button(actions, "Programmer SRAM", lambda: self.program_fpga(False)).pack(
             side="left", padx=(0, 8)
@@ -226,7 +208,7 @@ class NanoQLSetup(tk.Tk):
                 "au firmware BL616 normal de démarrer Companion sans ordinateur."
             ),
             wraplength=760,
-        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
     def _path_row(
         self,
@@ -263,7 +245,7 @@ class NanoQLSetup(tk.Tk):
 
     def _browse_ipc(self) -> None:
         path = filedialog.askopenfilename(
-            title="Sélectionner le firmware IPC", filetypes=(("Intel HEX", "*.hex"), ("Tous", "*"))
+            title="Sélectionner ipc8049-hermes.hex", filetypes=(("Intel HEX", "*.hex"), ("Tous", "*"))
         )
         if path:
             self.ipc_path.set(path)
@@ -330,29 +312,23 @@ class NanoQLSetup(tk.Tk):
 
     def prepare_ipc(self) -> None:
         if not self.ipc_path.get():
-            messagebox.showerror("Champ manquant", "Sélectionnez le firmware IPC Intel HEX.")
+            messagebox.showerror("Champ manquant", "Sélectionnez le firmware Hermes ipc8049-hermes.hex.")
             return
         self._run(
             [sys.executable, str(TOOLS / "prepare_ql_ipc_rom.py"), self.ipc_path.get()],
             "Conversion du firmware IPC",
         )
 
-    def _update_bitstream(self) -> None:
-        _, output = BUILD_VARIANTS[self.build_variant.get()]
-        self.bitstream_path.set(str(REPOSITORY / "impl" / "pnr" / output))
-
     def build_fpga(self) -> None:
         gowin = self.gowin_path.get()
         if not gowin or not Path(gowin).is_file():
             messagebox.showerror("Gowin introuvable", "Sélectionnez un exécutable gw_sh valide.")
             return
-        build_script, _ = BUILD_VARIANTS[self.build_variant.get()]
-        if self.build_variant.get() in ("microSD ROM", "Local ROM"):
-            ipc = REPOSITORY / "src" / "ipc" / "ql_ipc_rom.hex"
-            if not ipc.is_file():
-                messagebox.showerror("IPC manquant", "Convertissez d'abord le firmware IPC.")
-                return
-        self._run([gowin, build_script], f"Compilation {self.build_variant.get()}")
+        ipc = REPOSITORY / "src" / "ipc" / "ql_ipc_rom.hex"
+        if not ipc.is_file():
+            messagebox.showerror("IPC manquant", "Convertissez d'abord le firmware IPC.")
+            return
+        self._run([gowin, BUILD_SCRIPT], "Compilation NanoQL")
 
     def prepare_and_build(self) -> None:
         gowin = self.gowin_path.get()
@@ -366,7 +342,7 @@ class NanoQLSetup(tk.Tk):
         if not self.ipc_path.get() and not ipc_output.is_file():
             messagebox.showerror(
                 "IPC manquant",
-                "Sélectionnez le firmware IPC Intel HEX au premier lancement.",
+                "Sélectionnez le firmware Hermes ipc8049-hermes.hex au premier lancement.",
             )
             return
 
@@ -384,8 +360,6 @@ class NanoQLSetup(tk.Tk):
             ]
         )
         commands.append([gowin, "build_sd_rom.tcl"])
-        self.build_variant.set("microSD ROM")
-        self._update_bitstream()
         self._run_commands(commands, "Préparation et compilation microSD")
 
     def program_fpga(self, persistent: bool) -> None:
