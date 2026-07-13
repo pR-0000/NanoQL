@@ -28,7 +28,7 @@ jobs:
             filename: nanoql_link_nano20k_v3923.bin
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install build prerequisites
         run: sudo apt-get update && sudo apt-get install -y cmake make ninja-build
@@ -63,7 +63,7 @@ jobs:
           test -n "$firmware"
           cp "$firmware" "artifact/${{ matrix.filename }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: artifact/${{ matrix.filename }}
