@@ -15,6 +15,7 @@
 #define CONFIG_USBDEV_MAX_BUS 1
 #define CONFIG_USBDEV_EP_NUM 8
 #define CONFIG_USB_MUSB_EP_NUM 8
+#define CONFIG_USB_EHCI_HCOR_RESERVED_DISABLE
 #define CONFIG_USB_HS
 
 #define usb_phyaddr2ramaddr(address) (address)
