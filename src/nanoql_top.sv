@@ -79,6 +79,7 @@ module nanoql_top(
     wire [1:0] zx8302_ds;
     wire [15:0] zx8302_wdata;
     wire [15:0] zx8302_rdata;
+    wire zx8302_write_done;
     wire [2:0] cpu_ipl_n;
     wire zx8302_ipc_ready;
     wire bus_mem_req;
@@ -89,8 +90,14 @@ module nanoql_top(
     wire bus_mem_ready;
     wire bus_mem_data_valid;
     wire [15:0] bus_mem_data;
+    wire bus_mem_write_done;
     wire rom_is_diagnostic;
     wire rom_is_dynamic;
+    wire mapped_rom_req;
+    wire [14:0] mapped_rom_addr;
+    wire mapped_rom_ready;
+    wire mapped_rom_data_valid;
+    wire [15:0] mapped_rom_data;
     wire mapped_sdram_req;
     wire mapped_sdram_we;
     wire [21:0] mapped_sdram_addr;
@@ -99,6 +106,7 @@ module nanoql_top(
     wire mapped_sdram_ready;
     wire mapped_sdram_data_valid;
     wire [15:0] mapped_sdram_data;
+    wire mapped_sdram_write_done;
     wire sdram_system_req;
     wire sdram_system_we;
     wire [21:0] sdram_system_addr;
@@ -107,6 +115,7 @@ module nanoql_top(
     wire sdram_system_ready;
     wire sdram_system_data_valid;
     wire [15:0] sdram_system_data;
+    wire sdram_system_write_done;
     wire [23:0] cpu_addr;
     wire [15:0] cpu_data_out;
     wire [15:0] cpu_data_in;
@@ -115,11 +124,25 @@ module nanoql_top(
     wire cpu_uds_n;
     wire cpu_lds_n;
     wire cpu_dtack_n;
+    wire [2:0] cpu_fc;
+    wire cpu_ce_bus_p;
+    wire cpu_ce_bus_n;
+    reg ipc_ce_11m;
+    reg [15:0] ipc_ce_accumulator;
+    wire ram_delay_dtack;
     wire cpu_boot_fail;
     wire cpu_boot_done;
     wire cpu_stress_pass_pulse;
     wire sdram_init_done;
     wire sdram_init_fail;
+    wire ql_native_ce;
+    wire ql_native_hs;
+    wire ql_native_vs;
+    wire ql_native_active;
+    wire ql_native_vblank;
+    wire ql_native_frame;
+    wire [9:0] ql_native_h;
+    wire [9:0] ql_native_v;
 
     wire mcu_sys_strobe;
     wire mcu_hid_strobe;
@@ -162,31 +185,49 @@ module nanoql_top(
     wire rom_loader_ready;
     wire rom_loader_data_valid;
     wire [15:0] rom_loader_data;
+    wire rom_loader_write_done;
+    wire rom_store_req;
+    wire rom_store_we;
+    wire [14:0] rom_store_addr;
+    wire [15:0] rom_store_wdata;
+    wire rom_store_ready;
+    wire rom_store_data_valid;
+    wire [15:0] rom_store_data;
+    wire rom_store_write_done;
     wire rom_loading;
     wire rom_load_done;
     wire rom_load_fail;
     wire [7:0] rom_sector_progress;
-    wire rom_loader_owns_sdram = rom_is_dynamic && !rom_load_done;
+    wire rom_loader_owns_store = rom_is_dynamic && !rom_load_done;
 
-    assign sdram_system_req = rom_loader_owns_sdram ?
-                              rom_loader_req : mapped_sdram_req;
-    assign sdram_system_we = rom_loader_owns_sdram ?
-                             rom_loader_we : mapped_sdram_we;
-    assign sdram_system_addr = rom_loader_owns_sdram ?
-                               rom_loader_addr : mapped_sdram_addr;
-    assign sdram_system_ds = rom_loader_owns_sdram ?
-                             rom_loader_ds : mapped_sdram_ds;
-    assign sdram_system_wdata = rom_loader_owns_sdram ?
-                                rom_loader_wdata : mapped_sdram_wdata;
-    assign mapped_sdram_ready = !rom_loader_owns_sdram &&
-                                sdram_system_ready;
-    assign mapped_sdram_data_valid = !rom_loader_owns_sdram &&
-                                     sdram_system_data_valid;
+    // Keep QL RAM/video in SDRAM. The runtime-loaded ROM has its own BSRAM,
+    // matching the separate dpram ROM path used by QL MiSTer.
+    assign sdram_system_req = mapped_sdram_req;
+    assign sdram_system_we = mapped_sdram_we;
+    assign sdram_system_addr = mapped_sdram_addr;
+    assign sdram_system_ds = mapped_sdram_ds;
+    assign sdram_system_wdata = mapped_sdram_wdata;
+    assign mapped_sdram_ready = sdram_system_ready;
+    assign mapped_sdram_data_valid = sdram_system_data_valid;
     assign mapped_sdram_data = sdram_system_data;
-    assign rom_loader_ready = rom_loader_owns_sdram && sdram_system_ready;
-    assign rom_loader_data_valid = rom_loader_owns_sdram &&
-                                   sdram_system_data_valid;
-    assign rom_loader_data = sdram_system_data;
+    assign mapped_sdram_write_done = sdram_system_write_done;
+
+    assign rom_store_req = rom_loader_owns_store ?
+                           rom_loader_req : mapped_rom_req;
+    assign rom_store_we = rom_loader_owns_store && rom_loader_we;
+    assign rom_store_addr = rom_loader_owns_store ?
+                            rom_loader_addr[14:0] : mapped_rom_addr;
+    assign rom_store_wdata = rom_loader_wdata;
+    assign mapped_rom_ready = !rom_loader_owns_store && rom_store_ready;
+    assign mapped_rom_data_valid = !rom_loader_owns_store &&
+                                   rom_store_data_valid;
+    assign mapped_rom_data = rom_store_data;
+    assign rom_loader_ready = rom_loader_owns_store && rom_store_ready;
+    assign rom_loader_data_valid = rom_loader_owns_store &&
+                                   rom_store_data_valid;
+    assign rom_loader_data = rom_store_data;
+    assign rom_loader_write_done = rom_loader_owns_store &&
+                                   rom_store_write_done;
 
     mcu_spi companion_spi (
         .clk(clk_pixel),
@@ -310,10 +351,24 @@ module nanoql_top(
         .mem_ready(rom_loader_ready),
         .mem_data_valid(rom_loader_data_valid),
         .mem_data(rom_loader_data),
+        .mem_write_done(rom_loader_write_done),
         .loading(rom_loading),
         .loaded(rom_load_done),
         .failed(rom_load_fail),
         .sector_progress(rom_sector_progress)
+    );
+
+    ql_sd_rom_memory rom_memory (
+        .clk(clk_pixel),
+        .reset(video_reset),
+        .req(rom_store_req),
+        .we(rom_store_we),
+        .addr(rom_store_addr),
+        .wdata(rom_store_wdata),
+        .ready(rom_store_ready),
+        .data_valid(rom_store_data_valid),
+        .data(rom_store_data),
+        .write_done(rom_store_write_done)
     );
 
     ql_sdram_memory sdram_memory (
@@ -332,6 +387,7 @@ module nanoql_top(
         .system_ready(sdram_system_ready),
         .system_data_valid(sdram_system_data_valid),
         .system_data(sdram_system_data),
+        .system_write_done(sdram_system_write_done),
         .sdram_clk(O_sdram_clk),
         .sdram_cke(O_sdram_cke),
         .sdram_cs_n(O_sdram_cs_n),
@@ -365,9 +421,56 @@ module nanoql_top(
         .y(y)
     );
 
+    wire ql_core_ready = sdram_init_done && !sdram_init_fail &&
+                         (!rom_is_dynamic ||
+                          (rom_load_done &&
+                           (companion_system_reset == 2'd0)));
+
+    // The MiSTer core keeps reset asserted for thousands of emulated bus
+    // cycles. Give fx68k, the 8049 and both ZX interfaces the same clean
+    // startup interval after RAM and the microSD ROM are ready.
+    reg [14:0] ql_reset_count = 15'h7fff;
+    always @(posedge clk_pixel) begin
+        if (video_reset || !ql_core_ready)
+            ql_reset_count <= 15'h7fff;
+        else if (ql_reset_count != 15'd0)
+            ql_reset_count <= ql_reset_count - 15'd1;
+    end
+
+    wire ql_system_reset = video_reset || (ql_reset_count != 15'd0);
+    wire cpu_run_enable = ql_core_ready && !ql_system_reset;
+
+    // 31.8 MHz * 22668 / 65536 = 11.0002 MHz. QL_MiSTer uses the same
+    // fractional-enable scheme for the 8049 rather than a coarse divider.
+    wire [16:0] ipc_ce_sum = {1'b0, ipc_ce_accumulator} + 17'd22668;
+    // Register the IPC enable one cycle before the T48 consumes it. This keeps
+    // MiSTer's phase separation while remaining in Gowin's primary domain.
+    always @(posedge clk_pixel) begin
+        if (ql_system_reset) begin
+            ipc_ce_accumulator <= 16'd0;
+            ipc_ce_11m <= 1'b0;
+        end else begin
+            ipc_ce_accumulator <= ipc_ce_sum[15:0];
+            ipc_ce_11m <= ipc_ce_sum[16];
+        end
+    end
+
+    ql_timing ql_bus_timing (
+        .clk_sys(clk_pixel),
+        .reset(ql_system_reset),
+        .enable(cpu_run_enable),
+        .ce_bus_p(cpu_ce_bus_p),
+        .vblank(ql_native_vblank),
+        .cpu_uds(!cpu_uds_n),
+        .cpu_lds(!cpu_lds_n),
+        .cpu_rw(cpu_rw),
+        .cpu_rom(cpu_addr[23:16] == 8'h00),
+        .ram_delay_dtack(ram_delay_dtack)
+    );
+
     ql_cpu_bus_bridge cpu_bus_bridge (
         .clk(clk_pixel),
-        .reset(video_reset),
+        .reset(ql_system_reset),
         .cpu_addr(cpu_addr),
         .cpu_data_out(cpu_data_out),
         .cpu_data_in(cpu_data_in),
@@ -375,7 +478,10 @@ module nanoql_top(
         .cpu_rw(cpu_rw),
         .cpu_uds_n(cpu_uds_n),
         .cpu_lds_n(cpu_lds_n),
+        .cpu_iack(cpu_fc == 3'b111),
         .cpu_dtack_n(cpu_dtack_n),
+        .timing_delay(ram_delay_dtack),
+        .ce_bus_p(cpu_ce_bus_p),
         .system_req(bus_mem_req),
         .system_we(bus_mem_we),
         .system_addr(bus_mem_addr),
@@ -383,17 +489,13 @@ module nanoql_top(
         .system_wdata(bus_mem_wdata),
         .system_ready(bus_mem_ready),
         .system_data_valid(bus_mem_data_valid),
-        .system_data(bus_mem_data)
+        .system_data(bus_mem_data),
+        .system_write_done(bus_mem_write_done)
     );
-
-    wire cpu_run_enable = sdram_init_done && !sdram_init_fail &&
-                          (!rom_is_dynamic ||
-                           (rom_load_done &&
-                            (companion_system_reset == 2'd0)));
 
     ql_memory_map memory_map (
         .clk(clk_pixel),
-        .reset(video_reset),
+        .reset(ql_system_reset),
         .bus_req(bus_mem_req),
         .bus_we(bus_mem_we),
         .bus_addr(bus_mem_addr),
@@ -402,8 +504,14 @@ module nanoql_top(
         .bus_ready(bus_mem_ready),
         .bus_data_valid(bus_mem_data_valid),
         .bus_data(bus_mem_data),
+        .bus_write_done(bus_mem_write_done),
         .rom_is_diagnostic(rom_is_diagnostic),
         .rom_is_dynamic(rom_is_dynamic),
+        .dynamic_rom_req(mapped_rom_req),
+        .dynamic_rom_addr(mapped_rom_addr),
+        .dynamic_rom_ready(mapped_rom_ready),
+        .dynamic_rom_data_valid(mapped_rom_data_valid),
+        .dynamic_rom_data(mapped_rom_data),
         .mc_stat_wr(zx8301_mc_stat_wr),
         .mc_stat_data(zx8301_mc_stat_data),
         .zx8302_wr(zx8302_wr),
@@ -411,6 +519,7 @@ module nanoql_top(
         .zx8302_ds(zx8302_ds),
         .zx8302_wdata(zx8302_wdata),
         .zx8302_rdata(zx8302_rdata),
+        .zx8302_write_done(zx8302_write_done),
         .ram_req(mapped_sdram_req),
         .ram_we(mapped_sdram_we),
         .ram_addr(mapped_sdram_addr),
@@ -418,26 +527,30 @@ module nanoql_top(
         .ram_wdata(mapped_sdram_wdata),
         .ram_ready(mapped_sdram_ready),
         .ram_data_valid(mapped_sdram_data_valid),
-        .ram_data(mapped_sdram_data)
+        .ram_data(mapped_sdram_data),
+        .ram_write_done(mapped_sdram_write_done)
     );
 
-    ql_zx8302_lite zx8302_lite (
+    ql_zx8302 zx8302 (
         .clk(clk_pixel),
-        .reset(video_reset),
-        .vblank(video_vblank),
+        .reset(ql_system_reset),
+        .ce_11m(ipc_ce_11m),
+        .ce_bus_n(cpu_ce_bus_n),
+        .vs(ql_native_vs),
         .keyboard_matrix(companion_keyboard_matrix),
-        .write(zx8302_wr),
-        .addr(zx8302_addr),
-        .ds(zx8302_ds),
-        .wdata(zx8302_wdata),
-        .rdata(zx8302_rdata),
+        .cpu_write(zx8302_wr),
+        .cpu_addr(zx8302_addr),
+        .cpu_ds_n(zx8302_ds),
+        .cpu_din(zx8302_wdata),
+        .cpu_write_done(zx8302_write_done),
+        .cpu_dout(zx8302_rdata),
         .ipl_n(cpu_ipl_n),
         .ipc_ready(zx8302_ipc_ready)
     );
 
     ql_cpu_fx68k ql_cpu (
         .clk(clk_pixel),
-        .reset(video_reset),
+        .reset(ql_system_reset),
         .enable(cpu_run_enable),
         .cpu_addr(cpu_addr),
         .cpu_data_out(cpu_data_out),
@@ -447,12 +560,15 @@ module nanoql_top(
         .cpu_uds_n(cpu_uds_n),
         .cpu_lds_n(cpu_lds_n),
         .cpu_dtack_n(cpu_dtack_n),
-        .cpu_ipl_n(cpu_ipl_n)
+        .cpu_ipl_n(cpu_ipl_n),
+        .cpu_fc(cpu_fc),
+        .ce_bus_p(cpu_ce_bus_p),
+        .ce_bus_n(cpu_ce_bus_n)
     );
 
     ql_cpu_boot_monitor cpu_boot_monitor (
         .clk(clk_pixel),
-        .reset(video_reset),
+        .reset(ql_system_reset),
         .cpu_addr(cpu_addr),
         .cpu_data_out(cpu_data_out),
         .cpu_as_n(cpu_as_n),
@@ -464,16 +580,6 @@ module nanoql_top(
         .boot_fail(cpu_boot_fail),
         .stress_pass_pulse(cpu_stress_pass_pulse)
     );
-
-
-    wire ql_native_ce;
-    wire ql_native_hs;
-    wire ql_native_vs;
-    wire ql_native_active;
-    wire ql_native_vblank;
-    wire ql_native_frame;
-    wire [9:0] ql_native_h;
-    wire [9:0] ql_native_v;
 
     ql_native_timing_probe ql_native_timing_probe (
         .clk_pixel(clk_pixel),
@@ -523,45 +629,55 @@ module nanoql_top(
                                     cpu_boot_done ?
                                       (stress_pass_phase ? 24'h20e060 : 24'h20a040) :
                                       24'hffc020;
-    // Dynamic-ROM builds use the complete visible output as a boot-status
-    // display. This remains visible even on monitors applying HDMI overscan.
+    // Dynamic-ROM builds use the complete visible output as a readable boot
+    // status display. The ROM mount event is retained by the loader, so a ROM
+    // announced while SDRAM initializes is retried automatically.
     wire dynamic_rom_wait = rom_is_dynamic &&
                             (!rom_load_done || companion_system_reset != 2'd0);
-    // Two rows of eight black-and-white cells remain readable on displays
-    // with overscan. The top row shows protocol milestones from left to
-    // right; the lower row fills as the 128 ROM sectors are verified.
-    wire [7:0] companion_boot_steps = {
-        rom_loading,
-        companion_sdc_seen,
-        companion_config_seen,
-        companion_status_seen,
-        companion_sys_start_seen,
-        companion_any_strobe_seen,
-        companion_raw_spi_seen,
-        sdram_init_done
-    };
-    wire boot_row_steps = (y >= 10'd190) && (y < 10'd286);
-    wire boot_row_progress = (y >= 10'd314) && (y < 10'd410);
-    wire boot_cell_area = (x >= 11'd104) && (x < 11'd616) &&
-                          (boot_row_steps || boot_row_progress);
-    wire [2:0] boot_cell_slot = (x - 11'd104) >> 6;
-    wire [5:0] boot_cell_x = (x - 11'd104) & 11'h03f;
-    wire boot_cell_border = (boot_cell_x < 6'd4) ||
-                            (boot_cell_x >= 6'd60) ||
-                            (boot_row_steps &&
-                             ((y < 10'd194) || (y >= 10'd282))) ||
-                            (boot_row_progress &&
-                             ((y < 10'd318) || (y >= 10'd406)));
-    wire boot_step_fill = companion_boot_steps[boot_cell_slot];
-    wire boot_progress_fill = rom_loading &&
-                              (rom_sector_progress[6:4] >= boot_cell_slot);
-    wire boot_failure_mark = rom_load_fail && (x[5] ^ y[5]);
-    wire boot_white = boot_failure_mark ||
-                      (boot_cell_area &&
-                       (boot_cell_border ||
-                        (boot_row_steps && boot_step_fill) ||
-                        (boot_row_progress && boot_progress_fill)));
-    wire [23:0] companion_diag_rgb = boot_white ? 24'hffffff : 24'h000000;
+    reg [26:0] companion_wait_timer = 27'd0;
+    always @(posedge clk_pixel or posedge video_reset) begin
+        if (video_reset || !dynamic_rom_wait || rom_loading)
+            companion_wait_timer <= 27'd0;
+        else if (!companion_wait_timer[26])
+            companion_wait_timer <= companion_wait_timer + 27'd1;
+    end
+
+    localparam [3:0] BOOT_MEMORY      = 4'd0;
+    localparam [3:0] BOOT_WAIT        = 4'd1;
+    localparam [3:0] BOOT_BL616       = 4'd2;
+    localparam [3:0] BOOT_ROM_MISSING = 4'd3;
+    localparam [3:0] BOOT_LOADING     = 4'd4;
+    localparam [3:0] BOOT_ROM_FAILED  = 4'd5;
+    localparam [3:0] BOOT_RESET_HELD  = 4'd6;
+    localparam [3:0] BOOT_SDRAM_FAIL  = 4'd7;
+    reg [3:0] boot_status;
+    always @(*) begin
+        if (sdram_init_fail)
+            boot_status = BOOT_SDRAM_FAIL;
+        else if (!sdram_init_done)
+            boot_status = BOOT_MEMORY;
+        else if (rom_load_fail)
+            boot_status = BOOT_ROM_FAILED;
+        else if (rom_loading)
+            boot_status = BOOT_LOADING;
+        else if (rom_load_done && companion_system_reset != 2'd0)
+            boot_status = BOOT_RESET_HELD;
+        else if (!companion_wait_timer[26])
+            boot_status = BOOT_WAIT;
+        else if (!companion_raw_spi_seen || !companion_status_seen)
+            boot_status = BOOT_BL616;
+        else
+            boot_status = BOOT_ROM_MISSING;
+    end
+
+    wire [23:0] companion_diag_rgb;
+    ql_boot_status boot_status_display (
+        .x(x),
+        .y(y),
+        .status(boot_status),
+        .progress(rom_sector_progress),
+        .rgb(companion_diag_rgb)
+    );
 
     // After a USB key event, briefly expose the four stages needed by QDOS:
     // HID event, non-empty matrix, 50 Hz IRQ acknowledgement, IPC command.
@@ -849,6 +965,19 @@ module nanoql_top(
 
     wire [23:0] hdmi_rgb = dynamic_rom_wait ? companion_diag_rgb :
                            memory_status_area ? memory_status_rgb : rgb;
+    wire [23:0] osd_rgb;
+
+    ql_companion_osd companion_osd (
+        .clk(clk_pixel),
+        .reset(video_reset),
+        .data_strobe(mcu_osd_strobe),
+        .data_start(mcu_start),
+        .data_in(mcu_data),
+        .x(x),
+        .y(y),
+        .rgb_in(hdmi_rgb),
+        .rgb_out(osd_rgb)
+    );
 
     nanoql_hdmi #(
         .PIXEL_CLOCK(32_000_000)
@@ -856,7 +985,7 @@ module nanoql_top(
         .clk_pixel_x5(clk_pixel_x5),
         .clk_pixel(clk_pixel),
         .reset(video_reset),
-        .rgb(hdmi_rgb),
+        .rgb(osd_rgb),
         .tmds_clk_n(tmds_clk_n),
         .tmds_clk_p(tmds_clk_p),
         .tmds_d_n(tmds_d_n),

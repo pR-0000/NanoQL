@@ -21,6 +21,7 @@ module ql_sd_rom_loader(
     input  wire        mem_ready,
     input  wire        mem_data_valid,
     input  wire [15:0] mem_data,
+    input  wire        mem_write_done,
 
     output reg         loading,
     output reg         loaded,
@@ -28,7 +29,7 @@ module ql_sd_rom_loader(
     output reg  [7:0] sector_progress
 );
 
-    localparam [21:0] ROM_BASE = 22'h200000;
+    localparam [21:0] ROM_BASE = 22'd0;
 
     localparam [3:0] ST_IDLE        = 4'd0;
     localparam [3:0] ST_SD_REQUEST  = 4'd1;
@@ -48,6 +49,7 @@ module ql_sd_rom_loader(
     reg [7:0] file_sector_count;
     reg [7:0] word_index;
     reg [7:0] high_byte;
+    reg mount_pending;
     reg buffer_we;
     reg [7:0] buffer_waddr;
     reg [15:0] buffer_wdata;
@@ -72,6 +74,7 @@ module ql_sd_rom_loader(
             file_sector_count <= 8'd0;
             word_index <= 8'd0;
             high_byte <= 8'd0;
+            mount_pending <= 1'b0;
             buffer_we <= 1'b0;
             buffer_waddr <= 8'd0;
             buffer_wdata <= 16'd0;
@@ -88,6 +91,12 @@ module ql_sd_rom_loader(
             sector_progress <= 8'd0;
         end else begin
             buffer_we <= 1'b0;
+            // image_mounted is only one clock wide. The Companion can emit it
+            // while SDRAM is still being initialized, so retain the event
+            // until the loader is enabled and able to consume it.
+            if (image_mounted)
+                mount_pending <= 1'b1;
+
             if (sd_byte_valid) begin
                 if (!sd_byte_addr[0]) begin
                     high_byte <= sd_byte;
@@ -112,7 +121,8 @@ module ql_sd_rom_loader(
                         mem_req <= 1'b0;
                         sd_read_start <= 1'b0;
                         loading <= 1'b0;
-                        if (image_mounted) begin
+                        if (mount_pending || image_mounted) begin
+                            mount_pending <= 1'b0;
                             loaded <= 1'b0;
                             failed <= 1'b0;
                             // image_size is completed by sd_card on the same
@@ -170,7 +180,7 @@ module ql_sd_rom_loader(
                     end
 
                     ST_WRITE_WAIT: begin
-                        if (mem_ready)
+                        if (mem_write_done)
                             state <= ST_READ_REQ;
                     end
 
@@ -216,7 +226,14 @@ module ql_sd_rom_loader(
                         sd_read_start <= 1'b0;
                         loading <= 1'b0;
                         loaded <= 1'b1;
-                        state <= ST_IDLE;
+                        // image_mounted is a one-cycle event, not a mounted
+                        // level. Stay loaded until the Companion emits a new
+                        // event after the user selects another ROM.
+                        if (image_mounted) begin
+                            mount_pending <= 1'b0;
+                            loaded <= 1'b0;
+                            state <= ST_VALIDATE;
+                        end
                     end
 
                     ST_FAILED: begin
@@ -225,6 +242,7 @@ module ql_sd_rom_loader(
                         loading <= 1'b0;
                         loaded <= 1'b0;
                         if (image_mounted) begin
+                            mount_pending <= 1'b0;
                             failed <= 1'b0;
                             state <= ST_VALIDATE;
                         end

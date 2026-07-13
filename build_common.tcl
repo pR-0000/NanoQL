@@ -15,6 +15,7 @@ set_device GW2AR-LV18QN88C8/I7 -name GW2AR-18C
 add_file src/nanoql_top.sv
 add_file src/ql_video_test.sv
 add_file src/ql_hdmi_window.sv
+add_file src/ql_boot_status.sv
 add_file src/ql_zx8301_lite.sv
 add_file $zx8302_source
 add_file src/ql_video_scanout.sv
@@ -22,14 +23,18 @@ add_file src/ql_native_timing_probe.sv
 add_file src/ql_test_pattern.sv
 add_file src/ql_sdram_memory.sv
 add_file src/ql_cpu_bus_bridge.sv
+add_file src/ql_timing.sv
 add_file src/ql_memory_map.sv
 add_file $rom_source
+add_file src/ql_cpu_address.sv
 add_file src/ql_cpu_fx68k.sv
 add_file src/ql_cpu_boot_monitor.sv
 add_file src/companion/ql_companion_sysctrl.sv
 add_file src/companion/ql_companion_hid.sv
+add_file src/companion/ql_companion_osd.sv
 add_file src/companion/ql_rom_sector_buffer.sv
 add_file src/companion/ql_sd_rom_loader.sv
+add_file src/companion/ql_sd_rom_memory.sv
 add_file src/companion/vendor/mcu_spi.v
 add_file src/companion/vendor/sd_card.v
 add_file src/companion/vendor/sd_rw.v

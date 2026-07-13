@@ -108,8 +108,7 @@ module ql_companion_hid (
 
                     // HID command 1 starts with a raw USB event. Bit 7 is
                     // release and bits 6:0 contain the usage or modifier id.
-                    // Later bytes in the packet contain PS/2 compatibility
-                    // data and are intentionally ignored.
+                    // The remaining packet bytes are not part of this event.
                     if ((command == 8'd1) && (state == 4'd0)) begin
                         key_event <= 1'b1;
                         key_press_event <= !data_in[7];

@@ -17,12 +17,12 @@ module ql_native_timing_probe(
     localparam [9:0] H_VISIBLE = 10'd512;
     localparam [9:0] V_VISIBLE = 10'd256;
 
-    localparam [9:0] PAL_HFP = 10'd27;
-    localparam [9:0] PAL_HSW = 10'd50;
-    localparam [9:0] PAL_HBP = 10'd83;
-    localparam [9:0] PAL_VFP = 10'd18;
+    localparam [9:0] PAL_HFP = 10'd24;
+    localparam [9:0] PAL_HSW = 10'd72;
+    localparam [9:0] PAL_HBP = 10'd64;
+    localparam [9:0] PAL_VFP = 10'd25;
     localparam [9:0] PAL_VSW = 10'd6;
-    localparam [9:0] PAL_VBP = 10'd33;
+    localparam [9:0] PAL_VBP = 10'd25;
 
     localparam [9:0] NTSC_HFP = 10'd34;
     localparam [9:0] NTSC_HSW = 10'd64;
@@ -43,20 +43,19 @@ module ql_native_timing_probe(
 
     assign active = (h_cnt < H_VISIBLE) && (v_cnt < V_VISIBLE);
 
-    reg [1:0] ce_div;
+    // 31.8 MHz * 21639 / 65536 = 10.499881 MHz, matching the 10.5 MHz
+    // ZX8301 clock used by the QL reference cores without long-term drift.
+    localparam [15:0] QL_CE_STEP = 16'd21639;
+    reg [15:0] ce_accum;
+    wire [16:0] ce_sum = {1'b0, ce_accum} + {1'b0, QL_CE_STEP};
 
     always @(posedge clk_pixel) begin
         if (reset) begin
-            ce_div <= 2'd0;
+            ce_accum <= 16'd0;
             ce_ql <= 1'b0;
         end else begin
-            if (ce_div == 2'd2) begin
-                ce_div <= 2'd0;
-                ce_ql <= 1'b1;
-            end else begin
-                ce_div <= ce_div + 2'd1;
-                ce_ql <= 1'b0;
-            end
+            ce_accum <= ce_sum[15:0];
+            ce_ql <= ce_sum[16];
         end
     end
 

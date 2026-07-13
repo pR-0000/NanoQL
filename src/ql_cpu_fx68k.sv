@@ -11,26 +11,48 @@ module ql_cpu_fx68k(
     output wire        cpu_uds_n,
     output wire        cpu_lds_n,
     input  wire        cpu_dtack_n,
-    input  wire [2:0]  cpu_ipl_n
+    input  wire [2:0]  cpu_ipl_n,
+    output wire [2:0]  cpu_fc,
+    output wire        ce_bus_p,
+    output wire        ce_bus_n
 );
 
-    reg [1:0] phase_div;
+    // QL_MiSTer drives fx68k with alternating 15 MHz phase enables to model
+    // the original 7.5 MHz 68008. The 31.8 MHz NanoQL system clock therefore
+    // needs a fractional divider rather than the former divide-by-four clock.
+    localparam [15:0] PHASE_STEP = 16'd30913;
+    reg [15:0] phase_accum;
+    reg phase_polarity;
+    wire [16:0] phase_sum = {1'b0, phase_accum} + {1'b0, PHASE_STEP};
+    wire phase_tick = phase_sum[16];
     wire cpu_reset = reset || !enable;
-    wire en_phi1 = enable && (phase_div == 2'b11);
-    wire en_phi2 = enable && (phase_div == 2'b01);
+    reg en_phi1;
+    reg en_phi2;
     wire [23:1] cpu_word_addr;
-    wire [2:0] cpu_fc;
     wire cpu_vpa_n = (cpu_fc != 3'b111);
 
+    // QL_MiSTer prepares these enables on the opposite clock edge. On Gowin,
+    // register them one rising edge ahead instead: all consumers observe the
+    // previous registered value, giving a full system cycle of setup time
+    // without introducing an inverted internal clock domain.
     always @(posedge clk) begin
-        if (cpu_reset)
-            phase_div <= 2'd0;
-        else
-            phase_div <= phase_div + 2'd1;
+        if (cpu_reset) begin
+            phase_accum <= 16'd0;
+            phase_polarity <= 1'b0;
+            en_phi1 <= 1'b0;
+            en_phi2 <= 1'b0;
+        end else begin
+            phase_accum <= phase_sum[15:0];
+            en_phi1 <= phase_tick && !phase_polarity;
+            en_phi2 <= phase_tick && phase_polarity;
+            if (phase_tick)
+                phase_polarity <= !phase_polarity;
+        end
     end
 
-    // A 31.8 MHz system clock divided into two phase enables gives a
-    // transitional 7.95 MHz 68000 clock, close to the original QL rate.
+    assign ce_bus_p = en_phi1;
+    assign ce_bus_n = en_phi2;
+
     fx68k cpu (
         .clk(clk),
         .HALTn(1'b1),
@@ -63,6 +85,13 @@ module ql_cpu_fx68k(
         .eab(cpu_word_addr)
     );
 
-    assign cpu_addr = {cpu_word_addr, 1'b0};
+    // fx68k exposes A23..A1; reconstruct the byte address using the base-QL
+    // decoder shared with the standalone address-map regression test.
+    ql_cpu_address address_decoder (
+        .word_addr(cpu_word_addr),
+        .uds_n(cpu_uds_n),
+        .lds_n(cpu_lds_n),
+        .byte_addr(cpu_addr)
+    );
 
 endmodule

@@ -2283,7 +2283,7 @@ module busControl( input s_clks Clks, input enT1, input enT4,
 	assign UDSn = rUDS;
 	assign eRWn = rRWn;
 
-	reg dataOe;
+	// reg dataOe;
 		
 	reg bcPend;
 	reg isWriteReg, bciByte, isRmcReg, wendReg;
@@ -2372,14 +2372,14 @@ module busControl( input s_clks Clks, input enT1, input enT4,
 			rUDS <= 1'b1;
 			rLDS <= 1'b1;
 			rRWn <= 1'b1;
-			dataOe <= '0;
+			// dataOe <= '0;
 		end
 		else begin
 
-			if( Clks.enPhi2 & isWriteReg & (busPhase == S2))
-				dataOe <= 1'b1;
-			else if( Clks.enPhi1 & (busEnding | (busPhase == SIDLE)) )
-				dataOe <= 1'b0;
+			// if( Clks.enPhi2 & isWriteReg & (busPhase == S2))
+			// 	dataOe <= 1'b1;
+			// else if( Clks.enPhi1 & (busEnding | (busPhase == SIDLE)) )
+			// 	dataOe <= 1'b0;
 						
 			if( Clks.enPhi1 & busEnding)
 				rRWn <= 1'b1;

@@ -8,17 +8,31 @@
         <File path="src/nanoql_top.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_video_test.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_hdmi_window.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_boot_status.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_zx8301_lite.sv" type="file.verilog" enable="1"/>
-        <File path="src/ql_zx8302_lite.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_zx8302.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_video_scanout.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_native_timing_probe.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_test_pattern.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_sdram_memory.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_cpu_bus_bridge.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_timing.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_memory_map.sv" type="file.verilog" enable="1"/>
-        <File path="src/ql_boot_rom.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_sd_boot_rom.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_cpu_address.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_cpu_fx68k.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_cpu_boot_monitor.sv" type="file.verilog" enable="1"/>
+        <File path="src/companion/ql_companion_sysctrl.sv" type="file.verilog" enable="1"/>
+        <File path="src/companion/ql_companion_hid.sv" type="file.verilog" enable="1"/>
+        <File path="src/companion/ql_companion_osd.sv" type="file.verilog" enable="1"/>
+        <File path="src/companion/ql_rom_sector_buffer.sv" type="file.verilog" enable="1"/>
+        <File path="src/companion/ql_sd_rom_loader.sv" type="file.verilog" enable="1"/>
+        <File path="src/companion/ql_sd_rom_memory.sv" type="file.verilog" enable="1"/>
+        <File path="src/companion/vendor/mcu_spi.v" type="file.verilog" enable="1"/>
+        <File path="src/companion/vendor/sd_card.v" type="file.verilog" enable="1"/>
+        <File path="src/companion/vendor/sd_rw.v" type="file.verilog" enable="1"/>
+        <File path="src/companion/vendor/sdcmd_ctrl.v" type="file.verilog" enable="1"/>
+        <File path="src/companion/vendor/sector_dpram.v" type="file.verilog" enable="1"/>
         <File path="src/fx68k/fx68k.sv" type="file.verilog" enable="1"/>
         <File path="src/fx68k/fx68kAlu.sv" type="file.verilog" enable="1"/>
         <File path="src/fx68k/uaddrPla.sv" type="file.verilog" enable="1"/>
@@ -40,5 +54,38 @@
         <File path="src/NanoQL.sdc" type="file.sdc" enable="1"/>
         <File path="src/fx68k/microrom.mem" type="file.other" enable="1"/>
         <File path="src/fx68k/nanorom.mem" type="file.other" enable="1"/>
+        <File path="src/companion/nanoql_xml.hex" type="file.other" enable="1"/>
+        <File path="src/ipc/t48/t48_pack-p.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/alu_pack-p.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/cond_branch_pack-p.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/decoder_pack-p.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/dmem_ctrl_pack-p.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/pmem_ctrl_pack-p.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/t48_tb_pack-p.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/t48_comp_pack-p.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/t48_core_comp_pack-p.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/alu.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/bus_mux.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/clock_ctrl.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/cond_branch.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/db_bus.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/decoder.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/dmem_ctrl.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/int.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/opc_decoder.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/opc_table.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/p1.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/p2.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/pmem_ctrl.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/psw.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/timer.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/t48_core.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/generic_ram_ena.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/t49_rom-e.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/t49_rom-struct-a.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/t48/t8049_notri.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/ipc/rom_t49.sv" type="file.verilog" enable="1"/>
+        <File path="src/ipc/ql_ipc_t48.sv" type="file.verilog" enable="1"/>
+        <File path="src/ipc/ql_ipc_rom.hex" type="file.other" enable="1"/>
     </FileList>
 </Project>

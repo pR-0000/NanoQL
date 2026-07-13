@@ -1,6 +1,7 @@
 module ql_ipc_t48(
     input  wire       clk,
     input  wire       reset,
+    input  wire       ce_11m,
     input  wire       comdata_in,
     input  wire [63:0] keyboard_matrix,
     output wire       comctrl,
@@ -8,18 +9,6 @@ module ql_ipc_t48(
     output wire       audio,
     output wire [1:0] ipl
 );
-
-    reg [1:0] ipc_clock_div;
-    wire ipc_clock_enable = (ipc_clock_div == 2'd2);
-
-    always @(posedge clk) begin
-        if (reset)
-            ipc_clock_div <= 2'd0;
-        else if (ipc_clock_enable)
-            ipc_clock_div <= 2'd0;
-        else
-            ipc_clock_div <= ipc_clock_div + 2'd1;
-    end
 
     wire [7:0] p1_out;
     wire [7:0] p2_out;
@@ -53,7 +42,7 @@ module ql_ipc_t48(
         .gate_port_input_g(0)
     ) ipc_cpu (
         .xtal_i(clk),
-        .xtal_en_i(ipc_clock_enable),
+        .xtal_en_i(ce_11m),
         .reset_n_i(!reset),
         .t0_i(1'b0),
         .t0_o(unused_t0),

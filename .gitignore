@@ -13,8 +13,7 @@ impl/
 .vscode/
 .idea/
 
-# User-supplied Sinclair QL system ROM
-/src/rom/ql_system_rom.hex
+# User-supplied firmware and local test data
 /src/ipc/ql_ipc_rom.hex
 /private/roms/
 /private/sdcard/

@@ -16,9 +16,10 @@ NanoQL démarre une ROM Sinclair QL depuis la carte microSD et fournit :
 - une image 512 x 256 centrée, sans pixels déformés ;
 - le contrôleur IPC 8049 et la matrice clavier QL ;
 - un clavier USB raccordé par hub au BL616 intégré ;
-- le chargement automatique de `QL.rom` depuis la microSD.
+- le chargement automatique de `QL.rom` depuis la microSD ;
+- un menu OSD accessible avec `F12` pour choisir la ROM et réinitialiser le QL.
 
-Les lecteurs Microdrive, les images disque et l'OSD complet ne sont pas encore implémentés.
+Les lecteurs Microdrive et leurs images ne sont pas encore implémentés.
 
 ### Matériel nécessaire
 
@@ -75,13 +76,13 @@ Le mode Normal conserve la programmation FPGA par ordinateur et active automatiq
 Vous devez fournir légalement :
 
 - une ROM QL standard de 48 ou 64 Kio ;
-- le firmware IPC Hermes `ipc8049-hermes.hex` au format Intel HEX, disponible dans le [core QL MiSTer](https://github.com/MiSTer-devel/QL_MiSTer/tree/master/rtl). Hermes est recommandé pour améliorer l’anti-rebond et le roulement de touches.
+- le firmware IPC Sinclair standard `ipc8049.hex` au format Intel HEX, disponible dans le [core QL MiSTer](https://github.com/MiSTer-devel/QL_MiSTer/tree/master/rtl). NanoQL utilise ce firmware d’origine afin de reproduire le comportement du contrôleur 8049 du QL.
 
 Dans l'onglet **2. ROM et microSD** :
 
 1. Sélectionnez votre ROM QL.
 2. Sélectionnez la racine de la carte microSD.
-3. Au premier lancement, sélectionnez `ipc8049-hermes.hex`.
+3. Au premier lancement, sélectionnez `ipc8049.hex`.
 4. Cliquez sur **Préparer la microSD** puis sur **Convertir le firmware IPC**.
 
 L'assistant valide la ROM et crée à la racine de la carte :
@@ -127,6 +128,7 @@ Dans Gowin EDA, l'option **Use JTAG as regular IO** doit rester décochée.
 5. Reliez le hub à la Tang Nano 20K, puis alimentez l'ensemble.
 6. Attendez l'écran QL et appuyez sur `F1` pour le mode moniteur ou `F2` pour le mode TV.
 7. À l'invite QL, testez par exemple `PRINT 2+2`, puis Entrée.
+8. Appuyez sur `F12` pour ouvrir ou fermer le menu NanoQL.
 
 ### Dépannage court
 
@@ -139,17 +141,17 @@ Dans Gowin EDA, l'option **Use JTAG as regular IO** doit rester décochée.
 
 Dernière compilation du build principal :
 
-| Ressource    |           Utilisation |
-| ------------ | --------------------: |
-| Logic        | 9 716 / 20 736 (47 %) |
-| LUT          |                 9 204 |
-| ALU          |                   458 |
-| Registres    |                 4 111 |
-| CLS          | 6 119 / 10 368 (60 %) |
-| BSRAM        |        10 / 46 (22 %) |
-| E/S          |        26 / 66 (40 %) |
-| Fmax mesurée |            59,700 MHz |
-| TNS setup    |                  0 ns |
+| Ressource    |            Utilisation |
+| ------------ | ---------------------: |
+| Logic        | 10 356 / 20 736 (50 %) |
+| LUT          |                  9 774 |
+| ALU          |                    528 |
+| Registres    |                  4 161 |
+| CLS          |  6 486 / 10 368 (63 %) |
+| BSRAM        |         45 / 46 (98 %) |
+| E/S          |         26 / 66 (40 %) |
+| Fmax mesurée |             45,846 MHz |
+| TNS setup    |                   0 ns |
 
 Ces valeurs sont mises à jour après les changements significatifs du build principal.
 
@@ -157,11 +159,24 @@ Ces valeurs sont mises à jour après les changements significatifs du build pri
 
 ```text
 Clavier USB -> BL616 FPGA Companion -> matrice QL -> IPC 8049
-microSD -> BL616 FPGA Companion -> chargeur ROM -> SDRAM
-ROM + SDRAM + ZX8301/ZX8302 -> fx68k -> vidéo QL -> HDMI
+microSD -> BL616 FPGA Companion -> chargeur ROM -> BSRAM dédiée
+OSD FPGA Companion + vidéo QL -> HDMI
+ROM + SDRAM + ZX8301/ZX8302 -> fx68k
 ```
 
-Le HDL est dans `src/`, les contraintes dans `constraints/`, l'intégration Companion dans `src/companion/` et les outils utilisateur dans `tools/`.
+Le CPU utilise des phases 68008 à 7,5 MHz, le repliement matériel de l'espace d'adressage 128 Kio sur 256 Kio et le modèle de contention RAM `ql_timing` du core QL MiSTer.
+
+La SDRAM suit la séquence complète de démarrage du GW2AR-18 : délai de stabilisation de 200 µs, précharge globale, deux auto-refresh, programmation du registre de mode, auto-précharge des accès et refresh périodique.
+
+Au démarrage, `QL.rom` est chargée et vérifiée dans une BSRAM réinscriptible dédiée. La ROM et la RAM vidéo ne se disputent donc pas le même port SDRAM.
+
+Le CPU, le ZX8302 et l'IPC 8049 restent sur un reset commun pendant le chargement. Ils démarrent ensemble uniquement lorsque la ROM est prête, comme lors d'un démarrage à froid du QL.
+
+La ROM du firmware 8049 utilise une sortie synchrone et est synthétisée dans une BSRAM de la Tang Nano 20K. L'IPC reçoit un enable fractionnaire de 11 MHz, comme dans le core QL MiSTer.
+
+Le ZX8302 applique chaque écriture de registre sur la phase négative du 68008 et ne renvoie `DTACK` qu'après sa validation. Ses registres, son lien série IPC et ses interruptions suivent l'organisation du module QL MiSTer.
+
+Le HDL et les contraintes sont dans `src/`, l'intégration Companion dans `src/companion/` et les outils utilisateur dans `tools/`.
 
 ### Références
 
@@ -183,9 +198,10 @@ NanoQL boots a Sinclair QL ROM from microSD and currently provides:
 - a centered 512 x 256 image with uniform pixels;
 - the 8049 IPC controller and QL keyboard matrix;
 - a USB keyboard through the integrated BL616 and a powered USB hub;
-- automatic loading of `QL.rom` from microSD.
+- automatic loading of `QL.rom` from microSD;
+- an `F12` on-screen display for ROM selection and QL reset.
 
-Microdrives, disk images, and the complete OSD are not implemented yet.
+Microdrives and their images are not implemented yet.
 
 ### Required hardware and software
 
@@ -211,7 +227,7 @@ In **1. BL616 Companion**, select board revision 3921 or 3923, keep **Normal** m
 
 #### 3. Prepare the ROM and microSD
 
-Provide a legally obtained 48 or 64 KiB QL ROM and the Intel HEX `ipc8049-hermes.hex` firmware from the [MiSTer QL core](https://github.com/MiSTer-devel/QL_MiSTer/tree/master/rtl). Hermes is recommended for improved debouncing and key rollover. In **2. ROM and microSD**, select the ROM, microSD root, and IPC file. Click **Prepare microSD**, then **Convert IPC firmware**. The card will contain:
+Provide a legally obtained 48 or 64 KiB QL ROM and the standard Sinclair IPC firmware `ipc8049.hex` from the [MiSTer QL core](https://github.com/MiSTer-devel/QL_MiSTer/tree/master/rtl). NanoQL uses this original firmware to reproduce the behavior of the QL's 8049 controller. In **2. ROM and microSD**, select the ROM, microSD root, and IPC file. Click **Prepare microSD**, then **Convert IPC firmware**. The card will contain:
 
 ```text
 QL.rom
@@ -235,7 +251,7 @@ Keep Gowin EDA's **Use JTAG as regular IO** option disabled.
 
 #### 5. Boot and test
 
-Power the board off, insert the prepared microSD card, connect HDMI, and attach the keyboard through a powered USB OTG hub. Power it on without a USB data connection to the computer. At the QL boot screen, press `F1` for monitor mode or `F2` for TV mode. At the prompt, type `PRINT 2+2` and press Enter.
+Power the board off, insert the prepared microSD card, connect HDMI, and attach the keyboard through a powered USB OTG hub. Power it on without a USB data connection to the computer. At the QL boot screen, press `F1` for monitor mode or `F2` for TV mode. At the prompt, type `PRINT 2+2` and press Enter. Press `F12` to open or close the NanoQL menu.
 
 ### Quick troubleshooting
 
@@ -248,26 +264,39 @@ Power the board off, insert the prepared microSD card, connect HDMI, and attach 
 
 Latest main build:
 
-| Resource      |          Utilization |
-| ------------- | -------------------: |
-| Logic         | 9,716 / 20,736 (47%) |
-| LUT           |                9,204 |
-| ALU           |                  458 |
-| Registers     |                4,111 |
-| CLS           | 6,119 / 10,368 (60%) |
-| BSRAM         |        10 / 46 (22%) |
-| I/O           |        26 / 66 (40%) |
-| Measured Fmax |           59.700 MHz |
-| Setup TNS     |                 0 ns |
+| Resource      |           Utilization |
+| ------------- | --------------------: |
+| Logic         | 10,356 / 20,736 (50%) |
+| LUT           |                 9,774 |
+| ALU           |                   528 |
+| Registers     |                 4,161 |
+| CLS           |  6,486 / 10,368 (63%) |
+| BSRAM         |         45 / 46 (98%) |
+| I/O           |         26 / 66 (40%) |
+| Measured Fmax |            45.846 MHz |
+| Setup TNS     |                  0 ns |
 
 ### Architecture and references
 
 ```text
 USB keyboard -> BL616 FPGA Companion -> QL matrix -> 8049 IPC
-microSD -> BL616 FPGA Companion -> ROM loader -> SDRAM
-ROM + SDRAM + ZX8301/ZX8302 -> fx68k -> QL video -> HDMI
+microSD -> BL616 FPGA Companion -> ROM loader -> dedicated BSRAM
+FPGA Companion OSD + QL video -> HDMI
+ROM + SDRAM + ZX8301/ZX8302 -> fx68k
 ```
 
-HDL is under `src/`, constraints under `constraints/`, Companion integration under `src/companion/`, and user tools under `tools/`.
+The CPU uses 7.5 MHz 68008 phases, the base machine's 128 KiB RAM address-space wrapping at 256 KiB, and QL MiSTer's `ql_timing` RAM-contention model.
+
+The SDRAM follows the complete GW2AR-18 startup sequence: a 200 us stabilization delay, precharge-all, two auto-refresh commands, mode-register programming, access auto-precharge, and periodic refresh.
+
+At startup, `QL.rom` is loaded and verified in dedicated runtime-writable BSRAM, so ROM and video RAM no longer share the same SDRAM port.
+
+The CPU, ZX8302, and 8049 IPC remain under a common reset while the ROM is loading. They start together only after the ROM is ready, matching a QL cold start.
+
+The 8049 firmware ROM uses a synchronous output and is synthesized into one of the Tang Nano 20K BSRAM blocks. The IPC receives the same fractional 11 MHz enable used by the QL MiSTer core.
+
+The ZX8302 applies each register write on the negative 68008 phase and returns `DTACK` only after it has committed. Its registers, IPC serial link, and interrupts follow the QL MiSTer module structure.
+
+HDL and constraints are under `src/`, Companion integration is under `src/companion/`, and user tools are under `tools/`.
 
 Reference projects: [QL MiSTer](https://github.com/MiSTer-devel/QL_MiSTer), [QL MiST](https://github.com/mist-devel/ql), [MiSTeryNano](https://github.com/MiSTle-Dev/MiSTeryNano), [NanoMIG](https://github.com/MiSTle-Dev/NanoMIG), and the [Tang Nano 20K documentation](https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html).

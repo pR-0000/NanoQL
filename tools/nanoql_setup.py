@@ -156,7 +156,7 @@ class NanoQLSetup(tk.Tk):
         parent.columnconfigure(1, weight=1)
         self._path_row(parent, 0, "ROM QL 48/64 Kio", self.rom_path, self._browse_rom)
         self._path_row(parent, 1, "Racine microSD", self.sd_path, self._browse_sd)
-        self._path_row(parent, 2, "Firmware IPC Hermes Intel HEX", self.ipc_path, self._browse_ipc)
+        self._path_row(parent, 2, "Firmware IPC Sinclair Intel HEX", self.ipc_path, self._browse_ipc)
 
         actions = ttk.Frame(parent)
         actions.grid(row=3, column=0, columnspan=3, sticky="w", pady=(18, 8))
@@ -245,7 +245,8 @@ class NanoQLSetup(tk.Tk):
 
     def _browse_ipc(self) -> None:
         path = filedialog.askopenfilename(
-            title="Sélectionner ipc8049-hermes.hex", filetypes=(("Intel HEX", "*.hex"), ("Tous", "*"))
+            title="Sélectionner ipc8049.hex",
+            filetypes=(("Intel HEX", "*.hex"), ("Tous", "*")),
         )
         if path:
             self.ipc_path.set(path)
@@ -312,7 +313,10 @@ class NanoQLSetup(tk.Tk):
 
     def prepare_ipc(self) -> None:
         if not self.ipc_path.get():
-            messagebox.showerror("Champ manquant", "Sélectionnez le firmware Hermes ipc8049-hermes.hex.")
+            messagebox.showerror(
+                "Champ manquant",
+                "Sélectionnez le firmware Sinclair standard ipc8049.hex.",
+            )
             return
         self._run(
             [sys.executable, str(TOOLS / "prepare_ql_ipc_rom.py"), self.ipc_path.get()],
@@ -342,7 +346,7 @@ class NanoQLSetup(tk.Tk):
         if not self.ipc_path.get() and not ipc_output.is_file():
             messagebox.showerror(
                 "IPC manquant",
-                "Sélectionnez le firmware Hermes ipc8049-hermes.hex au premier lancement.",
+                "Sélectionnez le firmware Sinclair standard ipc8049.hex au premier lancement.",
             )
             return
 

@@ -804,7 +804,10 @@ module ccrTable(
 			row[13],
 			row[14]:	ccrMask = KNZ00;
 			row[15]:	ccrMask = 5'b0;			// TAS/Scc, not used in col 3
-			default:	ccrMask = CUNUSED;
+			// Unused microcode combinations must not modify CPU flags. MiSTer
+			// leaves this implicit; make it explicit to avoid both X-based
+			// optimization and latch inference in Gowin Synthesis.
+			default:	ccrMask = 5'b00000;
 			endcase			
 			
 		4:

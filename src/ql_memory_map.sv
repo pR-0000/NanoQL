@@ -10,8 +10,15 @@ module ql_memory_map(
     output wire        bus_ready,
     output wire        bus_data_valid,
     output wire [15:0] bus_data,
+    output wire        bus_write_done,
     output wire        rom_is_diagnostic,
     output wire        rom_is_dynamic,
+
+    output wire        dynamic_rom_req,
+    output wire [14:0] dynamic_rom_addr,
+    input  wire        dynamic_rom_ready,
+    input  wire        dynamic_rom_data_valid,
+    input  wire [15:0] dynamic_rom_data,
 
     output reg         mc_stat_wr,
     output reg  [7:0]  mc_stat_data,
@@ -21,6 +28,7 @@ module ql_memory_map(
     output wire [1:0]  zx8302_ds,
     output wire [15:0] zx8302_wdata,
     input  wire [15:0] zx8302_rdata,
+    input  wire        zx8302_write_done,
 
     output wire        ram_req,
     output wire        ram_we,
@@ -29,7 +37,8 @@ module ql_memory_map(
     output wire [15:0] ram_wdata,
     input  wire        ram_ready,
     input  wire        ram_data_valid,
-    input  wire [15:0] ram_data
+    input  wire [15:0] ram_data,
+    input  wire        ram_write_done
 );
 
     // System ROM and expansion ROM window: byte addresses 0x000000-0x00ffff.
@@ -61,6 +70,7 @@ module ql_memory_map(
     reg io_read_pending;
     reg io_data_valid;
     reg [15:0] io_data_latched;
+    reg local_write_done;
 
     ql_boot_rom boot_rom (
         .word_addr(rom_addr),
@@ -72,17 +82,22 @@ module ql_memory_map(
     // ROM writes are acknowledged and ignored, like writes to physical ROM.
     assign bus_ready = rom_selected ?
                          (rom_is_dynamic ?
-                           (bus_we ? 1'b1 : ram_ready) :
+                           (bus_we ? 1'b1 : dynamic_rom_ready) :
                            !rom_read_pending) :
                        ram_selected ? ram_ready : !io_read_pending;
-    assign bus_data_valid = rom_data_valid || io_data_valid || ram_data_valid;
+    assign bus_data_valid = rom_data_valid || dynamic_rom_data_valid ||
+                            io_data_valid || ram_data_valid;
+    assign bus_write_done = local_write_done || zx8302_write_done ||
+                            ram_write_done;
     assign bus_data = rom_data_valid ? rom_data_latched :
+                      dynamic_rom_data_valid ? dynamic_rom_data :
                       io_data_valid ? io_data_latched : ram_data;
 
-    assign ram_req = bus_req && (ram_selected || dynamic_rom_read);
+    assign dynamic_rom_req = bus_req && dynamic_rom_read;
+    assign dynamic_rom_addr = bus_addr[14:0];
+    assign ram_req = bus_req && ram_selected;
     assign ram_we = ram_selected && bus_we;
-    // Dynamic ROM occupies byte offset 0x400000 in the 8 MiB SDRAM.
-    assign ram_addr = dynamic_rom_read ? (22'h200000 + bus_addr) : bus_addr;
+    assign ram_addr = bus_addr;
     assign ram_ds = bus_ds;
     assign ram_wdata = bus_wdata;
     assign zx8302_addr = {bus_addr[4], bus_addr[0]};
@@ -98,14 +113,19 @@ module ql_memory_map(
             io_read_pending <= 1'b0;
             io_data_valid <= 1'b0;
             io_data_latched <= 16'hffff;
+            local_write_done <= 1'b0;
             mc_stat_wr <= 1'b0;
             mc_stat_data <= 8'd0;
             zx8302_wr <= 1'b0;
         end else begin
             rom_data_valid <= 1'b0;
             io_data_valid <= 1'b0;
+            local_write_done <= 1'b0;
             mc_stat_wr <= 1'b0;
             zx8302_wr <= 1'b0;
+
+            if (bus_req && bus_we && !ram_selected && !zx8302_selected)
+                local_write_done <= 1'b1;
 
             if (rom_read_pending) begin
                 rom_data_latched <= rom_data;
