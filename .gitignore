@@ -1,6 +1,39 @@
-# Gowin generated output
+# Gowin and simulation output
 impl/
+sim/out/
+*.fs
+*.bit
+*.bin
+*.elf
+*.map
 *.gprj.user
+*.vvp
+*.vcd
+*.fst
+
+# Downloaded firmware packages and local build caches
+downloads/
+cache/
+.cache/
+firmware/bl616/package/
+
+# Private, local, or user-supplied material
+private/
+local/
+roms/
+software/local/
+*.rom
+*.img
+*.dsk
+*.mdv
+*.qxl
+*.zip
+*.7z
+*.tar
+*.gz
+/src/ipc/ql_ipc_rom.hex
+ipc*.hex
+*_rom.hex
 
 # Logs and temporary files
 *.log
@@ -8,13 +41,17 @@ impl/
 *.bak
 *.tmp
 *.db
+*.orig
+*.rej
 
-# Editor metadata
+# Python and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Editor and operating-system metadata
 .vscode/
 .idea/
-
-# User-supplied firmware and local test data
-/src/ipc/ql_ipc_rom.hex
-/private/
-__pycache__/
-*.pyc
+.DS_Store
+Thumbs.db

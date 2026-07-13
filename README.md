@@ -178,6 +178,8 @@ Le ZX8302 applique chaque écriture de registre sur la phase négative du 68008 
 
 Le HDL et les contraintes sont dans `src/`, l'intégration Companion dans `src/companion/` et les outils utilisateur dans `tools/`.
 
+L'interface de développement USB permettant de charger et d'exécuter directement un binaire 68000 est décrite dans [`docs/NANOQL_LINK.md`](docs/NANOQL_LINK.md). Elle utilise un profil BL616 séparé afin de ne pas perturber le clavier, la microSD et l'OSD du fonctionnement normal.
+
 ### Références
 
 - [QL MiSTer](https://github.com/MiSTer-devel/QL_MiSTer)

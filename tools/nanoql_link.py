@@ -24,6 +24,12 @@ RESPONSE_MAGIC = b"QN"
 PROTOCOL_VERSION = 1
 MAX_SPI_PAYLOAD = 13
 
+FIRMWARE_ERRORS = {
+    1: "version de protocole non prise en charge",
+    2: "CRC de la requete incorrect",
+    3: "longueur de requete incorrecte",
+}
+
 CMD_STATUS = 0x00
 CMD_HOLD = 0x01
 CMD_WRITE = 0x02
@@ -89,7 +95,11 @@ class NanoQLLink:
             raise RuntimeError("Version ou sequence NanoQL Link incorrecte.")
         if crc8(response_body) != payload_and_crc[-1]:
             raise RuntimeError("CRC NanoQL Link incorrect.")
-        return payload_and_crc[:-1]
+        payload = payload_and_crc[:-1]
+        if len(payload) == 2 and payload[0] == 0xFF:
+            detail = FIRMWARE_ERRORS.get(payload[1], f"erreur {payload[1]}")
+            raise RuntimeError(f"Le firmware BL616 a refuse la requete : {detail}.")
+        return payload
 
     def status(self) -> int:
         rx = self.transact(bytes((CMD_STATUS, 0, 0, 0, 0, 0, 0)))

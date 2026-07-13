@@ -102,6 +102,16 @@ def main() -> int:
         action="store_true",
         help="download the Windows FlashCube archive on non-Windows hosts",
     )
+    parser.add_argument(
+        "--link-3921",
+        type=Path,
+        help="locally built nanoql_link_nano20k.bin",
+    )
+    parser.add_argument(
+        "--link-3923",
+        type=Path,
+        help="locally built nanoql_link_nano20k_v3923.bin",
+    )
     args = parser.parse_args()
 
     repository = Path(__file__).resolve().parent.parent
@@ -136,6 +146,10 @@ def main() -> int:
         "2_TEST_3921_companion_only.ini",
         "1_NORMAL_3923_partner_auto.ini",
         "2_TEST_3923_companion_only.ini",
+        "3_LINK_3921_usb_cdc.ini",
+        "3_LINK_3923_usb_cdc.ini",
+        "nanoql_link_nano20k.bin",
+        "nanoql_link_nano20k_v3923.bin",
     ):
         (package / stale_name).unlink(missing_ok=True)
     for source_name, destination_name in configurations:
@@ -143,6 +157,29 @@ def main() -> int:
             repository / "firmware" / "bl616" / source_name,
             package / destination_name,
         )
+
+    link_firmware = {
+        "3921": (
+            args.link_3921,
+            "nanoql_link_nano20k.bin",
+            "flash_nano20k_3921_link.ini",
+            "3_LINK_3921_usb_cdc.ini",
+        ),
+        "3923": (
+            args.link_3923,
+            "nanoql_link_nano20k_v3923.bin",
+            "flash_nano20k_3923_link.ini",
+            "3_LINK_3923_usb_cdc.ini",
+        ),
+    }
+    for revision in revisions:
+        source, firmware_name, config_source, config_name = link_firmware[revision]
+        if source is None:
+            continue
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        shutil.copy2(source, package / firmware_name)
+        shutil.copy2(repository / "firmware" / "bl616" / config_source, package / config_name)
 
     flashcube_executable: Path | None = None
     is_windows = platform.system() == "Windows"
@@ -168,6 +205,8 @@ def main() -> int:
     for revision in revisions:
         print(f"Revision {revision} normal: {package / f'1_NORMAL_{revision}_partner_auto.ini'}")
         print(f"Revision {revision} test:   {package / f'2_TEST_{revision}_companion_only.ini'}")
+        if link_firmware[revision][0] is not None:
+            print(f"Revision {revision} link:   {package / f'3_LINK_{revision}_usb_cdc.ini'}")
     print("\nNORMAL keeps the Gowin programmer when USB data is connected.")
     print("To run Companion with NORMAL, boot the FPGA from its Flash and power")
     print("the board from USB without a data host. TEST disables the programmer")

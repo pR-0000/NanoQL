@@ -1,0 +1,70 @@
+name: Build BL616 NanoQL Link
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "firmware/bl616/nanoql_link/**"
+      - ".github/workflows/bl616-link.yml"
+
+permissions:
+  contents: read
+
+env:
+  BOUFFALO_SDK_COMMIT: b51858d3fe5ffb587718167b8115c4188fb369de
+  TOOLCHAIN_COMMIT: c4afe91cbd01bf7dce525e0d23b4219c8691e8f0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - board: nano20k
+            artifact: nanoql_link_nano20k
+            filename: nanoql_link_nano20k.bin
+          - board: nano20k_v3923
+            artifact: nanoql_link_nano20k_v3923
+            filename: nanoql_link_nano20k_v3923.bin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y cmake make ninja-build
+
+      - name: Fetch pinned Bouffalo SDK
+        shell: bash
+        run: |
+          git init "$RUNNER_TEMP/bouffalo_sdk"
+          git -C "$RUNNER_TEMP/bouffalo_sdk" remote add origin https://github.com/MiSTle-Dev/bouffalo_sdk.git
+          git -C "$RUNNER_TEMP/bouffalo_sdk" fetch --depth 1 origin "$BOUFFALO_SDK_COMMIT"
+          git -C "$RUNNER_TEMP/bouffalo_sdk" checkout --detach FETCH_HEAD
+          git -C "$RUNNER_TEMP/bouffalo_sdk" submodule update --init --recursive --depth 1
+
+      - name: Fetch pinned RISC-V toolchain
+        shell: bash
+        run: |
+          git init "$RUNNER_TEMP/toolchain"
+          git -C "$RUNNER_TEMP/toolchain" remote add origin https://github.com/bouffalolab/toolchain_gcc_t-head_linux.git
+          git -C "$RUNNER_TEMP/toolchain" fetch --depth 1 origin "$TOOLCHAIN_COMMIT"
+          git -C "$RUNNER_TEMP/toolchain" checkout --detach FETCH_HEAD
+
+      - name: Build firmware
+        shell: bash
+        env:
+          BL_SDK_BASE: ${{ runner.temp }}/bouffalo_sdk
+        run: |
+          export PATH="$RUNNER_TEMP/toolchain/bin:$PATH"
+          make -C firmware/bl616/nanoql_link clean
+          make -C firmware/bl616/nanoql_link TANG_BOARD=${{ matrix.board }}
+          mkdir -p artifact
+          firmware="$(find firmware/bl616/nanoql_link/build/build_out -maxdepth 1 -type f -name '*_bl616.bin' | head -n 1)"
+          test -n "$firmware"
+          cp "$firmware" "artifact/${{ matrix.filename }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: artifact/${{ matrix.filename }}
+          if-no-files-found: error
