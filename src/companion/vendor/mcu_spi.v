@@ -19,11 +19,13 @@ module mcu_spi (
   output reg      mcu_hid_strobe, // byte strobe for HID target  
   output reg      mcu_osd_strobe, // byte strobe for OSD target
   output reg      mcu_sdc_strobe, // byte strobe for SD card target
+  output reg      mcu_link_strobe, // byte strobe for NanoQL Link target
   output       mcu_start,
   input  [7:0] mcu_sys_din,
   input  [7:0] mcu_hid_din,
   input  [7:0] mcu_osd_din,
   input  [7:0] mcu_sdc_din,
+  input  [7:0] mcu_link_din,
   output [7:0] mcu_dout
 );
    
@@ -85,6 +87,7 @@ always @(posedge clk) begin
       mcu_hid_strobe <= 1'b0;
       mcu_osd_strobe <= 1'b0;
       mcu_sdc_strobe <= 1'b0;
+      mcu_link_strobe <= 1'b0;
       spi_target <= 8'd0;
       spi_in_cnt <= 4'd0;
       spi_in_data <= 8'd0;
@@ -95,6 +98,7 @@ always @(posedge clk) begin
       mcu_hid_strobe <= 1'b0;
       mcu_osd_strobe <= 1'b0;
       mcu_sdc_strobe <= 1'b0;
+      mcu_link_strobe <= 1'b0;
 
       if(spi_io_ss)
       spi_in_cnt <= 4'd0;
@@ -112,6 +116,7 @@ always @(posedge clk) begin
 	    if(spi_target == 8'd1) mcu_hid_strobe <= 1'b1;
 	    if(spi_target == 8'd2) mcu_osd_strobe <= 1'b1;
 	    if(spi_target == 8'd3) mcu_sdc_strobe <= 1'b1;
+	    if(spi_target == 8'd4) mcu_link_strobe <= 1'b1;
    
             spi_in_data <= spi_data_in;
 	 end
@@ -128,6 +133,7 @@ wire [7:0] in_byte =
 	   (spi_target == 8'd1)?mcu_hid_din:
 	   (spi_target == 8'd2)?mcu_osd_din:
 	   (spi_target == 8'd3)?mcu_sdc_din:
+	   (spi_target == 8'd4)?mcu_link_din:
 	   8'h00;   
    
 // setup data on rising edge of spi clock

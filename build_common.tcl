@@ -32,6 +32,7 @@ add_file src/ql_cpu_boot_monitor.sv
 add_file src/companion/ql_companion_sysctrl.sv
 add_file src/companion/ql_companion_hid.sv
 add_file src/companion/ql_companion_osd.sv
+add_file src/companion/ql_host_link.sv
 add_file src/companion/ql_rom_sector_buffer.sv
 add_file src/companion/ql_sd_rom_loader.sv
 add_file src/companion/ql_sd_rom_memory.sv

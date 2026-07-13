@@ -25,6 +25,7 @@ $zx8302Output = Join-Path $env:TEMP "nanoql_zx8302.vvp"
 $zx8302BusOutput = Join-Path $env:TEMP "nanoql_zx8302_bus.vvp"
 $romLoaderOutput = Join-Path $env:TEMP "nanoql_sd_rom_loader.vvp"
 $cpuAddressOutput = Join-Path $env:TEMP "nanoql_cpu_address.vvp"
+$hostLinkOutput = Join-Path $env:TEMP "nanoql_host_link.vvp"
 
 & $iverilog -g2012 -s tb_ql_cpu_address -o $cpuAddressOutput `
     (Join-Path $projectRoot "sim\tb_ql_cpu_address.sv") `
@@ -37,6 +38,19 @@ if ($LASTEXITCODE -ne 0) {
 & $vvp $cpuAddressOutput
 if ($LASTEXITCODE -ne 0) {
     throw "CPU address-map simulation failed."
+}
+
+& $iverilog -g2012 -s tb_ql_host_link -o $hostLinkOutput `
+    (Join-Path $projectRoot "sim\tb_ql_host_link.sv") `
+    (Join-Path $projectRoot "src\companion\ql_host_link.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "NanoQL Link simulation compilation failed."
+}
+
+& $vvp $hostLinkOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "NanoQL Link simulation failed."
 }
 
 & $iverilog -g2012 -s tb_ql_bus_memory -o $logicalOutput `

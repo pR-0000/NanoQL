@@ -148,11 +148,13 @@ module nanoql_top(
     wire mcu_hid_strobe;
     wire mcu_osd_strobe;
     wire mcu_sdc_strobe;
+    wire mcu_link_strobe;
     wire mcu_start;
     wire [7:0] mcu_data;
     wire [7:0] companion_sys_data;
     wire [7:0] companion_hid_data;
     wire [7:0] companion_sd_data;
+    wire [7:0] companion_link_data;
     wire [63:0] companion_keyboard_matrix;
     wire companion_key_event;
     wire companion_key_press_event;
@@ -199,18 +201,36 @@ module nanoql_top(
     wire rom_load_fail;
     wire [7:0] rom_sector_progress;
     wire rom_loader_owns_store = rom_is_dynamic && !rom_load_done;
+    wire host_mem_req;
+    wire host_mem_we;
+    wire [21:0] host_mem_addr;
+    wire [1:0] host_mem_ds;
+    wire [15:0] host_mem_wdata;
+    wire host_mem_ready;
+    wire host_mem_write_done;
+    wire host_cpu_hold;
+    wire host_boot_vectors_active;
+    wire [31:0] host_boot_ssp;
+    wire [31:0] host_boot_pc;
+    wire host_restart_pulse;
 
     // Keep QL RAM/video in SDRAM. The runtime-loaded ROM has its own BSRAM,
     // matching the separate dpram ROM path used by QL MiSTer.
-    assign sdram_system_req = mapped_sdram_req;
-    assign sdram_system_we = mapped_sdram_we;
-    assign sdram_system_addr = mapped_sdram_addr;
-    assign sdram_system_ds = mapped_sdram_ds;
-    assign sdram_system_wdata = mapped_sdram_wdata;
-    assign mapped_sdram_ready = sdram_system_ready;
-    assign mapped_sdram_data_valid = sdram_system_data_valid;
+    // NanoQL Link owns this port only while the 68000 is explicitly held.
+    assign sdram_system_req = host_cpu_hold ? host_mem_req : mapped_sdram_req;
+    assign sdram_system_we = host_cpu_hold ? host_mem_we : mapped_sdram_we;
+    assign sdram_system_addr = host_cpu_hold ? host_mem_addr : mapped_sdram_addr;
+    assign sdram_system_ds = host_cpu_hold ? host_mem_ds : mapped_sdram_ds;
+    assign sdram_system_wdata = host_cpu_hold ? host_mem_wdata :
+                                                   mapped_sdram_wdata;
+    assign mapped_sdram_ready = !host_cpu_hold && sdram_system_ready;
+    assign mapped_sdram_data_valid = !host_cpu_hold &&
+                                     sdram_system_data_valid;
     assign mapped_sdram_data = sdram_system_data;
-    assign mapped_sdram_write_done = sdram_system_write_done;
+    assign mapped_sdram_write_done = !host_cpu_hold &&
+                                     sdram_system_write_done;
+    assign host_mem_ready = host_cpu_hold && sdram_system_ready;
+    assign host_mem_write_done = host_cpu_hold && sdram_system_write_done;
 
     assign rom_store_req = rom_loader_owns_store ?
                            rom_loader_req : mapped_rom_req;
@@ -240,12 +260,36 @@ module nanoql_top(
         .mcu_hid_strobe(mcu_hid_strobe),
         .mcu_osd_strobe(mcu_osd_strobe),
         .mcu_sdc_strobe(mcu_sdc_strobe),
+        .mcu_link_strobe(mcu_link_strobe),
         .mcu_start(mcu_start),
         .mcu_sys_din(companion_sys_data),
         .mcu_hid_din(companion_hid_data),
         .mcu_osd_din(8'h00),
         .mcu_sdc_din(companion_sd_data),
+        .mcu_link_din(companion_link_data),
         .mcu_dout(mcu_data)
+    );
+
+    ql_host_link host_link (
+        .clk(clk_pixel),
+        .reset(video_reset),
+        .data_strobe(mcu_link_strobe),
+        .data_start(mcu_start),
+        .data_in(mcu_data),
+        .data_out(companion_link_data),
+        .sdram_ready(sdram_init_done && !sdram_init_fail),
+        .mem_req(host_mem_req),
+        .mem_we(host_mem_we),
+        .mem_addr(host_mem_addr),
+        .mem_ds(host_mem_ds),
+        .mem_wdata(host_mem_wdata),
+        .mem_ready(host_mem_ready),
+        .mem_write_done(host_mem_write_done),
+        .cpu_hold(host_cpu_hold),
+        .boot_vectors_active(host_boot_vectors_active),
+        .boot_ssp(host_boot_ssp),
+        .boot_pc(host_boot_pc),
+        .restart_pulse(host_restart_pulse)
     );
 
     assign spi_dir = companion_miso;
@@ -431,13 +475,15 @@ module nanoql_top(
     // startup interval after RAM and the microSD ROM are ready.
     reg [14:0] ql_reset_count = 15'h7fff;
     always @(posedge clk_pixel) begin
-        if (video_reset || !ql_core_ready)
+        if (video_reset || !ql_core_ready || host_cpu_hold ||
+            host_restart_pulse)
             ql_reset_count <= 15'h7fff;
         else if (ql_reset_count != 15'd0)
             ql_reset_count <= ql_reset_count - 15'd1;
     end
 
-    wire ql_system_reset = video_reset || (ql_reset_count != 15'd0);
+    wire ql_system_reset = video_reset || host_cpu_hold ||
+                           (ql_reset_count != 15'd0);
     wire cpu_run_enable = ql_core_ready && !ql_system_reset;
 
     // 31.8 MHz * 22668 / 65536 = 11.0002 MHz. QL_MiSTer uses the same
@@ -507,6 +553,9 @@ module nanoql_top(
         .bus_write_done(bus_mem_write_done),
         .rom_is_diagnostic(rom_is_diagnostic),
         .rom_is_dynamic(rom_is_dynamic),
+        .boot_vectors_active(host_boot_vectors_active),
+        .boot_ssp(host_boot_ssp),
+        .boot_pc(host_boot_pc),
         .dynamic_rom_req(mapped_rom_req),
         .dynamic_rom_addr(mapped_rom_addr),
         .dynamic_rom_ready(mapped_rom_ready),

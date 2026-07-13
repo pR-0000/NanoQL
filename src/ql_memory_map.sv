@@ -14,6 +14,10 @@ module ql_memory_map(
     output wire        rom_is_diagnostic,
     output wire        rom_is_dynamic,
 
+    input  wire        boot_vectors_active,
+    input  wire [31:0] boot_ssp,
+    input  wire [31:0] boot_pc,
+
     output wire        dynamic_rom_req,
     output wire [14:0] dynamic_rom_addr,
     input  wire        dynamic_rom_ready,
@@ -53,7 +57,10 @@ module ql_memory_map(
     localparam [21:0] MC_STAT_WORD = 22'h00c031;
 
     wire rom_selected = bus_addr <= ROM_LAST_WORD;
-    wire dynamic_rom_read = rom_selected && rom_is_dynamic && !bus_we;
+    wire boot_vector_read = rom_selected && boot_vectors_active &&
+                            (bus_addr <= 22'd3) && !bus_we;
+    wire dynamic_rom_read = rom_selected && rom_is_dynamic && !bus_we &&
+                            !boot_vector_read;
     wire ram_selected = (bus_addr >= RAM_FIRST_WORD) &&
                         (bus_addr <= RAM_LAST_WORD);
     wire internal_io_selected = (bus_addr >= IO_FIRST_WORD) &&
@@ -81,7 +88,7 @@ module ql_memory_map(
 
     // ROM writes are acknowledged and ignored, like writes to physical ROM.
     assign bus_ready = rom_selected ?
-                         (rom_is_dynamic ?
+                         ((rom_is_dynamic && !boot_vector_read) ?
                            (bus_we ? 1'b1 : dynamic_rom_ready) :
                            !rom_read_pending) :
                        ram_selected ? ram_ready : !io_read_pending;
@@ -128,11 +135,21 @@ module ql_memory_map(
                 local_write_done <= 1'b1;
 
             if (rom_read_pending) begin
-                rom_data_latched <= rom_data;
+                case (rom_addr)
+                    15'd0: rom_data_latched <= boot_vectors_active ?
+                                                   boot_ssp[31:16] : rom_data;
+                    15'd1: rom_data_latched <= boot_vectors_active ?
+                                                   boot_ssp[15:0] : rom_data;
+                    15'd2: rom_data_latched <= boot_vectors_active ?
+                                                   boot_pc[31:16] : rom_data;
+                    15'd3: rom_data_latched <= boot_vectors_active ?
+                                                   boot_pc[15:0] : rom_data;
+                    default: rom_data_latched <= rom_data;
+                endcase
                 rom_data_valid <= 1'b1;
                 rom_read_pending <= 1'b0;
-            end else if (bus_req && rom_selected && !rom_is_dynamic &&
-                         !bus_we) begin
+            end else if (bus_req && rom_selected &&
+                         (!rom_is_dynamic || boot_vector_read) && !bus_we) begin
                 rom_addr <= bus_addr[14:0];
                 rom_read_pending <= 1'b1;
             end

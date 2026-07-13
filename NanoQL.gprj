@@ -25,6 +25,7 @@
         <File path="src/companion/ql_companion_sysctrl.sv" type="file.verilog" enable="1"/>
         <File path="src/companion/ql_companion_hid.sv" type="file.verilog" enable="1"/>
         <File path="src/companion/ql_companion_osd.sv" type="file.verilog" enable="1"/>
+        <File path="src/companion/ql_host_link.sv" type="file.verilog" enable="1"/>
         <File path="src/companion/ql_rom_sector_buffer.sv" type="file.verilog" enable="1"/>
         <File path="src/companion/ql_sd_rom_loader.sv" type="file.verilog" enable="1"/>
         <File path="src/companion/ql_sd_rom_memory.sv" type="file.verilog" enable="1"/>

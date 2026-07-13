@@ -143,14 +143,14 @@ Dernière compilation du build principal :
 
 | Ressource    |            Utilisation |
 | ------------ | ---------------------: |
-| Logic        | 10 356 / 20 736 (50 %) |
-| LUT          |                  9 774 |
-| ALU          |                    528 |
-| Registres    |                  4 161 |
-| CLS          |  6 486 / 10 368 (63 %) |
+| Logic        | 10 724 / 20 736 (52 %) |
+| LUT          |                 10 103 |
+| ALU          |                    555 |
+| Registres    |                  4 449 |
+| CLS          |  6 780 / 10 368 (66 %) |
 | BSRAM        |         45 / 46 (98 %) |
 | E/S          |         26 / 66 (40 %) |
-| Fmax mesurée |             45,846 MHz |
+| Fmax mesurée |             51,717 MHz |
 | TNS setup    |                   0 ns |
 
 Ces valeurs sont mises à jour après les changements significatifs du build principal.
@@ -266,14 +266,14 @@ Latest main build:
 
 | Resource      |           Utilization |
 | ------------- | --------------------: |
-| Logic         | 10,356 / 20,736 (50%) |
-| LUT           |                 9,774 |
-| ALU           |                   528 |
-| Registers     |                 4,161 |
-| CLS           |  6,486 / 10,368 (63%) |
+| Logic         | 10,724 / 20,736 (52%) |
+| LUT           |                10,103 |
+| ALU           |                   555 |
+| Registers     |                 4,449 |
+| CLS           |  6,780 / 10,368 (66%) |
 | BSRAM         |         45 / 46 (98%) |
 | I/O           |         26 / 66 (40%) |
-| Measured Fmax |            45.846 MHz |
+| Measured Fmax |            51.717 MHz |
 | Setup TNS     |                  0 ns |
 
 ### Architecture and references

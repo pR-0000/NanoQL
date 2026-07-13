@@ -15,8 +15,6 @@ impl/
 
 # User-supplied firmware and local test data
 /src/ipc/ql_ipc_rom.hex
-/private/roms/
-/private/sdcard/
-/private/bl616/
+/private/
 __pycache__/
 *.pyc
