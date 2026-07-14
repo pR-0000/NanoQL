@@ -98,6 +98,7 @@ module nanoql_top(
     wire zx8302_write_done;
     wire [2:0] cpu_ipl_n;
     wire zx8302_ipc_ready;
+    wire ql_audio;
     wire bus_mem_req;
     wire bus_mem_we;
     wire [21:0] bus_mem_addr;
@@ -642,7 +643,8 @@ module nanoql_top(
         .cpu_write_done(zx8302_write_done),
         .cpu_dout(zx8302_rdata),
         .ipl_n(cpu_ipl_n),
-        .ipc_ready(zx8302_ipc_ready)
+        .ipc_ready(zx8302_ipc_ready),
+        .audio(ql_audio)
     );
 
     ql_cpu_fx68k ql_cpu (
@@ -1086,6 +1088,7 @@ module nanoql_top(
         .clk_pixel(clk_hdmi),
         .reset(video_reset),
         .rgb(osd_rgb),
+        .ql_audio(ql_audio),
         .tmds_clk_n(tmds_clk_n),
         .tmds_clk_p(tmds_clk_p),
         .tmds_d_n(tmds_d_n),

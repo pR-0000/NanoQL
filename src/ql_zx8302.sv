@@ -18,7 +18,8 @@ module ql_zx8302 (
     output reg         cpu_write_done,
     output reg  [15:0] cpu_dout,
     output wire [2:0] ipl_n,
-    output wire        ipc_ready
+    output wire        ipc_ready,
+    output wire        audio
 );
 
     reg [3:0] comdata_reg;
@@ -39,7 +40,6 @@ module ql_zx8302 (
     wire ipc_comdata_in = comdata_reg[0];
     wire ipc_comctrl;
     wire ipc_comdata_out;
-    wire ipc_audio;
     wire [1:0] ipc_ipl;
     wire zx8302_comdata_in = ipc_comdata_in && ipc_comdata_out;
     wire ipc_comctrl_falling = !ipc_comctrl && previous_ipc_comctrl;
@@ -52,7 +52,7 @@ module ql_zx8302 (
         .keyboard_matrix(keyboard_matrix),
         .comctrl(ipc_comctrl),
         .comdata_out(ipc_comdata_out),
-        .audio(ipc_audio),
+        .audio(audio),
         .ipl(ipc_ipl)
     );
 

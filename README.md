@@ -13,6 +13,7 @@ NanoQL démarre une ROM Sinclair QL depuis la carte microSD et fournit :
 - un cœur 68000 `fx68k` ;
 - 128 Kio de RAM QL dans la SDRAM de la Tang Nano 20K ;
 - les modes vidéo QL 4 et 8 sur HDMI 720p50 ;
+- le son mono du QL sur les deux canaux HDMI en PCM 48 kHz ;
 - une image 512 x 256 centrée avec quatre largeurs sélectionnables ;
 - le contrôleur IPC 8049 et la matrice clavier QL ;
 - un clavier USB raccordé par hub au BL616 intégré ;
@@ -64,14 +65,14 @@ Cette opération n'est nécessaire qu'une fois.
 
 1. Ouvrez l'onglet **1. BL616 Companion**.
 2. Sélectionnez la révision `3921` ou `3923`.
-3. Gardez le mode **Normal**.
+3. Gardez le profil **NanoQL**.
 4. Cliquez sur **Préparer et ouvrir FlashCube**.
 5. Débranchez la carte.
 6. Maintenez le bouton **UPDATE**, branchez le câble USB, puis relâchez le bouton.
 7. Dans FlashCube, sélectionnez le port série de la carte et le fichier `.ini` indiqué par l'assistant.
 8. Lancez la programmation, puis débranchez la carte.
 
-Le mode Normal conserve la programmation FPGA par ordinateur et active automatiquement FPGA Companion lorsque la carte démarre sans liaison USB de données.
+Le profil NanoQL fournit le clavier USB, la microSD et NanoQL Link. Le profil Original restaure temporairement FPGA Partner lorsqu'une programmation persistante avec Gowin Programmer est nécessaire.
 
 #### 3. Préparer la ROM et la microSD
 
@@ -137,7 +138,7 @@ Dans Gowin EDA, l'option **Use JTAG as regular IO** doit rester décochée.
 - **Pas d'image :** vérifiez le câble HDMI, l'entrée de l'écran et la programmation Flash du FPGA.
 - **Damier ou écran uni :** la ROM n'est pas montée ; vérifiez `QL.rom`, `nanoql.ini`, la microSD et le firmware BL616 correspondant à la révision.
 - **F1/F2 ne répond pas :** utilisez un hub alimenté compatible OTG et démarrez sans connexion USB de données vers l'ordinateur.
-- **La programmation FPGA échoue :** utilisez un câble de données et vérifiez que le BL616 est en mode Normal.
+- **La programmation FPGA échoue :** utilisez un câble de données et restaurez temporairement le profil BL616 Original.
 
 ### Utilisation FPGA
 
@@ -145,16 +146,16 @@ Dernière compilation du build principal :
 
 | Ressource    |            Utilisation |
 | ------------ | ---------------------: |
-| Logic        | 10 510 / 20 736 (51 %) |
-| LUT          |                  9 866 |
-| ALU          |                    578 |
-| Registres    |                  4 219 |
-| CLS          |  6 501 / 10 368 (63 %) |
+| Logic        | 11 021 / 20 736 (54 %) |
+| LUT          |                 10 353 |
+| ALU          |                    602 |
+| Registres    |                  4 690 |
+| CLS          |  6 916 / 10 368 (67 %) |
 | BSRAM        |         45 / 46 (98 %) |
 | E/S          |         27 / 66 (41 %) |
 | rPLL         |           2 / 2 (100 %) |
-| Fmax système | 67,787 MHz pour 31,8 MHz |
-| Fmax HDMI    | 76,627 MHz pour 74,25 MHz |
+| Fmax système | 62,691 MHz pour 31,8 MHz |
+| Fmax HDMI    | 79,115 MHz pour 74,25 MHz |
 | TNS setup    |                   0 ns |
 
 Ces valeurs sont mises à jour après les changements significatifs du build principal.
@@ -203,6 +204,7 @@ NanoQL boots a Sinclair QL ROM from microSD and currently provides:
 - an `fx68k` 68000 core;
 - 128 KiB of QL RAM in the Tang Nano 20K SDRAM;
 - QL mode 4 and mode 8 video over 720p50 HDMI;
+- QL mono sound on both HDMI channels as 48 kHz PCM;
 - a centered 512 x 256 image with four selectable display widths;
 - the 8049 IPC controller and QL keyboard matrix;
 - a USB keyboard through the integrated BL616 and a powered USB hub;
@@ -233,7 +235,7 @@ The assistant uses only Python's standard library and runs on Windows, macOS, an
 
 #### 2. Prepare the integrated BL616
 
-In **1. BL616 Companion**, select board revision 3921 or 3923, keep **Normal** mode, and click **Prepare and open FlashCube**. Disconnect the board, hold **UPDATE** while reconnecting USB, then release it. In FlashCube, select the serial port and the `.ini` file displayed by the assistant, and program it. This is normally a one-time operation.
+In **1. BL616 Companion**, select board revision 3921 or 3923, keep the **NanoQL** profile, and click **Prepare and open FlashCube**. Disconnect the board, hold **UPDATE** while reconnecting USB, then release it. In FlashCube, select the serial port and the `.ini` file displayed by the assistant, and program it. The NanoQL profile provides the USB keyboard, microSD, and NanoQL Link. The Original profile temporarily restores FPGA Partner when persistent Gowin programming is required.
 
 #### 3. Prepare the ROM and microSD
 
@@ -268,7 +270,7 @@ Power the board off, insert the prepared microSD card, connect HDMI, and attach 
 - **No picture:** check HDMI input and persistent FPGA programming.
 - **Checkerboard or solid screen:** check `QL.rom`, `nanoql.ini`, microSD, and that the BL616 firmware matches the board revision.
 - **F1/F2 does not respond:** use a powered OTG-compatible hub and boot without a USB data connection to the computer.
-- **FPGA programming fails:** use a USB data cable and Normal BL616 mode.
+- **FPGA programming fails:** use a USB data cable and temporarily restore the Original BL616 profile.
 
 ### FPGA utilization
 
@@ -276,15 +278,15 @@ Latest main build:
 
 | Resource      |           Utilization |
 | ------------- | --------------------: |
-| Logic         | 10,510 / 20,736 (51%) |
-| LUT           |                 9,866 |
-| ALU           |                   578 |
-| Registers     |                 4,219 |
-| CLS           |  6,501 / 10,368 (63%) |
+| Logic         | 11,021 / 20,736 (54%) |
+| LUT           |                10,353 |
+| ALU           |                   602 |
+| Registers     |                 4,690 |
+| CLS           |  6,916 / 10,368 (67%) |
 | BSRAM         |         45 / 46 (98%) |
 | I/O           |         27 / 66 (41%) |
-| System Fmax   | 67.787 MHz at 31.8 MHz |
-| HDMI Fmax     | 76.627 MHz at 74.25 MHz |
+| System Fmax   | 62.691 MHz at 31.8 MHz |
+| HDMI Fmax     | 79.115 MHz at 74.25 MHz |
 | Setup TNS     |                  0 ns |
 
 ### Architecture and references

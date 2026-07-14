@@ -26,6 +26,20 @@ $zx8302BusOutput = Join-Path $env:TEMP "nanoql_zx8302_bus.vvp"
 $romLoaderOutput = Join-Path $env:TEMP "nanoql_sd_rom_loader.vvp"
 $cpuAddressOutput = Join-Path $env:TEMP "nanoql_cpu_address.vvp"
 $hostLinkOutput = Join-Path $env:TEMP "nanoql_host_link.vvp"
+$hdmiAudioOutput = Join-Path $env:TEMP "nanoql_hdmi_audio.vvp"
+
+& $iverilog -g2012 -s tb_ql_hdmi_audio -o $hdmiAudioOutput `
+    (Join-Path $projectRoot "sim\tb_ql_hdmi_audio.sv") `
+    (Join-Path $projectRoot "src\ql_hdmi_audio.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "HDMI audio simulation compilation failed."
+}
+
+& $vvp $hdmiAudioOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "HDMI audio simulation failed."
+}
 
 & $iverilog -g2012 -s tb_ql_cpu_address -o $cpuAddressOutput `
     (Join-Path $projectRoot "sim\tb_ql_cpu_address.sv") `

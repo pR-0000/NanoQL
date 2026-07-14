@@ -26,31 +26,21 @@ module packet_picker
     output logic [55:0] sub [3:0]
 );
 
-// Connect the current packet type's data to the output.
 logic [7:0] packet_type = 8'd0;
-logic [23:0] headers [255:0];
-logic [55:0] subs [255:0] [3:0];
-assign header = headers[packet_type];
-assign sub[0] = subs[packet_type][0];
-assign sub[1] = subs[packet_type][1];
-assign sub[2] = subs[packet_type][2];
-assign sub[3] = subs[packet_type][3];
-
-// NULL packet
-// "An HDMI Sink shall ignore bytes HB1 and HB2 of the Null Packet Header and all bytes of the Null Packet Body."
-`ifdef MODEL_TECH
-assign headers[0] = {8'd0, 8'd0, 8'd0}; assign subs[0] = '{56'd0, 56'd0, 56'd0, 56'd0};
-`else
-assign headers[0] = {8'dX, 8'dX, 8'd0};
-assign subs[0][0] = 56'dX;
-assign subs[0][1] = 56'dX;
-assign subs[0][2] = 56'dX;
-assign subs[0][3] = 56'dX;
-`endif
+logic [23:0] acr_header;
+logic [55:0] acr_sub [3:0];
+logic [23:0] audio_header;
+logic [55:0] audio_sub [3:0];
+logic [23:0] avi_header;
+logic [55:0] avi_sub [3:0];
+logic [23:0] spd_header;
+logic [55:0] spd_sub [3:0];
+logic [23:0] audio_info_header;
+logic [55:0] audio_info_sub [3:0];
 
 // Audio Clock Regeneration Packet
 logic clk_audio_counter_wrap;
-audio_clock_regeneration_packet #(.VIDEO_RATE(VIDEO_RATE), .AUDIO_RATE(AUDIO_RATE)) audio_clock_regeneration_packet (.clk_pixel(clk_pixel), .clk_audio(clk_audio), .clk_audio_counter_wrap(clk_audio_counter_wrap), .header(headers[1]), .sub(subs[1]));
+audio_clock_regeneration_packet #(.VIDEO_RATE(VIDEO_RATE), .AUDIO_RATE(AUDIO_RATE)) audio_clock_regeneration_packet (.clk_pixel(clk_pixel), .clk_audio(clk_audio), .clk_audio_counter_wrap(clk_audio_counter_wrap), .header(acr_header), .sub(acr_sub));
 
 // Audio Sample packet
 localparam bit [3:0] SAMPLING_FREQUENCY = AUDIO_RATE == 32000 ? 4'b0011
@@ -130,19 +120,69 @@ begin
             frame_counter = frame_counter - 8'd192;
     end
 end
-audio_sample_packet #(.SAMPLING_FREQUENCY(SAMPLING_FREQUENCY), .WORD_LENGTH({{WORD_LENGTH[0], WORD_LENGTH[1], WORD_LENGTH[2]}, WORD_LENGTH_LIMIT})) audio_sample_packet (.frame_counter(frame_counter), .valid_bit('{2'b00, 2'b00, 2'b00, 2'b00}), .user_data_bit('{2'b00, 2'b00, 2'b00, 2'b00}), .audio_sample_word(audio_sample_word_packet), .audio_sample_word_present(audio_sample_word_present_packet), .header(headers[2]), .sub(subs[2]));
+audio_sample_packet #(.SAMPLING_FREQUENCY(SAMPLING_FREQUENCY), .WORD_LENGTH({{WORD_LENGTH[0], WORD_LENGTH[1], WORD_LENGTH[2]}, WORD_LENGTH_LIMIT})) audio_sample_packet (.frame_counter(frame_counter), .valid_bit('{2'b00, 2'b00, 2'b00, 2'b00}), .user_data_bit('{2'b00, 2'b00, 2'b00, 2'b00}), .audio_sample_word(audio_sample_word_packet), .audio_sample_word_present(audio_sample_word_present_packet), .header(audio_header), .sub(audio_sub));
 
 
 auxiliary_video_information_info_frame #(
     .IT_CONTENT(IT_CONTENT),
     .PICTURE_ASPECT_RATIO(PICTURE_ASPECT_RATIO)
-) auxiliary_video_information_info_frame(.stmode(stmode), .cea(cea), .header(headers[130]), .sub(subs[130]));
+) auxiliary_video_information_info_frame(.stmode(stmode), .cea(cea), .header(avi_header), .sub(avi_sub));
 
 
-source_product_description_info_frame #(.VENDOR_NAME(VENDOR_NAME), .PRODUCT_DESCRIPTION(PRODUCT_DESCRIPTION), .SOURCE_DEVICE_INFORMATION(SOURCE_DEVICE_INFORMATION)) source_product_description_info_frame(.header(headers[131]), .sub(subs[131]));
+source_product_description_info_frame #(.VENDOR_NAME(VENDOR_NAME), .PRODUCT_DESCRIPTION(PRODUCT_DESCRIPTION), .SOURCE_DEVICE_INFORMATION(SOURCE_DEVICE_INFORMATION)) source_product_description_info_frame(.header(spd_header), .sub(spd_sub));
 
 
-audio_info_frame audio_info_frame(.header(headers[132]), .sub(subs[132]));
+audio_info_frame audio_info_frame(.header(audio_info_header), .sub(audio_info_sub));
+
+// Gowin can optimize away sparse, dynamically indexed unpacked arrays. Keep
+// packet selection explicit so HDMI data islands and audio survive synthesis.
+always @(*) begin
+    header = 24'd0;
+    sub[0] = 56'd0;
+    sub[1] = 56'd0;
+    sub[2] = 56'd0;
+    sub[3] = 56'd0;
+    case (packet_type)
+        8'h01: begin
+            header = acr_header;
+            sub[0] = acr_sub[0];
+            sub[1] = acr_sub[1];
+            sub[2] = acr_sub[2];
+            sub[3] = acr_sub[3];
+        end
+        8'h02: begin
+            header = audio_header;
+            sub[0] = audio_sub[0];
+            sub[1] = audio_sub[1];
+            sub[2] = audio_sub[2];
+            sub[3] = audio_sub[3];
+        end
+        8'h82: begin
+            header = avi_header;
+            sub[0] = avi_sub[0];
+            sub[1] = avi_sub[1];
+            sub[2] = avi_sub[2];
+            sub[3] = avi_sub[3];
+        end
+        8'h83: begin
+            header = spd_header;
+            sub[0] = spd_sub[0];
+            sub[1] = spd_sub[1];
+            sub[2] = spd_sub[2];
+            sub[3] = spd_sub[3];
+        end
+        8'h84: begin
+            header = audio_info_header;
+            sub[0] = audio_info_sub[0];
+            sub[1] = audio_info_sub[1];
+            sub[2] = audio_info_sub[2];
+            sub[3] = audio_info_sub[3];
+        end
+        default: begin
+            header = 24'd0;
+        end
+    endcase
+end
 
 
 // "A Source shall always transmit... [an InfoFrame] at least once per two Video Fields"
@@ -160,7 +200,7 @@ begin
         audio_info_frame_sent <= 1'b0;
         auxiliary_video_information_info_frame_sent <= 1'b0;
         source_product_description_info_frame_sent <= 1'b0;
-        packet_type <= 8'dx;
+        packet_type <= 8'd0;
     end
     else if (packet_enable)
     begin

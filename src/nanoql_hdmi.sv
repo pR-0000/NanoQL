@@ -5,6 +5,7 @@ module nanoql_hdmi #(
     input  wire       clk_pixel,
     input  wire       reset,
     input  wire [23:0] rgb,
+    input  wire       ql_audio,
 
     output wire       tmds_clk_n,
     output wire       tmds_clk_p,
@@ -12,24 +13,24 @@ module nanoql_hdmi #(
     output wire [2:0] tmds_d_p
 );
 
-    reg clk_audio = 1'b0;
-    // NanoQL currently emits DVI-compatible video without audio packets.
-    // Keeping this counter intentionally below the 720p audio divider lets
-    // synthesis remove the unused auxiliary packet path.
-    reg [8:0] aclk_cnt = 9'd0;
-
-    always @(posedge clk_pixel) begin
-        if (aclk_cnt < PIXEL_CLOCK / 48000 / 2 - 1)
-            aclk_cnt <= aclk_cnt + 9'd1;
-        else begin
-            aclk_cnt <= 9'd0;
-            clk_audio <= ~clk_audio;
-        end
-    end
-
+    wire clk_audio;
+    wire [15:0] audio_left;
+    wire [15:0] audio_right;
     wire [15:0] audio_sample_word [1:0];
-    assign audio_sample_word[0] = 16'd0;
-    assign audio_sample_word[1] = 16'd0;
+    assign audio_sample_word[0] = audio_left;
+    assign audio_sample_word[1] = audio_right;
+
+    ql_hdmi_audio #(
+        .PIXEL_CLOCK(PIXEL_CLOCK),
+        .AUDIO_RATE(48_000)
+    ) audio_encoder (
+        .clk_pixel(clk_pixel),
+        .reset(reset),
+        .ql_audio(ql_audio),
+        .clk_audio(clk_audio),
+        .sample_left(audio_left),
+        .sample_right(audio_right)
+    );
 
     wire [2:0] tmds;
     wire tmds_clock;

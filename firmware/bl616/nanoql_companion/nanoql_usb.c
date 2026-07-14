@@ -34,10 +34,14 @@
 #include "nanoql_usb.h"
 
 #define USB_BUS_ID 0
-#define CDC_INT_EP 0x81
+#define CDC_IN_EP  0x81
 #define CDC_OUT_EP 0x02
-#define CDC_IN_EP  0x83
+#define CDC_INT_EP 0x83
+#ifdef CONFIG_USB_HS
+#define CDC_MAX_MPS 512
+#else
 #define CDC_MAX_MPS 64
+#endif
 
 #define NANOQL_USB_VID 0xffff
 #define NANOQL_USB_PID 0x4e51
@@ -60,6 +64,8 @@
 static TaskHandle_t link_task_handle;
 static TaskHandle_t development_watch_task_handle;
 static bool development_active;
+
+extern TaskHandle_t com_task_handle;
 
 static USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t usb_read_buffer[512];
 static USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t usb_write_buffer[256];
@@ -164,6 +170,17 @@ bool nanoql_development_requested(void)
 bool nanoql_usb_is_active(void)
 {
     return development_active;
+}
+
+static void stop_companion_task(void)
+{
+    TaskHandle_t task = com_task_handle;
+    if (task == NULL || task == xTaskGetCurrentTaskHandle())
+        return;
+
+    com_task_handle = NULL;
+    vTaskDelete(task);
+    debugf("NanoQL: autonomous Companion task stopped");
 }
 
 extern void stop_hid(void);
@@ -642,6 +659,9 @@ bool nanoql_usb_start(void)
         development_active = false;
         return false;
     }
+
+    /* Companion and NanoQL Link must never drive the FPGA SPI bus together. */
+    stop_companion_task();
 
     xTaskCreate(link_task, "NanoQL Link", 1024, NULL,
                 configMAX_PRIORITIES - 2, &link_task_handle);

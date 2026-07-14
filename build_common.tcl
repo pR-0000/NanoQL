@@ -10,6 +10,10 @@ if {![info exists zx8302_source]} {
     error "zx8302_source must be set before sourcing build_common.tcl"
 }
 
+if {![info exists hdmi_audio_source]} {
+    set hdmi_audio_source src/ql_hdmi_audio.sv
+}
+
 set_device GW2AR-LV18QN88C8/I7 -name GW2AR-18C
 
 add_file src/nanoql_top.sv
@@ -47,6 +51,7 @@ add_file src/fx68k/fx68kAlu.sv
 add_file src/fx68k/uaddrPla.sv
 add_file src/sdram/sdram.v
 add_file src/nanoql_hdmi.sv
+add_file $hdmi_audio_source
 add_file src/gowin_rpll/pll_160m.v
 add_file src/gowin_rpll/pll_371m.v
 add_file src/gowin_clkdiv/gowin_clkdiv.v

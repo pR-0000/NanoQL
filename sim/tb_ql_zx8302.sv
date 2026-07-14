@@ -11,6 +11,7 @@ module tb_ql_zx8302;
     reg [1:0] cpu_ds_n = 2'b11;
     reg [15:0] cpu_din = 16'd0;
     wire cpu_write_done;
+    wire audio;
 
     ql_zx8302 dut (
         .clk(clk), .reset(reset), .ce_11m(1'b0),
@@ -19,7 +20,7 @@ module tb_ql_zx8302;
         .cpu_ds_n(cpu_ds_n), .cpu_din(cpu_din),
         .cpu_write_done(cpu_write_done),
         .cpu_dout(),
-        .ipl_n(), .ipc_ready()
+        .ipl_n(), .ipc_ready(), .audio(audio)
     );
 
     task automatic pulse_write;
@@ -76,6 +77,11 @@ module tb_ql_zx8302;
             $fatal(1, "ZX8302 committed %h instead of the queued frame",
                    dut.comdata_reg);
 
+        dut.ipc.audio_test = 1'b1;
+        #1;
+        if (audio !== 1'b1)
+            $fatal(1, "ZX8302 did not expose IPC audio");
+
         $display("PASS: ZX8302 phase sampling and COMCTRL collision");
         $finish;
     end
@@ -92,7 +98,8 @@ module ql_ipc_t48 (
     output wire audio,
     output wire [1:0] ipl
 );
+    reg audio_test = 1'b0;
     assign comdata_out = 1'b1;
-    assign audio = 1'b0;
+    assign audio = audio_test;
     assign ipl = 2'b11;
 endmodule
