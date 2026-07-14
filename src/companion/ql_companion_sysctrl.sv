@@ -11,6 +11,7 @@ module ql_companion_sysctrl(
     input  wire [1:0] buttons,
     output reg  [1:0] system_reset,
     output reg  [1:0] video_aspect,
+    output reg  [1:0] ram_config,
     output reg        status_seen,
     output reg        config_seen
 );
@@ -40,6 +41,7 @@ module ql_companion_sysctrl(
             sd_iack <= 1'b0;
             system_reset <= 2'd1;
             video_aspect <= 2'd2;
+            ram_config <= 2'd0;
             status_seen <= 1'b0;
             config_seen <= 1'b0;
         end else begin
@@ -79,6 +81,8 @@ module ql_companion_sysctrl(
                                     system_reset <= data_in[1:0];
                                 else if (config_id == "A")
                                     video_aspect <= data_in[1:0];
+                                else if (config_id == "M")
+                                    ram_config <= data_in[1:0];
                             end
                         end
 

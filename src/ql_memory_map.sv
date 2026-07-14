@@ -1,6 +1,7 @@
 module ql_memory_map(
     input  wire        clk,
     input  wire        reset,
+    input  wire [1:0]  ram_config,
 
     input  wire        bus_req,
     input  wire        bus_we,
@@ -49,7 +50,7 @@ module ql_memory_map(
     localparam [21:0] ROM_LAST_WORD = 22'h007fff;
     // Base Sinclair QL RAM: byte addresses 0x020000-0x03ffff (128 KiB).
     localparam [21:0] RAM_FIRST_WORD = 22'h010000;
-    localparam [21:0] RAM_LAST_WORD  = 22'h01ffff;
+    localparam [21:0] RAM_BASE_LAST_WORD = 22'h01ffff;
     // Internal QL I/O window: byte addresses 0x018000-0x01bfff.
     localparam [21:0] IO_FIRST_WORD = 22'h00c000;
     localparam [21:0] IO_LAST_WORD  = 22'h00dfff;
@@ -61,8 +62,21 @@ module ql_memory_map(
                             (bus_addr <= 22'd3) && !bus_we;
     wire dynamic_rom_read = rom_selected && rom_is_dynamic && !bus_we &&
                             !boot_vector_read;
-    wire ram_selected = (bus_addr >= RAM_FIRST_WORD) &&
-                        (bus_addr <= RAM_LAST_WORD);
+    // These ranges are the word-address equivalents of QL_MiSTer's original
+    // RAM decode. Mode 3 is kept internal until Gold Card support is complete.
+    wire base_ram_selected = (bus_addr >= RAM_FIRST_WORD) &&
+                             (bus_addr <= RAM_BASE_LAST_WORD);
+    wire ram_640_selected = (ram_config == 2'd1) &&
+                            (bus_addr >= 22'h020000) &&
+                            (bus_addr <= 22'h05ffff);
+    wire ram_896_selected = (ram_config == 2'd2) &&
+                            (bus_addr >= 22'h020000) &&
+                            (bus_addr <= 22'h07ffff);
+    wire ram_4m_selected = (ram_config == 2'd3) &&
+                           (bus_addr >= 22'h020000) &&
+                           (bus_addr <= 22'h1fffff);
+    wire ram_selected = base_ram_selected || ram_640_selected ||
+                        ram_896_selected || ram_4m_selected;
     wire internal_io_selected = (bus_addr >= IO_FIRST_WORD) &&
                                 (bus_addr <= IO_LAST_WORD);
     wire mc_stat_selected = bus_addr == MC_STAT_WORD;

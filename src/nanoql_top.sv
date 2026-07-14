@@ -182,6 +182,7 @@ module nanoql_top(
     wire companion_sd_iack;
     wire [1:0] companion_system_reset;
     wire [1:0] companion_video_aspect;
+    wire [1:0] companion_ram_config;
     wire companion_status_seen;
     wire companion_config_seen;
     reg [1:0] key_s1_sync;
@@ -210,19 +211,11 @@ module nanoql_top(
     wire rom_loader_data_valid;
     wire [15:0] rom_loader_data;
     wire rom_loader_write_done;
-    wire rom_store_req;
-    wire rom_store_we;
-    wire [14:0] rom_store_addr;
-    wire [15:0] rom_store_wdata;
-    wire rom_store_ready;
-    wire rom_store_data_valid;
-    wire [15:0] rom_store_data;
-    wire rom_store_write_done;
     wire rom_loading;
     wire rom_load_done;
     wire rom_load_fail;
     wire [7:0] rom_sector_progress;
-    wire rom_loader_owns_store = rom_is_dynamic && !rom_load_done;
+    wire rom_loader_owns_sdram = rom_is_dynamic && !rom_load_done;
     wire host_mem_req;
     wire host_mem_we;
     wire [21:0] host_mem_addr;
@@ -238,42 +231,59 @@ module nanoql_top(
     wire [31:0] host_boot_pc;
     wire host_restart_pulse;
 
-    // Keep QL RAM/video in SDRAM. The runtime-loaded ROM has its own BSRAM,
-    // matching the separate dpram ROM path used by QL MiSTer.
-    // NanoQL Link owns this port only while the 68000 is explicitly held.
-    assign sdram_system_req = host_cpu_hold ? host_mem_req : mapped_sdram_req;
-    assign sdram_system_we = host_cpu_hold ? host_mem_we : mapped_sdram_we;
-    assign sdram_system_addr = host_cpu_hold ? host_mem_addr : mapped_sdram_addr;
-    assign sdram_system_ds = host_cpu_hold ? host_mem_ds : mapped_sdram_ds;
-    assign sdram_system_wdata = host_cpu_hold ? host_mem_wdata :
-                                                   mapped_sdram_wdata;
-    assign mapped_sdram_ready = !host_cpu_hold && sdram_system_ready;
-    assign mapped_sdram_data_valid = !host_cpu_hold &&
-                                     sdram_system_data_valid;
-    assign mapped_sdram_data = sdram_system_data;
-    assign mapped_sdram_write_done = !host_cpu_hold &&
-                                     sdram_system_write_done;
-    assign host_mem_ready = host_cpu_hold && sdram_system_ready;
-    assign host_mem_write_done = host_cpu_hold && sdram_system_write_done;
-    assign host_mem_data_valid = host_cpu_hold && sdram_system_data_valid;
-    assign host_mem_rdata = sdram_system_data;
+    // Reserve the final 64 KiB of the 8 MiB SDRAM for the runtime QL ROM.
+    // QL RAM can later grow to 4 MiB without colliding with this region.
+    localparam [21:0] DYNAMIC_ROM_SDRAM_BASE = 22'h3f8000;
+    wire [21:0] rom_loader_sdram_addr = DYNAMIC_ROM_SDRAM_BASE +
+                                         rom_loader_addr;
+    wire [21:0] mapped_rom_sdram_addr = DYNAMIC_ROM_SDRAM_BASE +
+                                         {7'd0, mapped_rom_addr};
 
-    assign rom_store_req = rom_loader_owns_store ?
-                           rom_loader_req : mapped_rom_req;
-    assign rom_store_we = rom_loader_owns_store && rom_loader_we;
-    assign rom_store_addr = rom_loader_owns_store ?
-                            rom_loader_addr[14:0] : mapped_rom_addr;
-    assign rom_store_wdata = rom_loader_wdata;
-    assign mapped_rom_ready = !rom_loader_owns_store && rom_store_ready;
-    assign mapped_rom_data_valid = !rom_loader_owns_store &&
-                                   rom_store_data_valid;
-    assign mapped_rom_data = rom_store_data;
-    assign rom_loader_ready = rom_loader_owns_store && rom_store_ready;
-    assign rom_loader_data_valid = rom_loader_owns_store &&
-                                   rom_store_data_valid;
-    assign rom_loader_data = rom_store_data;
-    assign rom_loader_write_done = rom_loader_owns_store &&
-                                   rom_store_write_done;
+    ql_sdram_router sdram_router (
+        .clk(clk_pixel),
+        .reset(video_reset),
+        .host_req(host_cpu_hold && host_mem_req),
+        .host_we(host_mem_we),
+        .host_addr(host_mem_addr),
+        .host_ds(host_mem_ds),
+        .host_wdata(host_mem_wdata),
+        .host_ready(host_mem_ready),
+        .host_data_valid(host_mem_data_valid),
+        .host_data(host_mem_rdata),
+        .host_write_done(host_mem_write_done),
+        .loader_req(rom_loader_owns_sdram && rom_loader_req),
+        .loader_we(rom_loader_we),
+        .loader_addr(rom_loader_sdram_addr),
+        .loader_ds(rom_loader_ds),
+        .loader_wdata(rom_loader_wdata),
+        .loader_ready(rom_loader_ready),
+        .loader_data_valid(rom_loader_data_valid),
+        .loader_data(rom_loader_data),
+        .loader_write_done(rom_loader_write_done),
+        .rom_req(!rom_loader_owns_sdram && mapped_rom_req),
+        .rom_addr(mapped_rom_sdram_addr),
+        .rom_ready(mapped_rom_ready),
+        .rom_data_valid(mapped_rom_data_valid),
+        .rom_data(mapped_rom_data),
+        .ram_req(mapped_sdram_req),
+        .ram_we(mapped_sdram_we),
+        .ram_addr(mapped_sdram_addr),
+        .ram_ds(mapped_sdram_ds),
+        .ram_wdata(mapped_sdram_wdata),
+        .ram_ready(mapped_sdram_ready),
+        .ram_data_valid(mapped_sdram_data_valid),
+        .ram_data(mapped_sdram_data),
+        .ram_write_done(mapped_sdram_write_done),
+        .system_req(sdram_system_req),
+        .system_we(sdram_system_we),
+        .system_addr(sdram_system_addr),
+        .system_ds(sdram_system_ds),
+        .system_wdata(sdram_system_wdata),
+        .system_ready(sdram_system_ready),
+        .system_data_valid(sdram_system_data_valid),
+        .system_data(sdram_system_data),
+        .system_write_done(sdram_system_write_done)
+    );
 
     mcu_spi companion_spi (
         .clk(clk_pixel),
@@ -351,6 +361,7 @@ module nanoql_top(
         .buttons({1'b0, key_s1_latched}),
         .system_reset(companion_system_reset),
         .video_aspect(companion_video_aspect),
+        .ram_config(companion_ram_config),
         .status_seen(companion_status_seen),
         .config_seen(companion_config_seen)
     );
@@ -446,19 +457,6 @@ module nanoql_top(
         .loaded(rom_load_done),
         .failed(rom_load_fail),
         .sector_progress(rom_sector_progress)
-    );
-
-    ql_sd_rom_memory rom_memory (
-        .clk(clk_pixel),
-        .reset(video_reset),
-        .req(rom_store_req),
-        .we(rom_store_we),
-        .addr(rom_store_addr),
-        .wdata(rom_store_wdata),
-        .ready(rom_store_ready),
-        .data_valid(rom_store_data_valid),
-        .data(rom_store_data),
-        .write_done(rom_store_write_done)
     );
 
     ql_sdram_memory sdram_memory (
@@ -591,6 +589,7 @@ module nanoql_top(
     ql_memory_map memory_map (
         .clk(clk_pixel),
         .reset(ql_system_reset),
+        .ram_config(companion_ram_config),
         .bus_req(bus_mem_req),
         .bus_we(bus_mem_we),
         .bus_addr(bus_mem_addr),
@@ -651,6 +650,7 @@ module nanoql_top(
         .clk(clk_pixel),
         .reset(ql_system_reset),
         .enable(cpu_run_enable),
+        .ram_config(companion_ram_config),
         .cpu_addr(cpu_addr),
         .cpu_data_out(cpu_data_out),
         .cpu_data_in(cpu_data_in),

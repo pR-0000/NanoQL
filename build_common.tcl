@@ -26,6 +26,7 @@ add_file src/ql_video_scanout.sv
 add_file src/ql_native_timing_probe.sv
 add_file src/ql_test_pattern.sv
 add_file src/ql_sdram_memory.sv
+add_file src/ql_sdram_router.sv
 add_file src/ql_cpu_bus_bridge.sv
 add_file src/ql_timing.sv
 add_file src/ql_memory_map.sv
@@ -39,7 +40,6 @@ add_file src/companion/ql_companion_osd.sv
 add_file src/companion/ql_host_link.sv
 add_file src/companion/ql_rom_sector_buffer.sv
 add_file src/companion/ql_sd_rom_loader.sv
-add_file src/companion/ql_sd_rom_memory.sv
 add_file src/companion/vendor/mcu_spi.v
 add_file src/companion/vendor/sd_card.v
 add_file src/companion/vendor/sd_rw.v

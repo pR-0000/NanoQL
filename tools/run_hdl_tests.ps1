@@ -27,6 +27,34 @@ $romLoaderOutput = Join-Path $env:TEMP "nanoql_sd_rom_loader.vvp"
 $cpuAddressOutput = Join-Path $env:TEMP "nanoql_cpu_address.vvp"
 $hostLinkOutput = Join-Path $env:TEMP "nanoql_host_link.vvp"
 $hdmiAudioOutput = Join-Path $env:TEMP "nanoql_hdmi_audio.vvp"
+$sdramRouterOutput = Join-Path $env:TEMP "nanoql_sdram_router.vvp"
+$memoryMapOutput = Join-Path $env:TEMP "nanoql_memory_map_ram.vvp"
+
+& $iverilog -g2012 -s tb_ql_memory_map_ram -o $memoryMapOutput `
+    (Join-Path $projectRoot "sim\tb_ql_memory_map_ram.sv") `
+    (Join-Path $projectRoot "src\ql_memory_map.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "RAM memory-map simulation compilation failed."
+}
+
+& $vvp $memoryMapOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "RAM memory-map simulation failed."
+}
+
+& $iverilog -g2012 -s tb_ql_sdram_router -o $sdramRouterOutput `
+    (Join-Path $projectRoot "sim\tb_ql_sdram_router.sv") `
+    (Join-Path $projectRoot "src\ql_sdram_router.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "SDRAM router simulation compilation failed."
+}
+
+& $vvp $sdramRouterOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "SDRAM router simulation failed."
+}
 
 & $iverilog -g2012 -s tb_ql_hdmi_audio -o $hdmiAudioOutput `
     (Join-Path $projectRoot "sim\tb_ql_hdmi_audio.sv") `

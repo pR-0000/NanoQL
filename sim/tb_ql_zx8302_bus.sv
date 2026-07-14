@@ -44,6 +44,7 @@ module tb_ql_zx8302_bus;
 
     ql_memory_map map (
         .clk(clk), .reset(reset), .bus_req(bus_req), .bus_we(bus_we),
+        .ram_config(2'd0),
         .bus_addr(bus_addr), .bus_ds(bus_ds), .bus_wdata(bus_wdata),
         .bus_ready(bus_ready), .bus_data_valid(bus_data_valid),
         .bus_data(bus_data), .bus_write_done(bus_write_done),

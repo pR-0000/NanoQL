@@ -64,7 +64,7 @@ module tb_ql_sdram_controller;
         .system_data(system_data), .system_write_done(system_write_done)
     );
 
-    ql_sdram_memory memory (
+    ql_sdram_memory #(.INIT_LAST_WORD_INDEX(19'h0ffff)) memory (
         .clk(clk), .reset(reset),
         .client_addr(client_addr), .client_rd(client_rd),
         .client_ready(client_ready),

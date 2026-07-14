@@ -2,6 +2,7 @@ module ql_cpu_fx68k(
     input  wire        clk,
     input  wire        reset,
     input  wire        enable,
+    input  wire [1:0]  ram_config,
 
     output wire [23:0] cpu_addr,
     output wire [15:0] cpu_data_out,
@@ -91,6 +92,7 @@ module ql_cpu_fx68k(
         .word_addr(cpu_word_addr),
         .uds_n(cpu_uds_n),
         .lds_n(cpu_lds_n),
+        .ram_config(ram_config),
         .byte_addr(cpu_addr)
     );
 

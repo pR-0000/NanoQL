@@ -11,16 +11,18 @@ Portage progressif du Sinclair QL sur Sipeed Tang Nano 20K.
 NanoQL démarre une ROM Sinclair QL depuis la carte microSD et fournit :
 
 - un cœur 68000 `fx68k` ;
-- 128 Kio de RAM QL dans la SDRAM de la Tang Nano 20K ;
+- 128, 640 ou 896 Kio de RAM QL sélectionnables dans la SDRAM de la Tang Nano 20K ;
 - les modes vidéo QL 4 et 8 sur HDMI 720p50 ;
 - le son mono du QL sur les deux canaux HDMI en PCM 48 kHz ;
 - une image 512 x 256 centrée avec quatre largeurs sélectionnables ;
 - le contrôleur IPC 8049 et la matrice clavier QL ;
 - un clavier USB raccordé par hub au BL616 intégré ;
 - le chargement automatique de `QL.rom` depuis la microSD ;
-- un menu OSD accessible avec `F12` pour choisir la ROM, le cadrage vidéo et réinitialiser le QL.
+- un menu OSD accessible avec `F12` pour choisir la ROM, la RAM, le cadrage vidéo et réinitialiser le QL.
 
 Les lecteurs Microdrive et leurs images ne sont pas encore implémentés.
+
+Les objectifs et leur ordre d'intégration sont détaillés dans [la feuille de route](docs/ROADMAP.md).
 
 Le menu vidéo propose `Monitor`, `TV`, `Wide +6%` et `Wide +30%`. Tous affichent les 512 × 256 échantillons de l'image QL sans supprimer de ligne ni de colonne. `Monitor` utilise des blocs réguliers de 2 × 2 pixels HDMI, tandis que les modes larges corrigent progressivement la géométrie particulière des pixels du QL. Leur agrandissement fractionnaire reste un rendu au plus proche voisin, sans filtre de lissage dans le FPGA.
 
@@ -146,16 +148,16 @@ Dernière compilation du build principal :
 
 | Ressource    |            Utilisation |
 | ------------ | ---------------------: |
-| Logic        | 11 021 / 20 736 (54 %) |
-| LUT          |                 10 353 |
+| Logic        | 11 119 / 20 736 (54 %) |
+| LUT          |                 10 451 |
 | ALU          |                    602 |
-| Registres    |                  4 690 |
-| CLS          |  6 916 / 10 368 (67 %) |
-| BSRAM        |         45 / 46 (98 %) |
+| Registres    |                  4 684 |
+| CLS          |  7 026 / 10 368 (68 %) |
+| BSRAM        |         13 / 46 (29 %) |
 | E/S          |         27 / 66 (41 %) |
 | rPLL         |           2 / 2 (100 %) |
-| Fmax système | 62,691 MHz pour 31,8 MHz |
-| Fmax HDMI    | 79,115 MHz pour 74,25 MHz |
+| Fmax système | 65,549 MHz pour 31,8 MHz |
+| Fmax HDMI    | 80,134 MHz pour 74,25 MHz |
 | TNS setup    |                   0 ns |
 
 Ces valeurs sont mises à jour après les changements significatifs du build principal.
@@ -164,18 +166,18 @@ Ces valeurs sont mises à jour après les changements significatifs du build pri
 
 ```text
 Clavier USB -> BL616 FPGA Companion -> matrice QL -> IPC 8049
-microSD -> BL616 FPGA Companion -> chargeur ROM -> BSRAM dédiée
+microSD -> BL616 FPGA Companion -> chargeur ROM -> zone ROM SDRAM
 OSD FPGA Companion + vidéo QL -> HDMI
 ROM + SDRAM + ZX8301/ZX8302 -> fx68k
 ```
 
 La sortie HDMI utilise le mode standard 1280 × 720p50. Le domaine QL/SDRAM reste à 31,8 MHz et un tampon de ligne à double horloge alimente le domaine HDMI à 74,25 MHz. Le cadrage `Monitor` agrandit chaque échantillon du framebuffer QL en un bloc régulier de 2 × 2 pixels carrés. Les cadrages plus larges conservent les 512 × 256 échantillons complets ; `Wide +30%` garde en plus une marge HDMI de 40 pixels à gauche et à droite.
 
-Le CPU utilise des phases 68008 à 7,5 MHz, le repliement matériel de l'espace d'adressage 128 Kio sur 256 Kio et le modèle de contention RAM `ql_timing` du core QL MiSTer.
+Le CPU utilise des phases 68008 à 7,5 MHz et le modèle de contention RAM `ql_timing` du core QL MiSTer. Le menu RAM applique les mêmes masques d'adresses et plages d'extension que QL MiSTer : 128 Kio avec repliement sur 256 Kio, 640 Kio ou 896 Kio avec décodage sur 1 Mio. Le choix est conservé dans `nanoql.ini` et appliqué lors d'un reset QL.
 
 La SDRAM suit la séquence complète de démarrage du GW2AR-18 : délai de stabilisation de 200 µs, précharge globale, deux auto-refresh, programmation du registre de mode, auto-précharge des accès et refresh périodique.
 
-Au démarrage, `QL.rom` est chargée et vérifiée dans une BSRAM réinscriptible dédiée. La ROM et la RAM vidéo ne se disputent donc pas le même port SDRAM.
+Au démarrage, `QL.rom` est chargée et vérifiée dans les 64 Kio supérieurs de la SDRAM. Un routeur mémorise le propriétaire de chaque transaction entre NanoQL Link, le chargeur de ROM, les lectures ROM du 68000 et la RAM QL.
 
 Le CPU, le ZX8302 et l'IPC 8049 restent sur un reset commun pendant le chargement. Ils démarrent ensemble uniquement lorsque la ROM est prête, comme lors d'un démarrage à froid du QL.
 
@@ -202,16 +204,18 @@ L'interface de développement USB permettant de charger et d'exécuter directeme
 NanoQL boots a Sinclair QL ROM from microSD and currently provides:
 
 - an `fx68k` 68000 core;
-- 128 KiB of QL RAM in the Tang Nano 20K SDRAM;
+- 128, 640, or 896 KiB of selectable QL RAM in the Tang Nano 20K SDRAM;
 - QL mode 4 and mode 8 video over 720p50 HDMI;
 - QL mono sound on both HDMI channels as 48 kHz PCM;
 - a centered 512 x 256 image with four selectable display widths;
 - the 8049 IPC controller and QL keyboard matrix;
 - a USB keyboard through the integrated BL616 and a powered USB hub;
 - automatic loading of `QL.rom` from microSD;
-- an `F12` on-screen display for ROM selection, video framing, and QL reset.
+- an `F12` on-screen display for ROM selection, RAM selection, video framing, and QL reset.
 
 Microdrives and their images are not implemented yet.
+
+The planned features and their implementation order are documented in the [roadmap](docs/ROADMAP.md).
 
 The video menu provides `Monitor`, `TV`, `Wide +6%`, and `Wide +30%`. Every mode preserves all 512 × 256 QL image samples. `Monitor` uses uniform 2 × 2 HDMI pixel blocks, while the wider modes progressively compensate for the QL's non-square pixel geometry. Fractional enlargement remains nearest-neighbour output, with no smoothing filter in the FPGA.
 
@@ -278,33 +282,33 @@ Latest main build:
 
 | Resource      |           Utilization |
 | ------------- | --------------------: |
-| Logic         | 11,021 / 20,736 (54%) |
-| LUT           |                10,353 |
+| Logic         | 11,119 / 20,736 (54%) |
+| LUT           |                10,451 |
 | ALU           |                   602 |
-| Registers     |                 4,690 |
-| CLS           |  6,916 / 10,368 (67%) |
-| BSRAM         |         45 / 46 (98%) |
+| Registers     |                 4,684 |
+| CLS           |  7,026 / 10,368 (68%) |
+| BSRAM         |         13 / 46 (29%) |
 | I/O           |         27 / 66 (41%) |
-| System Fmax   | 62.691 MHz at 31.8 MHz |
-| HDMI Fmax     | 79.115 MHz at 74.25 MHz |
+| System Fmax   | 65.549 MHz at 31.8 MHz |
+| HDMI Fmax     | 80.134 MHz at 74.25 MHz |
 | Setup TNS     |                  0 ns |
 
 ### Architecture and references
 
 ```text
 USB keyboard -> BL616 FPGA Companion -> QL matrix -> 8049 IPC
-microSD -> BL616 FPGA Companion -> ROM loader -> dedicated BSRAM
+microSD -> BL616 FPGA Companion -> ROM loader -> SDRAM ROM area
 FPGA Companion OSD + QL video -> HDMI
 ROM + SDRAM + ZX8301/ZX8302 -> fx68k
 ```
 
 HDMI output uses standard 1280 × 720p50 timings. The QL/SDRAM domain remains at 31.8 MHz, while a dual-clock line buffer feeds the 74.25 MHz HDMI domain. `Monitor` maps each QL sample to a uniform 2 × 2 HDMI block. Wider modes preserve all 512 × 256 source samples, and `Wide +30%` keeps a 40-pixel HDMI safety margin on both sides.
 
-The CPU uses 7.5 MHz 68008 phases, the base machine's 128 KiB RAM address-space wrapping at 256 KiB, and QL MiSTer's `ql_timing` RAM-contention model.
+The CPU uses 7.5 MHz 68008 phases and QL MiSTer's `ql_timing` RAM-contention model. The RAM menu applies the same address masks and expansion ranges as QL MiSTer: 128 KiB with 256 KiB wrapping, or 640/896 KiB with 1 MiB decoding. The selection is saved in `nanoql.ini` and applied on QL reset.
 
 The SDRAM follows the complete GW2AR-18 startup sequence: a 200 us stabilization delay, precharge-all, two auto-refresh commands, mode-register programming, access auto-precharge, and periodic refresh.
 
-At startup, `QL.rom` is loaded and verified in dedicated runtime-writable BSRAM, so ROM and video RAM no longer share the same SDRAM port.
+At startup, `QL.rom` is loaded and verified in the top 64 KiB of SDRAM. A transaction-owner router arbitrates NanoQL Link, the ROM loader, 68000 ROM reads, and QL RAM.
 
 The CPU, ZX8302, and 8049 IPC remain under a common reset while the ROM is loading. They start together only after the ROM is ready, matching a QL cold start.
 

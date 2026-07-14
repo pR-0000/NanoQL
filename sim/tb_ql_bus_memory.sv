@@ -63,7 +63,7 @@ module tb_ql_bus_memory;
         .system_write_done(system_write_done)
     );
 
-    ql_sdram_memory memory (
+    ql_sdram_memory #(.INIT_LAST_WORD_INDEX(19'h0ffff)) memory (
         .clk(clk),
         .reset(reset),
         .client_rd(client_rd),
