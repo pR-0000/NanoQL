@@ -22,7 +22,9 @@ Depuis la racine du dépôt :
 python tools/prepare_bl616_firmware.py --revision 3923 --launch
 ```
 
-Maintenir le bouton `UPDATE`, connecter l'USB-C au PC, relâcher le bouton, rafraîchir les ports dans FlashCube, choisir le port COM puis cliquer sur `Download`. Le fichier à sélectionner est affiché par le script.
+Le paquet ne contient que deux profils par révision : `ORIGINAL` restaure FPGA Partner et Companion de Sipeed, tandis que `NANOQL` installe le firmware unifié nécessaire au clavier USB, à la microSD et à NanoQL Link.
+
+Maintenez le bouton `UPDATE`, connectez l'USB-C au PC, relâchez le bouton, rafraîchissez les ports dans FlashCube, choisissez le port COM puis cliquez sur `Download`. Le fichier à sélectionner est affiché par le script.
 
 ## English
 
@@ -48,9 +50,9 @@ python3 tools/prepare_bl616_firmware.py --revision 3923
 
 On Windows, append `--launch` to open FlashCube. FlashCube itself is a Windows application. On macOS and Linux the Python script still prepares and verifies the complete two-image package. Native command-line flashing is being kept separate until the two-segment BL616 operation has been validated on hardware; do not feed the encrypted FPGA Partner image to a generic single-image flasher.
 
-Hold `UPDATE`, connect USB-C to the PC, release the button, refresh ports in FlashCube, select the COM port, then click `Download`. The script displays the configuration file to select.
+The package contains only two profiles per revision: `ORIGINAL` restores Sipeed FPGA Partner and Companion, while `NANOQL` installs the unified firmware required for the USB keyboard, microSD, and NanoQL Link.
 
-The generated package uses revision-specific explicit names such as `1_NORMAL_3923_partner_auto.ini` and `2_TEST_3923_companion_only.ini`. Normal mode keeps the Gowin programmer while USB data is connected; test mode forces Companion to run even with a PC attached. Holding `UPDATE` always remains available; flash the matching `1_NORMAL` configuration to restore the standard Partner setup.
+Hold `UPDATE`, connect USB-C to the PC, release the button, refresh ports in FlashCube, select the COM port, then click `Download`. The script displays the configuration file to select.
 
 ## Provenance
 
@@ -59,5 +61,5 @@ The generated package uses revision-specific explicit names such as `1_NORMAL_39
 - Board targets: generic `nano20k` for revision 3921 and `nano20k_v3923` for revision 3923. The FPGA bitstream itself is common to both revisions.
 - Installation guide: https://github.com/MiSTle-Dev/.github/wiki/Firmware-Installation-BL616-%C2%B5C
 - The `flash_nano20k_3921*.ini` and `flash_nano20k_3923*.ini` files are based on the configurations distributed with that release.
-- FPGA Companion is distributed under the Apache License 2.0.
+- FPGA Companion and the two derived NanoQL firmware images are distributed under the Apache License 2.0; see `LICENSE-FPGA-COMPANION`.
 - The encrypted FPGA Partner firmware is distributed by the upstream release with Sipeed provenance; it is downloaded from upstream rather than redistributed by NanoQL.

@@ -49,7 +49,13 @@ python tools/nanoql_link.py --port COMx fpga impl/pnr/NanoQL_sd_rom.bin
 
 Le bitstream passe directement de l'USB au moteur JTAG du BL616, sans fichier temporaire et sans écriture sur la microSD. Sa taille et son CRC sont vérifiés avant la finalisation du FPGA. Après l'accusé de réception, le BL616 redémarre automatiquement en mode Companion et le port COM disparaît. Cette commande est destinée aux essais de développement ; après une coupure d'alimentation, le bitstream conservé dans la Flash FPGA redémarre.
 
-La programmation persistante depuis NanoQL Link est temporairement désactivée : une première implémentation n'a pas restauré correctement le FPGA après un échec d'accès à la Flash SPI. Utilisez `fpga` pour les essais rapides en SRAM et Gowin Programmer pour enregistrer un bitstream validé dans la Flash de configuration.
+La programmation persistante ne passe pas par le moteur SPI expérimental du BL616. Restaurez temporairement le profil BL616 `ORIGINAL` correspondant à la révision de la carte, fermez Gowin Programmer s'il est ouvert, puis utilisez le fichier `.fs` validé :
+
+```text
+python tools/nanoql_link.py fpga-flash-native impl/pnr/NanoQL_sd_rom.fs --yes
+```
+
+Sous Windows, le script utilise Gowin Programmer et sélectionne par défaut `USB Debugger A/1`. L'option `--location` permet d'indiquer l'identifiant du câble si sa détection automatique échoue. Sous Linux et macOS, openFPGALoader est utilisé lorsqu'il est installé. Après la programmation, réinstallez le profil BL616 `NANOQL` pour retrouver le clavier USB, la microSD et NanoQL Link.
 
 ## English
 
@@ -67,4 +73,10 @@ Flash the matching unified BL616 firmware once, boot NanoQL normally, connect th
 
 The command `python tools/nanoql_link.py --port COMx fpga impl/pnr/NanoQL_sd_rom.bin` streams Gowin's `.bin` output directly from USB into FPGA SRAM through the BL616 JTAG engine, without writing the microSD. After acknowledging completion, the BL616 automatically restarts in Companion mode and the COM port disappears. It is temporary development programming; the FPGA Flash bitstream returns after power cycling.
 
-Persistent programming from NanoQL Link is temporarily disabled because the first implementation did not reliably restore the FPGA after an SPI Flash access failure. Use `fpga` for quick SRAM tests and Gowin Programmer to store a validated bitstream in configuration Flash.
+Persistent programming does not use the experimental BL616 SPI engine. Temporarily restore the `ORIGINAL` BL616 profile for the board revision, close Gowin Programmer if it is open, and program the validated `.fs` file:
+
+```text
+python tools/nanoql_link.py fpga-flash-native impl/pnr/NanoQL_sd_rom.fs --yes
+```
+
+On Windows, the script uses Gowin Programmer and selects `USB Debugger A/1` by default. Use `--location` if automatic cable-location detection fails. On Linux and macOS, it uses openFPGALoader when installed. Reinstall the `NANOQL` BL616 profile afterward to restore the USB keyboard, microSD, and NanoQL Link.

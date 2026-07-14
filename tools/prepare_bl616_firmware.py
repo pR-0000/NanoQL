@@ -103,24 +103,14 @@ def main() -> int:
         help="download the Windows FlashCube archive on non-Windows hosts",
     )
     parser.add_argument(
-        "--link-3921",
-        type=Path,
-        help="locally built nanoql_link_nano20k.bin",
-    )
-    parser.add_argument(
-        "--link-3923",
-        type=Path,
-        help="locally built nanoql_link_nano20k_v3923.bin",
-    )
-    parser.add_argument(
         "--unified-3921",
         type=Path,
-        help="locally built nanoql_companion_nano20k.bin",
+        help="override the packaged NanoQL firmware for revision 3921",
     )
     parser.add_argument(
         "--unified-3923",
         type=Path,
-        help="locally built nanoql_companion_nano20k_v3923.bin",
+        help="override the packaged NanoQL firmware for revision 3923",
     )
     args = parser.parse_args()
 
@@ -132,91 +122,51 @@ def main() -> int:
     for name, url, expected in DOWNLOADS:
         verified_download(url, package / name, expected, args.force_download)
 
-    configurations_by_revision = {
-        "3921": (
-            ("flash_nano20k_3921.ini", "1_NORMAL_3921_partner_auto.ini"),
-            ("flash_nano20k_3921_companion_only.ini", "2_TEST_3921_companion_only.ini"),
-        ),
-        "3923": (
-            ("flash_nano20k_3923.ini", "1_NORMAL_3923_partner_auto.ini"),
-            ("flash_nano20k_3923_companion_only.ini", "2_TEST_3923_companion_only.ini"),
-        ),
-    }
     revisions = ("3921", "3923") if args.revision == "both" else (args.revision,)
-    configurations = tuple(
-        item for revision in revisions for item in configurations_by_revision[revision]
-    )
-    for stale_name in (
-        "flash_nano20k.ini",
-        "flash_nano20k_unconditional.ini",
-        "flash_nano20k_companion_only.ini",
-        "1_NORMAL_partner_auto.ini",
-        "2_TEST_companion_only.ini",
-        "1_NORMAL_3921_partner_auto.ini",
-        "2_TEST_3921_companion_only.ini",
-        "1_NORMAL_3923_partner_auto.ini",
-        "2_TEST_3923_companion_only.ini",
-        "3_LINK_3921_usb_cdc.ini",
-        "3_LINK_3923_usb_cdc.ini",
-        "4_NANOQL_3921_unified.ini",
-        "4_NANOQL_3923_unified.ini",
-        "nanoql_link_nano20k.bin",
-        "nanoql_link_nano20k_v3923.bin",
-        "nanoql_companion_nano20k.bin",
-        "nanoql_companion_nano20k_v3923.bin",
-    ):
-        (package / stale_name).unlink(missing_ok=True)
-    for source_name, destination_name in configurations:
+    original_configs = {
+        "3921": ("flash_nano20k_3921.ini", "1_ORIGINAL_3921_partner.ini"),
+        "3923": ("flash_nano20k_3923.ini", "1_ORIGINAL_3923_partner.ini"),
+    }
+    for revision in revisions:
+        source_name, destination_name = original_configs[revision]
         shutil.copy2(
             repository / "firmware" / "bl616" / source_name,
             package / destination_name,
         )
 
-    link_firmware = {
+    unified_firmware = {
         "3921": (
-            args.link_3921,
-            "nanoql_link_nano20k.bin",
-            "flash_nano20k_3921_link.ini",
-            "3_LINK_3921_usb_cdc.ini",
+            args.unified_3921 or repository / "firmware" / "bl616" / "package" /
+                "nanoql_companion_nano20k.bin",
+            "nanoql_companion_nano20k.bin",
+            "flash_nano20k_3921_unified.ini",
+            "2_NANOQL_3921.ini",
         ),
         "3923": (
-            args.link_3923,
-            "nanoql_link_nano20k_v3923.bin",
-            "flash_nano20k_3923_link.ini",
-            "3_LINK_3923_usb_cdc.ini",
+            args.unified_3923 or repository / "firmware" / "bl616" / "package" /
+                "nanoql_companion_nano20k_v3923.bin",
+            "nanoql_companion_nano20k_v3923.bin",
+            "flash_nano20k_3923_unified.ini",
+            "2_NANOQL_3923.ini",
         ),
     }
     for revision in revisions:
-        source, firmware_name, config_source, config_name = link_firmware[revision]
-        if source is None:
-            continue
+        source, firmware_name, config_source, config_name = unified_firmware[revision]
         if not source.is_file():
             raise FileNotFoundError(source)
         shutil.copy2(source, package / firmware_name)
         shutil.copy2(repository / "firmware" / "bl616" / config_source, package / config_name)
 
-    unified_firmware = {
-        "3921": (
-            args.unified_3921,
-            "nanoql_companion_nano20k.bin",
-            "flash_nano20k_3921_unified.ini",
-            "4_NANOQL_3921_unified.ini",
-        ),
-        "3923": (
-            args.unified_3923,
-            "nanoql_companion_nano20k_v3923.bin",
-            "flash_nano20k_3923_unified.ini",
-            "4_NANOQL_3923_unified.ini",
-        ),
-    }
+    allowed_names = {name for name, _, _ in DOWNLOADS}
     for revision in revisions:
-        source, firmware_name, config_source, config_name = unified_firmware[revision]
-        if source is None:
-            continue
-        if not source.is_file():
-            raise FileNotFoundError(source)
-        shutil.copy2(source, package / firmware_name)
-        shutil.copy2(repository / "firmware" / "bl616" / config_source, package / config_name)
+        allowed_names.update({
+            original_configs[revision][1],
+            unified_firmware[revision][1],
+            unified_firmware[revision][3],
+        })
+    for path in package.iterdir():
+        if path.is_file() and path.name not in allowed_names:
+            path.unlink()
 
     flashcube_executable: Path | None = None
     is_windows = platform.system() == "Windows"
@@ -240,16 +190,10 @@ def main() -> int:
     print("\nBL616 package ready.")
     print(f"Release: {RELEASE_TAG}")
     for revision in revisions:
-        print(f"Revision {revision} normal: {package / f'1_NORMAL_{revision}_partner_auto.ini'}")
-        print(f"Revision {revision} test:   {package / f'2_TEST_{revision}_companion_only.ini'}")
-        if link_firmware[revision][0] is not None:
-            print(f"Revision {revision} link:   {package / f'3_LINK_{revision}_usb_cdc.ini'}")
-        if unified_firmware[revision][0] is not None:
-            print(f"Revision {revision} NanoQL: {package / f'4_NANOQL_{revision}_unified.ini'}")
-    print("\nNORMAL keeps the Gowin programmer when USB data is connected.")
-    print("To run Companion with NORMAL, boot the FPGA from its Flash and power")
-    print("the board from USB without a data host. TEST disables the programmer")
-    print("and runs Companion even while a PC is connected.")
+        print(f"Revision {revision} original: {package / original_configs[revision][1]}")
+        print(f"Revision {revision} NanoQL:   {package / unified_firmware[revision][3]}")
+    print("\nORIGINAL restores Sipeed's FPGA Partner and Companion firmware.")
+    print("NANOQL installs the unified firmware used for normal operation and NanoQL Link.")
     if flashcube_executable:
         print(f"FlashCube: {flashcube_executable}")
     else:

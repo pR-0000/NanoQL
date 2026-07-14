@@ -26,6 +26,10 @@ BLOCKED_SUFFIXES = {
     ".zip",
 }
 BLOCKED_EXACT = {"src/ipc/ql_ipc_rom.hex"}
+ALLOWED_EXACT = {
+    "firmware/bl616/package/nanoql_companion_nano20k.bin",
+    "firmware/bl616/package/nanoql_companion_nano20k_v3923.bin",
+}
 
 
 def tracked_files() -> list[str]:
@@ -39,6 +43,8 @@ def tracked_files() -> list[str]:
 
 def reason_for(path_text: str) -> str | None:
     path = PurePosixPath(path_text)
+    if path_text in ALLOWED_EXACT:
+        return None
     if path_text in BLOCKED_EXACT:
         return "private ROM initialization file"
     if path.name.lower().startswith("ipc") and path.suffix.lower() == ".hex":

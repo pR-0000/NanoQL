@@ -15,7 +15,9 @@ sim/out/
 downloads/
 cache/
 .cache/
-firmware/bl616/package/
+firmware/bl616/package/*
+!firmware/bl616/package/nanoql_companion_nano20k.bin
+!firmware/bl616/package/nanoql_companion_nano20k_v3923.bin
 
 # Private, local, or user-supplied material
 private/

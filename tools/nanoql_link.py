@@ -6,9 +6,12 @@ from __future__ import annotations
 import argparse
 import ctypes
 import os
+import re
+import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 import zlib
 from pathlib import Path
@@ -28,16 +31,15 @@ PROTOCOL_VERSION = 1
 MAX_LINK_PAYLOAD = 245
 
 FIRMWARE_ERRORS = {
-    1: "version de protocole non prise en charge",
-    2: "CRC de la requete incorrect",
-    3: "longueur de requete incorrecte",
-    4: "taille du bitstream FPGA incorrecte",
-    5: "impossible d'initialiser la programmation JTAG du FPGA",
-    6: "transfert FPGA non initialise ou longueur incoherente",
-    7: "echec du transfert direct vers le FPGA",
-    8: "taille ou CRC du bitstream FPGA incorrect",
-    9: "echec de la programmation JTAG du FPGA",
-    13: "programmation persistante temporairement desactivee par securite",
+    1: "unsupported protocol version",
+    2: "invalid request CRC",
+    3: "invalid request length",
+    4: "invalid FPGA bitstream size",
+    5: "unable to initialize FPGA JTAG programming",
+    6: "FPGA transfer is not initialized or has an inconsistent length",
+    7: "direct FPGA transfer failed",
+    8: "invalid FPGA bitstream size or CRC",
+    9: "FPGA JTAG programming failed",
 }
 
 CMD_STATUS = 0x00
@@ -215,8 +217,8 @@ def find_port(explicit: str | None) -> str:
     if len(candidates) == 1:
         return candidates[0]
     if not candidates:
-        raise RuntimeError("NanoQL Link n'a pas ete detecte. Precisez --port COMx ou /dev/ttyACMx.")
-    raise RuntimeError("Plusieurs ports compatibles ont ete detectes. Precisez --port.")
+        raise RuntimeError("NanoQL Link was not detected. Specify --port COMx or /dev/ttyACMx.")
+    raise RuntimeError("Multiple compatible ports were detected. Specify --port.")
 
 
 class NanoQLLink:
@@ -233,8 +235,8 @@ class NanoQLLink:
     def transact(self, spi_payload: bytes) -> bytes:
         if not 1 <= len(spi_payload) <= MAX_LINK_PAYLOAD:
             raise ValueError(
-                f"Une transaction NanoQL Link doit contenir de 1 a "
-                f"{MAX_LINK_PAYLOAD} octets."
+                f"A NanoQL Link transaction must contain between 1 and "
+                f"{MAX_LINK_PAYLOAD} bytes."
             )
         self.sequence = (self.sequence + 1) & 0xFF
         body = bytes((PROTOCOL_VERSION, self.sequence, len(spi_payload))) + spi_payload
@@ -245,27 +247,27 @@ class NanoQLLink:
 
         header = self.serial.read(5)
         if len(header) != 5 or header[:2] != RESPONSE_MAGIC:
-            raise RuntimeError("Reponse absente ou invalide du firmware BL616 NanoQL Link.")
+            raise RuntimeError("Missing or invalid response from the NanoQL Link BL616 firmware.")
         version, sequence, length = header[2], header[3], header[4]
         payload_and_crc = self.serial.read(length + 1)
         if len(payload_and_crc) != length + 1:
-            raise RuntimeError("Reponse NanoQL Link incomplete.")
+            raise RuntimeError("Incomplete NanoQL Link response.")
         response_body = bytes((version, sequence, length)) + payload_and_crc[:-1]
         if version != PROTOCOL_VERSION or sequence != self.sequence:
-            raise RuntimeError("Version ou sequence NanoQL Link incorrecte.")
+            raise RuntimeError("Invalid NanoQL Link version or sequence.")
         if crc8(response_body) != payload_and_crc[-1]:
-            raise RuntimeError("CRC NanoQL Link incorrect.")
+            raise RuntimeError("Invalid NanoQL Link CRC.")
         payload = payload_and_crc[:-1]
         if len(payload) == 2 and payload[0] == 0xFF:
-            detail = FIRMWARE_ERRORS.get(payload[1], f"erreur {payload[1]}")
-            raise RuntimeError(f"Le firmware BL616 a refuse la requete : {detail}.")
+            detail = FIRMWARE_ERRORS.get(payload[1], f"error {payload[1]}")
+            raise RuntimeError(f"The BL616 firmware rejected the request: {detail}.")
         return payload
 
     def status(self) -> int:
         rx = self.transact(bytes((CMD_STATUS, 0, 0, 0, 0, 0, 0)))
         signature_at = rx.find(b"NQL1")
         if signature_at < 0 or signature_at + 4 >= len(rx):
-            raise RuntimeError("Le bitstream ne repond pas comme NanoQL Link v1.")
+            raise RuntimeError("The bitstream did not respond as NanoQL Link v1.")
         return rx[signature_at + 4]
 
     def hold(self) -> None:
@@ -281,15 +283,15 @@ class NanoQLLink:
             error = bool(status & 0x04)
             held = bool(status & 0x08)
             if error:
-                raise RuntimeError(f"Le FPGA a refuse la commande (status=0x{status:02x}).")
+                raise RuntimeError(f"The FPGA rejected the command (status=0x{status:02x}).")
             if ready and not busy and held == expect_hold:
                 return status
             time.sleep(0.005)
-        raise TimeoutError("Le FPGA n'est pas devenu disponible dans le delai imparti.")
+        raise TimeoutError("The FPGA did not become available before the timeout.")
 
     def write(self, address: int, data: bytes) -> None:
         if address < 0x020000 or address + len(data) > 0x040000:
-            raise ValueError("Le bloc doit rester dans la RAM QL 0x020000-0x03ffff.")
+            raise ValueError("The block must remain within QL RAM 0x020000-0x03ffff.")
         for offset in range(0, len(data), 8):
             block = data[offset : offset + 8]
             block_address = address + offset
@@ -299,7 +301,7 @@ class NanoQLLink:
 
     def read(self, address: int, length: int) -> bytes:
         if length < 0 or address < 0x020000 or address + length > 0x040000:
-            raise ValueError("Le bloc doit rester dans la RAM QL 0x020000-0x03ffff.")
+            raise ValueError("The block must remain within QL RAM 0x020000-0x03ffff.")
         result = bytearray()
         for offset in range(0, length, 8):
             block_length = min(8, length - offset)
@@ -310,7 +312,7 @@ class NanoQLLink:
             self.wait_idle(expect_hold=True)
             response = self.transact(bytes((CMD_READ_RESULT,)) + bytes(8))
             if len(response) < block_length:
-                raise RuntimeError("Reponse de lecture RAM incomplete.")
+                raise RuntimeError("Incomplete RAM read response.")
             result.extend(response[-8:][:block_length])
         return bytes(result)
 
@@ -326,7 +328,7 @@ class NanoQLLink:
 
     def program_fpga(self, bitstream: bytes) -> None:
         if not bitstream or len(bitstream) > 2 * 1024 * 1024:
-            raise ValueError("Le bitstream FPGA doit faire entre 1 octet et 2 Mio.")
+            raise ValueError("The FPGA bitstream must be between 1 byte and 2 MiB.")
         checksum = zlib.crc32(bitstream) & 0xFFFFFFFF
         previous_timeout = self.serial.timeout
         try:
@@ -340,7 +342,7 @@ class NanoQLLink:
                 self.transact(bytes((CMD_FPGA_DATA,)) + block)
                 sent += len(block)
                 percent = sent * 100 // len(bitstream)
-                print(f"\rTransfert FPGA : {percent:3d}%", end="", flush=True)
+                print(f"\rFPGA transfer: {percent:3d}%", end="", flush=True)
             print()
 
             self.serial.timeout = 120
@@ -350,7 +352,7 @@ class NanoQLLink:
 
     def key_event(self, usage: int, pressed: bool) -> None:
         if not 0 <= usage <= 0x7F:
-            raise ValueError("Code de touche HID hors plage.")
+            raise ValueError("HID key code is out of range.")
         event = usage if pressed else usage | 0x80
         self.transact(bytes((CMD_KEY, event)))
 
@@ -372,7 +374,7 @@ class NanoQLLink:
             host_key = windows_character_key(character)
             if host_key is not None:
                 return host_key
-        raise ValueError(f"Caractere non pris en charge : {character!r}")
+        raise ValueError(f"Unsupported character: {character!r}")
 
     def type_character(self, character: str) -> None:
         control_usage = {
@@ -410,12 +412,12 @@ class NanoQLLink:
 
 def interactive_keyboard(link: NanoQLLink) -> None:
     if os.name != "nt":
-        raise RuntimeError("Le terminal clavier interactif est actuellement disponible sous Windows.")
+        raise RuntimeError("The interactive keyboard terminal is currently available on Windows only.")
 
     import msvcrt
 
-    print(f"Clavier NanoQL actif (profil QL {link.ql_layout.upper()}). "
-          "F6 rend le clavier a PowerShell.")
+    print(f"NanoQL keyboard active (QL {link.ql_layout.upper()} profile). "
+          "Press F6 to return the keyboard to the terminal.")
     remote_shift = False
     get_async_key_state = ctypes.windll.user32.GetAsyncKeyState
     try:
@@ -494,8 +496,8 @@ DEMO_CODE = bytes.fromhex(
 
 def load_binary(link: NanoQLLink, data: bytes, address: int, pc: int, stack: int) -> None:
     if pc & 1 or stack & 1:
-        raise ValueError("Le PC et le pointeur de pile 68000 doivent etre pairs.")
-    print(f"Arret du 68000, chargement de {len(data)} octets a 0x{address:06x}...")
+        raise ValueError("The 68000 PC and stack pointer must be even.")
+    print(f"Stopping the 68000 and loading {len(data)} bytes at 0x{address:06x}...")
     link.hold()
     link.write(address, data)
     readback = link.read(address, len(data))
@@ -503,17 +505,17 @@ def load_binary(link: NanoQLLink, data: bytes, address: int, pc: int, stack: int
         mismatch = next(index for index, pair in enumerate(zip(data, readback))
                         if pair[0] != pair[1])
         raise RuntimeError(
-            f"Verification RAM echouee a 0x{address + mismatch:06x}: "
-            f"ecrit 0x{data[mismatch]:02x}, relu 0x{readback[mismatch]:02x}."
+            f"RAM verification failed at 0x{address + mismatch:06x}: "
+            f"wrote 0x{data[mismatch]:02x}, read 0x{readback[mismatch]:02x}."
         )
-    print("Verification RAM terminee sans erreur.")
-    print(f"Execution avec SSP=0x{stack:08x}, PC=0x{pc:08x}.")
+    print("RAM verification completed successfully.")
+    print(f"Executing with SSP=0x{stack:08x}, PC=0x{pc:08x}.")
     status = link.execute(stack, pc)
-    print(f"Execution acceptee par le FPGA (status=0x{status:02x}).")
+    print(f"Execution accepted by the FPGA (status=0x{status:02x}).")
     print(
-        "Trace 68000 : code injecte atteint = " +
-        ("oui" if status & 0x80 else "non") +
-        ", ecriture video = " + ("oui" if status & 0x40 else "non") + "."
+        "68000 trace: injected code reached = " +
+        ("yes" if status & 0x80 else "no") +
+        ", video write = " + ("yes" if status & 0x40 else "no") + "."
     )
 
 
@@ -526,64 +528,202 @@ def run_demo(link: NanoQLLink) -> None:
     link.hold()
 
     samples = [(address, link.read(address, 8)) for address in sample_addresses]
-    print("Verification de la VRAM apres execution :")
+    print("VRAM verification after execution:")
     all_valid = True
     for address, data in samples:
         valid = data == bytes.fromhex("ff00" * 4)
         all_valid &= valid
-        print(f"  0x{address:06x}: {data.hex(' ')} " + ("OK" if valid else "ERREUR"))
+        print(f"  0x{address:06x}: {data.hex(' ')} " + ("OK" if valid else "ERROR"))
 
     if not all_valid:
         raise RuntimeError(
-            "Le 68000 n'a pas rempli correctement la VRAM; transmettez ces valeurs pour diagnostic."
+            "The 68000 did not fill VRAM correctly; report these values for diagnostics."
         )
-    print("VRAM correcte. Une bande verte centrale doit rester visible a l'ecran.")
+    print("VRAM is correct. A central green band should remain visible on screen.")
+
+
+def find_native_programmer(explicit: Path | None) -> tuple[str, Path]:
+    if explicit is not None:
+        tool = explicit.expanduser().resolve()
+        if not tool.is_file():
+            raise FileNotFoundError(tool)
+        backend = "openfpgaloader" if "openfpgaloader" in tool.name.lower() else "gowin"
+        return backend, tool
+
+    gowin = shutil.which("programmer_cli") or shutil.which("programmer_cli.exe")
+    if gowin:
+        return "gowin", Path(gowin)
+
+    candidates: list[Path] = []
+    for root in (Path("C:/Gowin"), Path("C:/Program Files/Gowin"),
+                 Path("C:/Program Files (x86)/Gowin")):
+        if root.is_dir():
+            candidates.extend(root.glob("Gowin_*/Programmer/bin/programmer_cli.exe"))
+    if candidates:
+        return "gowin", sorted(candidates, reverse=True)[0]
+
+    openfpga = shutil.which("openFPGALoader") or shutil.which("openfpgaloader")
+    if openfpga:
+        return "openfpgaloader", Path(openfpga)
+
+    openfpga_candidates = (
+        Path("C:/Program Files/openFPGALoader/bin/openFPGALoader.exe"),
+        Path("C:/Program Files/openFPGALoader/openFPGALoader.exe"),
+        Path("C:/msys64/mingw64/bin/openFPGALoader.exe"),
+        Path("C:/ProgramData/chocolatey/bin/openFPGALoader.exe"),
+        Path.home() / "scoop/apps/openfpgaloader/current/bin/openFPGALoader.exe",
+        Path.home() / "scoop/apps/openfpgaloader/current/openFPGALoader.exe",
+    )
+    for candidate in openfpga_candidates:
+        if candidate.is_file():
+            return "openfpgaloader", candidate
+
+    raise RuntimeError(
+        "No native FPGA programmer was found. Install Gowin Programmer or "
+        "openFPGALoader, or specify --tool."
+    )
+
+
+def detect_gowin_location(executable: Path, channel: int) -> int | None:
+    for scan_mode in ("L", "F"):
+        completed = subprocess.run(
+            [str(executable), "--scan-cables", scan_mode],
+            check=False, capture_output=True, text=True,
+        )
+        output = completed.stdout + "\n" + completed.stderr
+        match = re.search(
+            rf"USB Debugger A[^\r\n]*?[/\s]{channel}[/\s]+(\d+)[/\s]",
+            output,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def program_fpga_flash_native(bitstream: Path, tool: Path | None,
+                              frequency: str, channel: int,
+                              location: int | None) -> None:
+    bitstream = bitstream.expanduser().resolve()
+    if not bitstream.is_file():
+        raise FileNotFoundError(bitstream)
+    if bitstream.suffix.lower() != ".fs":
+        raise ValueError("Native persistent programming requires Gowin's .fs file.")
+
+    backend, executable = find_native_programmer(tool)
+    output_file: Path | None = None
+    if backend == "gowin":
+        if location is None:
+            location = detect_gowin_location(executable, channel)
+        if location is None:
+            raise RuntimeError(
+                "The USB Debugger A location could not be detected. Close Gowin "
+                "Programmer and specify the value shown by its cable selector with "
+                "--location, for example --location 82977."
+            )
+        output_file = Path(tempfile.gettempdir()) / "nanoql_gowin_programmer.txt"
+        command = [
+            str(executable),
+            "--device", "GW2AR-18C",
+            "--operation_index", "8",
+            "--fsFile", str(bitstream),
+            "--frequency", frequency,
+            "--cable-index", "4",
+            "--channel", str(channel),
+            "--location", str(location),
+            "--output", str(output_file),
+        ]
+    else:
+        command = [
+            str(executable), "-b", "tangnano20k", "-f",
+            "--external-flash", str(bitstream),
+        ]
+
+    print(f"Native programmer: {executable}")
+    if backend == "gowin":
+        print(f"Target cable: USB Debugger A/{channel}/{location}/null")
+    print(f"Programming {bitstream.name}...")
+    completed = subprocess.run(command, check=False)
+    if completed.returncode:
+        if output_file is not None and output_file.is_file():
+            print(output_file.read_text(encoding="utf-8", errors="replace"))
+        raise RuntimeError(
+            "Native FPGA programming failed. Ensure that the BL616 is running "
+            "the official FPGA Partner firmware and that no other programmer is open."
+        )
+    print("Persistent FPGA programming completed successfully.")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="NanoQL Link - chargement direct de code 68000")
-    parser.add_argument("--port", help="port serie, par exemple COM6 ou /dev/ttyACM0")
+    parser = argparse.ArgumentParser(description="NanoQL Link - direct 68000 code loading")
+    parser.add_argument("--port", help="serial port, for example COM6 or /dev/ttyACM0")
     parser.add_argument(
         "--keyboard-layout", choices=("host", "us"), default="host",
-        help="disposition PC utilisee en dernier recours pour les caracteres inconnus",
+        help="PC layout used as a fallback for otherwise unknown characters",
     )
     parser.add_argument(
         "--ql-layout", choices=("auto", "uk", "fr"), default="auto",
-        help="table logique du QL; auto choisit FR avec un clavier Windows francais",
+        help="QL logical layout; auto selects FR for a French Windows keyboard",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("status", help="lire l'etat du lien")
-    subparsers.add_parser("qdos", help="quitter le programme injecte et redemarrer QDOS")
-    subparsers.add_parser("demo", help="injecter une mire bare-metal 68000")
-    subparsers.add_parser("keyboard", help="utiliser le clavier du terminal sous Windows")
+    subparsers.add_parser("status", help="read the link status")
+    subparsers.add_parser("qdos", help="leave the injected program and restart QDOS")
+    subparsers.add_parser("demo", help="inject a bare-metal 68000 test pattern")
+    subparsers.add_parser("keyboard", help="use the Windows terminal keyboard")
 
-    type_parser = subparsers.add_parser("type", help="envoyer du texte comme des frappes clavier")
+    type_parser = subparsers.add_parser("type", help="send text as keyboard input")
     type_parser.add_argument("text")
-    type_parser.add_argument("--enter", action="store_true", help="appuyer sur Entree apres le texte")
+    type_parser.add_argument("--enter", action="store_true", help="press Enter after the text")
 
-    load_parser = subparsers.add_parser("load", help="charger et executer un binaire 68000")
+    load_parser = subparsers.add_parser("load", help="load and execute a 68000 binary")
     load_parser.add_argument("binary", type=Path)
     load_parser.add_argument("--address", type=parse_number, default=0x030000)
     load_parser.add_argument("--pc", type=parse_number)
     load_parser.add_argument("--stack", type=parse_number, default=0x03FFF0)
 
     fpga_parser = subparsers.add_parser(
-        "fpga", help="charger un bitstream Gowin .bin dans la SRAM du FPGA"
+        "fpga", help="load a Gowin .bin bitstream into FPGA SRAM"
     )
     fpga_parser.add_argument("bitstream", type=Path)
 
-    fpga_flash_parser = subparsers.add_parser(
-        "fpga-flash",
-        help="programmer durablement un bitstream Gowin .bin dans la Flash SPI",
+    native_flash_parser = subparsers.add_parser(
+        "fpga-flash-native",
+        help="program SPI Flash with Gowin Programmer or openFPGALoader",
     )
-    fpga_flash_parser.add_argument("bitstream", type=Path)
-    fpga_flash_parser.add_argument(
+    native_flash_parser.add_argument("bitstream", type=Path)
+    native_flash_parser.add_argument(
+        "--tool", type=Path,
+        help="path to programmer_cli.exe or openFPGALoader",
+    )
+    native_flash_parser.add_argument(
+        "--frequency", default="2.5MHz",
+        help="Gowin JTAG frequency (default: 2.5MHz)",
+    )
+    native_flash_parser.add_argument(
+        "--channel", type=int, choices=(0, 1), default=1,
+        help="Gowin USB Debugger A channel (default: 1)",
+    )
+    native_flash_parser.add_argument(
+        "--location", type=int,
+        help="Gowin cable location; detected automatically when possible",
+    )
+    native_flash_parser.add_argument(
         "--yes", action="store_true",
-        help="confirmer l'effacement de l'ancien bitstream permanent",
+        help="confirm replacement of the previous persistent bitstream",
     )
-
     args = parser.parse_args()
+    if args.command == "fpga-flash-native":
+        if not args.yes:
+            raise RuntimeError(
+                "Add --yes to confirm replacement of the persistent bitstream."
+            )
+        program_fpga_flash_native(
+            args.bitstream, args.tool, args.frequency,
+            args.channel, args.location
+        )
+        return 0
+
     port = find_port(args.port)
     ql_layout = default_ql_layout() if args.ql_layout == "auto" else args.ql_layout
     link = NanoQLLink(port, keyboard_layout=args.keyboard_layout, ql_layout=ql_layout)
@@ -592,7 +732,7 @@ def main() -> int:
             print(f"NanoQL Link status: 0x{link.status():02x}")
         elif args.command == "qdos":
             link.qdos()
-            print("Redemarrage QDOS demande.")
+            print("QDOS restart requested.")
         elif args.command == "demo":
             run_demo(link)
         elif args.command == "keyboard":
@@ -601,26 +741,18 @@ def main() -> int:
             link.type_text(args.text)
             if args.enter:
                 link.tap_key(0x28, hold_time=0.15)
-        elif args.command == "fpga-flash":
-            raise RuntimeError(
-                "La programmation persistante est temporairement desactivee "
-                "apres un echec de restauration materielle. Utilisez la "
-                "commande fpga pour les essais en SRAM et Gowin Programmer "
-                "pour la Flash de configuration."
-            )
         elif args.command == "fpga":
             if args.bitstream.suffix.lower() != ".bin":
                 raise ValueError(
-                    "Utilisez le fichier .bin genere par Gowin, pas le .fs."
+                    "Use the .bin file generated by Gowin, not the .fs file."
                 )
             data = args.bitstream.read_bytes()
-            destination = "la SRAM"
-            print(f"Envoi de {len(data)} octets vers {destination} via le BL616...")
+            destination = "SRAM"
+            print(f"Sending {len(data)} bytes to FPGA {destination} through the BL616...")
             link.program_fpga(data)
             print(
-                f"FPGA programme dans {destination}. Le BL616 revient "
-                "automatiquement en mode Companion ; la disparition du port "
-                "COM est normale."
+                f"FPGA programmed in {destination}. The BL616 automatically "
+                "returns to Companion mode; the serial port disappearing is normal."
             )
         else:
             data = args.binary.read_bytes()
@@ -635,5 +767,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (OSError, RuntimeError, TimeoutError, ValueError) as error:
-        print(f"Erreur : {error}", file=sys.stderr)
+        print(f"Error: {error}", file=sys.stderr)
         raise SystemExit(1)

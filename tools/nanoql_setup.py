@@ -52,7 +52,7 @@ class NanoQLSetup(tk.Tk):
         self.busy_widgets: list[ttk.Button] = []
 
         self.revision = tk.StringVar(value="3923")
-        self.firmware_mode = tk.StringVar(value="normal")
+        self.firmware_mode = tk.StringVar(value="nanoql")
         self.rom_path = tk.StringVar()
         self.sd_path = tk.StringVar()
         self.ipc_path = tk.StringVar()
@@ -61,7 +61,7 @@ class NanoQLSetup(tk.Tk):
         self.bitstream_path = tk.StringVar(
             value=str(REPOSITORY / "impl" / "pnr" / "NanoQL_sd_rom.fs")
         )
-        self.status = tk.StringVar(value="Prêt / Ready")
+        self.status = tk.StringVar(value="Ready")
 
         self._build_ui()
         self.after(100, self._poll_events)
@@ -84,14 +84,14 @@ class NanoQLSetup(tk.Tk):
         storage_tab = ttk.Frame(notebook, padding=16)
         fpga_tab = ttk.Frame(notebook, padding=16)
         notebook.add(firmware_tab, text="1. BL616 Companion")
-        notebook.add(storage_tab, text="2. ROM et microSD")
+        notebook.add(storage_tab, text="2. ROM and microSD")
         notebook.add(fpga_tab, text="3. FPGA")
 
         self._build_firmware_tab(firmware_tab)
         self._build_storage_tab(storage_tab)
         self._build_fpga_tab(fpga_tab)
 
-        log_frame = ttk.LabelFrame(self, text="Journal / Log", padding=8)
+        log_frame = ttk.LabelFrame(self, text="Log", padding=8)
         log_frame.pack(fill="both", expand=False, padx=12, pady=12)
         self.log = tk.Text(
             log_frame,
@@ -108,7 +108,7 @@ class NanoQLSetup(tk.Tk):
 
     def _build_firmware_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
-        ttk.Label(parent, text="Révision de carte / Board revision", style="Section.TLabel").grid(
+        ttk.Label(parent, text="Board revision", style="Section.TLabel").grid(
             row=0, column=0, sticky="w", pady=(0, 8)
         )
         revision = ttk.Combobox(
@@ -116,60 +116,60 @@ class NanoQLSetup(tk.Tk):
         )
         revision.grid(row=0, column=1, sticky="w", pady=(0, 8))
 
-        ttk.Label(parent, text="Mode firmware", style="Section.TLabel").grid(
+        ttk.Label(parent, text="Firmware mode", style="Section.TLabel").grid(
             row=1, column=0, sticky="nw", pady=8
         )
         modes = ttk.Frame(parent)
         modes.grid(row=1, column=1, sticky="w", pady=8)
         ttk.Radiobutton(
             modes,
-            text="Normal: programmateur avec PC, Companion sans PC",
+            text="NanoQL: normal operation and NanoQL Link",
             variable=self.firmware_mode,
-            value="normal",
+            value="nanoql",
         ).pack(anchor="w")
         ttk.Radiobutton(
             modes,
-            text="Test: Companion toujours actif",
+            text="Original: Sipeed FPGA Partner and Companion",
             variable=self.firmware_mode,
-            value="test",
+            value="original",
         ).pack(anchor="w")
 
         actions = ttk.Frame(parent)
         actions.grid(row=2, column=0, columnspan=2, sticky="w", pady=(18, 8))
-        self._button(actions, "Préparer les fichiers", self.prepare_firmware).pack(
+        self._button(actions, "Prepare files", self.prepare_firmware).pack(
             side="left", padx=(0, 8)
         )
-        self._button(actions, "Préparer et ouvrir FlashCube", self.prepare_and_open_flashcube).pack(
+        self._button(actions, "Prepare and open FlashCube", self.prepare_and_open_flashcube).pack(
             side="left"
         )
 
         ttk.Label(
             parent,
             text=(
-                "Maintenez UPDATE pendant la connexion USB, relâchez-le, sélectionnez le port COM "
-                "dans FlashCube puis choisissez le fichier .ini indiqué dans le journal."
+                "Hold UPDATE while connecting USB, release it, select the serial port "
+                "in FlashCube, then choose the .ini file shown in the log."
             ),
             wraplength=760,
         ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(12, 0))
 
     def _build_storage_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
-        self._path_row(parent, 0, "ROM QL 48/64 Kio", self.rom_path, self._browse_rom)
-        self._path_row(parent, 1, "Racine microSD", self.sd_path, self._browse_sd)
-        self._path_row(parent, 2, "Firmware IPC Sinclair Intel HEX", self.ipc_path, self._browse_ipc)
+        self._path_row(parent, 0, "48/64 KiB QL ROM", self.rom_path, self._browse_rom)
+        self._path_row(parent, 1, "microSD root", self.sd_path, self._browse_sd)
+        self._path_row(parent, 2, "Sinclair IPC firmware (Intel HEX)", self.ipc_path, self._browse_ipc)
 
         actions = ttk.Frame(parent)
         actions.grid(row=3, column=0, columnspan=3, sticky="w", pady=(18, 8))
-        self._button(actions, "Préparer la microSD", self.prepare_sd).pack(
+        self._button(actions, "Prepare microSD", self.prepare_sd).pack(
             side="left", padx=(0, 8)
         )
-        self._button(actions, "Convertir le firmware IPC", self.prepare_ipc).pack(side="left")
+        self._button(actions, "Convert IPC firmware", self.prepare_ipc).pack(side="left")
 
         ttk.Label(
             parent,
             text=(
-                "La ROM reste privée: elle est validée puis copiée sous le nom QL.rom. "
-                "nanoql.ini est aussi créé pour demander son montage automatique."
+                "The ROM remains private: it is validated and copied as QL.rom. "
+                "nanoql.ini is also created to request automatic mounting."
             ),
             wraplength=760,
         ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
@@ -190,22 +190,22 @@ class NanoQLSetup(tk.Tk):
 
         actions = ttk.Frame(parent)
         actions.grid(row=3, column=0, columnspan=3, sticky="w", pady=(18, 8))
-        self._button(actions, "Compiler", self.build_fpga).pack(side="left", padx=(0, 8))
-        self._button(actions, "Programmer SRAM", lambda: self.program_fpga(False)).pack(
+        self._button(actions, "Build", self.build_fpga).pack(side="left", padx=(0, 8))
+        self._button(actions, "Program SRAM", lambda: self.program_fpga(False)).pack(
             side="left", padx=(0, 8)
         )
-        self._button(actions, "Programmer Flash", lambda: self.program_fpga(True)).pack(
+        self._button(actions, "Program Flash", lambda: self.program_fpga(True)).pack(
             side="left", padx=(0, 8)
         )
-        self._button(actions, "Tout préparer et compiler", self.prepare_and_build).pack(
+        self._button(actions, "Prepare all and build", self.prepare_and_build).pack(
             side="left"
         )
 
         ttk.Label(
             parent,
             text=(
-                "SRAM est temporaire et disparaît à la coupure. Flash est persistante et permet "
-                "au firmware BL616 normal de démarrer Companion sans ordinateur."
+                "SRAM is temporary and is lost at power-off. Flash is persistent and lets "
+                "the normal BL616 firmware start Companion without a computer."
             ),
             wraplength=760,
         ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
@@ -224,7 +224,7 @@ class NanoQLSetup(tk.Tk):
         ttk.Entry(parent, textvariable=variable).grid(
             row=row, column=1, sticky="ew", padx=8, pady=8
         )
-        ttk.Button(parent, text="Parcourir...", command=browse).grid(
+        ttk.Button(parent, text="Browse...", command=browse).grid(
             row=row, column=2, pady=8
         )
 
@@ -234,42 +234,44 @@ class NanoQLSetup(tk.Tk):
         return button
 
     def _browse_rom(self) -> None:
-        path = filedialog.askopenfilename(title="Sélectionner la ROM QL")
+        path = filedialog.askopenfilename(title="Select the QL ROM")
         if path:
             self.rom_path.set(path)
 
     def _browse_sd(self) -> None:
-        path = filedialog.askdirectory(title="Sélectionner la racine de la microSD")
+        path = filedialog.askdirectory(title="Select the microSD root")
         if path:
             self.sd_path.set(path)
 
     def _browse_ipc(self) -> None:
         path = filedialog.askopenfilename(
-            title="Sélectionner ipc8049.hex",
-            filetypes=(("Intel HEX", "*.hex"), ("Tous", "*")),
+            title="Select ipc8049.hex",
+            filetypes=(("Intel HEX", "*.hex"), ("All files", "*")),
         )
         if path:
             self.ipc_path.set(path)
 
     def _browse_gowin(self) -> None:
-        path = filedialog.askopenfilename(title="Sélectionner gw_sh")
+        path = filedialog.askopenfilename(title="Select gw_sh")
         if path:
             self.gowin_path.set(path)
 
     def _browse_loader(self) -> None:
-        path = filedialog.askopenfilename(title="Sélectionner openFPGALoader")
+        path = filedialog.askopenfilename(title="Select openFPGALoader")
         if path:
             self.loader_path.set(path)
 
     def _selected_config(self) -> Path:
-        mode = "1_NORMAL" if self.firmware_mode.get() == "normal" else "2_TEST"
-        suffix = "partner_auto" if mode == "1_NORMAL" else "companion_only"
+        if self.firmware_mode.get() == "nanoql":
+            filename = f"2_NANOQL_{self.revision.get()}.ini"
+        else:
+            filename = f"1_ORIGINAL_{self.revision.get()}_partner.ini"
         return (
             REPOSITORY
             / "private"
             / "bl616"
             / "flash-package"
-            / f"{mode}_{self.revision.get()}_{suffix}.ini"
+            / filename
         )
 
     def prepare_firmware(self, callback=None) -> None:
@@ -279,7 +281,7 @@ class NanoQLSetup(tk.Tk):
             "--revision",
             self.revision.get(),
         ]
-        self._run(command, "Préparation du firmware BL616", callback)
+        self._run(command, "Preparing BL616 firmware", callback)
 
     def prepare_and_open_flashcube(self) -> None:
         self.prepare_firmware(self._open_flashcube)
@@ -289,64 +291,64 @@ class NanoQLSetup(tk.Tk):
         candidates = list((REPOSITORY / "private" / "bl616" / "flashcube").rglob("BLFlashCube.exe"))
         if platform.system() != "Windows" or not candidates:
             messagebox.showinfo(
-                "Firmware prêt",
-                f"Configuration préparée:\n{config}\n\nFlashCube est disponible uniquement sous Windows.",
+                "Firmware ready",
+                f"Configuration prepared:\n{config}\n\nFlashCube is available on Windows only.",
             )
             return
         self.clipboard_clear()
         self.clipboard_append(str(config))
-        self._append_log(f"Configuration à sélectionner (copiée): {config}\n")
+        self._append_log(f"Configuration to select (copied): {config}\n")
         subprocess.Popen([str(candidates[0])], cwd=config.parent)
         messagebox.showinfo(
             "FlashCube",
-            f"Sélectionnez cette configuration dans FlashCube:\n\n{config}\n\nLe chemin a été copié.",
+            f"Select this configuration in FlashCube:\n\n{config}\n\nThe path has been copied.",
         )
 
     def prepare_sd(self) -> None:
         if not self.rom_path.get() or not self.sd_path.get():
-            messagebox.showerror("Champs manquants", "Sélectionnez la ROM et la microSD.")
+            messagebox.showerror("Missing fields", "Select the ROM and microSD root.")
             return
         self._run(
             [sys.executable, str(TOOLS / "prepare_sd_card.py"), self.rom_path.get(), self.sd_path.get()],
-            "Préparation de la microSD",
+            "Preparing microSD",
         )
 
     def prepare_ipc(self) -> None:
         if not self.ipc_path.get():
             messagebox.showerror(
-                "Champ manquant",
-                "Sélectionnez le firmware Sinclair standard ipc8049.hex.",
+                "Missing field",
+                "Select the standard Sinclair ipc8049.hex firmware.",
             )
             return
         self._run(
             [sys.executable, str(TOOLS / "prepare_ql_ipc_rom.py"), self.ipc_path.get()],
-            "Conversion du firmware IPC",
+            "Converting IPC firmware",
         )
 
     def build_fpga(self) -> None:
         gowin = self.gowin_path.get()
         if not gowin or not Path(gowin).is_file():
-            messagebox.showerror("Gowin introuvable", "Sélectionnez un exécutable gw_sh valide.")
+            messagebox.showerror("Gowin not found", "Select a valid gw_sh executable.")
             return
         ipc = REPOSITORY / "src" / "ipc" / "ql_ipc_rom.hex"
         if not ipc.is_file():
-            messagebox.showerror("IPC manquant", "Convertissez d'abord le firmware IPC.")
+            messagebox.showerror("Missing IPC firmware", "Convert the IPC firmware first.")
             return
-        self._run([gowin, BUILD_SCRIPT], "Compilation NanoQL")
+        self._run([gowin, BUILD_SCRIPT], "Building NanoQL")
 
     def prepare_and_build(self) -> None:
         gowin = self.gowin_path.get()
         if not gowin or not Path(gowin).is_file():
-            messagebox.showerror("Gowin introuvable", "Sélectionnez un exécutable gw_sh valide.")
+            messagebox.showerror("Gowin not found", "Select a valid gw_sh executable.")
             return
         if not self.rom_path.get() or not self.sd_path.get():
-            messagebox.showerror("Champs manquants", "Sélectionnez la ROM et la microSD.")
+            messagebox.showerror("Missing fields", "Select the ROM and microSD root.")
             return
         ipc_output = REPOSITORY / "src" / "ipc" / "ql_ipc_rom.hex"
         if not self.ipc_path.get() and not ipc_output.is_file():
             messagebox.showerror(
-                "IPC manquant",
-                "Sélectionnez le firmware Sinclair standard ipc8049.hex au premier lancement.",
+                "Missing IPC firmware",
+                "Select the standard Sinclair ipc8049.hex firmware on first use.",
             )
             return
 
@@ -364,24 +366,24 @@ class NanoQLSetup(tk.Tk):
             ]
         )
         commands.append([gowin, "build_sd_rom.tcl"])
-        self._run_commands(commands, "Préparation et compilation microSD")
+        self._run_commands(commands, "Preparing microSD and building")
 
     def program_fpga(self, persistent: bool) -> None:
         loader = self.loader_path.get()
         bitstream = Path(self.bitstream_path.get())
         if not loader or not Path(loader).is_file():
             messagebox.showerror(
-                "openFPGALoader introuvable", "Sélectionnez un exécutable openFPGALoader valide."
+                "openFPGALoader not found", "Select a valid openFPGALoader executable."
             )
             return
         if not bitstream.is_file():
-            messagebox.showerror("Bitstream absent", "Compilez d'abord cette variante.")
+            messagebox.showerror("Missing bitstream", "Build this variant first.")
             return
         command = [loader, "-b", "tangnano20k"]
         if persistent:
             command.append("-f")
         command.append(str(bitstream))
-        self._run(command, "Programmation Flash" if persistent else "Programmation SRAM")
+        self._run(command, "Programming Flash" if persistent else "Programming SRAM")
 
     def _run(self, command: list[str], title: str, callback=None) -> None:
         self._run_commands([command], title, callback)
@@ -427,13 +429,13 @@ class NanoQLSetup(tk.Tk):
                     self._append_log(str(payload))
                 elif event == "done":
                     title, callback = payload
-                    self._finish_busy("Terminé / Complete")
+                    self._finish_busy("Complete")
                     self._append_log(f"{title}: OK\n")
                     if callback:
                         callback()
                 elif event == "error":
                     title, error = payload
-                    self._finish_busy("Erreur / Error")
+                    self._finish_busy("Error")
                     self._append_log(f"{title}: ERROR: {error}\n")
                     messagebox.showerror(title, error)
         except queue.Empty:
