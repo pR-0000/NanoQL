@@ -1,5 +1,6 @@
 module ql_zx8301_lite(
     input  wire        reset,
+    input  wire        core_reset,
     input  wire        clk_pixel,
 
     // Minimal CPU-facing register interface, matching the role of the real
@@ -34,7 +35,7 @@ module ql_zx8301_lite(
     // The original ZX8301 latches MC_STAT on the falling edge of the bus clock.
     // Keeping that edge here also leaves a clean half-cycle for a future 68000.
     always @(negedge clk_bus) begin
-        if (reset)
+        if (core_reset)
             mc_stat <= 8'h00;
         else if (cpu_cs)
             mc_stat <= cpu_data;
@@ -47,7 +48,8 @@ module ql_zx8301_lite(
 
     ql_video_scanout scanout (
         .reset(reset),
-        .clk(clk_pixel),
+        .clk_bus(clk_bus),
+        .clk_pixel(clk_pixel),
         .visible(visible),
         .ql_area(ql_area),
         .ql_fetch_start(ql_fetch_start),

@@ -1,6 +1,7 @@
 module ql_video_scanout(
     input  wire        reset,
-    input  wire        clk,
+    input  wire        clk_bus,
+    input  wire        clk_pixel,
     input  wire        visible,
     input  wire        ql_area,
     input  wire        ql_fetch_start,
@@ -36,12 +37,30 @@ module ql_video_scanout(
     reg [6:0]  issue_count;
     reg [6:0]  receive_count;
 
+    // The HDMI scanout and QL/SDRAM domains deliberately use independent
+    // clocks. A toggle transfers each line request to the bus domain while
+    // the requested Y coordinate remains stable until the next request.
+    reg        fetch_request_toggle;
+    reg [7:0]  fetch_request_y;
+    reg [1:0]  fetch_request_sync;
+    reg        fetch_request_seen;
+
+    always @(posedge clk_pixel) begin
+        if (reset) begin
+            fetch_request_toggle <= 1'b0;
+            fetch_request_y <= 8'd0;
+        end else if (ql_fetch_start) begin
+            fetch_request_y <= ql_fetch_y;
+            fetch_request_toggle <= ~fetch_request_toggle;
+        end
+    end
+
     wire [13:0] fetch_offset = {fetch_y, issue_count[5:0]};
     assign addr = (fetch_membase ? QL_SCREEN_BASE_1 : QL_SCREEN_BASE_0) +
                   {5'd0, fetch_offset};
     assign rd = fetch_active && (issue_count < 7'd64);
 
-    always @(posedge clk) begin
+    always @(posedge clk_bus) begin
         if (reset) begin
             fetch_active <= 1'b0;
             fetch_membase <= 1'b0;
@@ -50,17 +69,24 @@ module ql_video_scanout(
             fetch_y <= 8'd0;
             issue_count <= 7'd0;
             receive_count <= 7'd0;
-            fetch_underflow <= 1'b0;
-        end else if (ql_fetch_start) begin
-            fetch_active <= 1'b1;
-            fetch_membase <= membase;
-            line_ready[ql_fetch_y[0]] <= 1'b0;
-            fetch_bank <= ql_fetch_y[0];
-            fetch_y <= ql_fetch_y;
-            issue_count <= 7'd0;
-            receive_count <= 7'd0;
-            fetch_underflow <= 1'b0;
+            fetch_request_sync <= 2'b00;
+            fetch_request_seen <= 1'b0;
         end else begin
+            fetch_request_sync <= {fetch_request_sync[0],
+                                   fetch_request_toggle};
+
+            if (!fetch_active &&
+                (fetch_request_sync[1] != fetch_request_seen)) begin
+                fetch_request_seen <= fetch_request_sync[1];
+                fetch_active <= 1'b1;
+                fetch_membase <= membase;
+                line_ready[fetch_request_y[0]] <= 1'b0;
+                fetch_bank <= fetch_request_y[0];
+                fetch_y <= fetch_request_y;
+                issue_count <= 7'd0;
+                receive_count <= 7'd0;
+            end
+
             if (rd && rd_ready) begin
                 issue_count <= issue_count + 7'd1;
                 if (issue_count == 7'd63)
@@ -74,7 +100,23 @@ module ql_video_scanout(
                     line_ready[fetch_bank] <= 1'b1;
             end
 
-            if (ql_area && !line_ready[ql_y[0]])
+        end
+    end
+
+    reg [1:0] line_ready_pixel_meta;
+    reg [1:0] line_ready_pixel;
+
+    always @(posedge clk_pixel) begin
+        if (reset) begin
+            line_ready_pixel_meta <= 2'b00;
+            line_ready_pixel <= 2'b00;
+            fetch_underflow <= 1'b0;
+        end else begin
+            line_ready_pixel_meta <= line_ready;
+            line_ready_pixel <= line_ready_pixel_meta;
+            if (ql_fetch_start)
+                fetch_underflow <= 1'b0;
+            else if (ql_area && !line_ready_pixel[ql_y[0]])
                 fetch_underflow <= 1'b1;
         end
     end
@@ -90,7 +132,7 @@ module ql_video_scanout(
 
     // No reset here: this is the Gowin synchronous BSRAM read template.
     // The line is fully prefetched before ql_area becomes active.
-    always @(posedge clk)
+    always @(posedge clk_pixel)
         video_word <= line_buffer[{ql_y[0], ql_x[8:3]}];
 
     wire [2:0] mode4_bit_index = ql_x_d[2:0];
@@ -143,7 +185,7 @@ module ql_video_scanout(
     // In QL mode 8 the F bit toggles a latch; while that latch is active,
     // pixels flash to the color captured when the latch was toggled.
     // ql_x[0] is the second HDMI copy of each 256-pixel QL mode 8 pixel.
-    always @(posedge clk) begin
+    always @(posedge clk_pixel) begin
         if (reset || !ql_area_d || !mode8_d) begin
             mode8_flash_latched <= 1'b0;
             mode8_flash_color <= 3'b000;
@@ -153,7 +195,7 @@ module ql_video_scanout(
         end
     end
 
-    always @(posedge clk) begin
+    always @(posedge clk_pixel) begin
         if (reset) begin
             visible_d <= 1'b0;
             ql_area_d <= 1'b0;
@@ -178,7 +220,7 @@ module ql_video_scanout(
             rgb = 24'h000000;
         end else if (blank_d) begin
             rgb = 24'h000000;
-        end else if (!line_ready[ql_y[0]]) begin
+        end else if (!line_ready_pixel[ql_y[0]]) begin
             rgb = 24'hff00ff;
         end else if (mode8_d) begin
             rgb = (mode8_flash_latched && flash_phase_d) ?

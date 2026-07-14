@@ -13,6 +13,9 @@ module nanoql_hdmi #(
 );
 
     reg clk_audio = 1'b0;
+    // NanoQL currently emits DVI-compatible video without audio packets.
+    // Keeping this counter intentionally below the 720p audio divider lets
+    // synthesis remove the unused auxiliary packet path.
     reg [8:0] aclk_cnt = 9'd0;
 
     always @(posedge clk_pixel) begin
@@ -33,6 +36,7 @@ module nanoql_hdmi #(
 
     hdmi #(
         .PICTURE_ASPECT_RATIO(2'b10),
+        .VIDEO_RATE(PIXEL_CLOCK),
         .AUDIO_RATE(48000),
         .AUDIO_BIT_WIDTH(16),
         .VENDOR_NAME({"NanoQL", 16'd0}),
@@ -42,8 +46,9 @@ module nanoql_hdmi #(
         .clk_pixel(clk_pixel),
         .clk_audio(clk_audio),
         .reset(reset),
-        .stmode(2'd1),
+        .stmode(2'd3),
         .screen(2'd0),
+        .screen_width_override(11'd1280),
         .rgb(rgb),
         .audio_sample_word(audio_sample_word),
         .tmds(tmds),

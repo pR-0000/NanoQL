@@ -8,6 +8,9 @@
     <action name="ready">
       <set id="R" value="0"/>
     </action>
+    <action name="save">
+      <save file="nanoql.ini"/>
+    </action>
     <action name="reset">
       <set id="R" value="1"/>
       <delay ms="20"/>
@@ -17,6 +20,12 @@
   </actions>
   <menu label="NanoQL">
     <fileselector label="QL ROM:" ext="rom;bin" index="0" default="QL.rom"/>
+    <list label="Video:" id="A" default="0" action="save">
+      <listentry label="Monitor" value="0"/>
+      <listentry label="TV" value="1"/>
+      <listentry label="Wide +6%" value="2"/>
+      <listentry label="Wide +30%" value="3"/>
+    </list>
     <button label="Reset QL" action="reset"/>
   </menu>
 </config>

@@ -48,6 +48,7 @@ add_file src/fx68k/uaddrPla.sv
 add_file src/sdram/sdram.v
 add_file src/nanoql_hdmi.sv
 add_file src/gowin_rpll/pll_160m.v
+add_file src/gowin_rpll/pll_371m.v
 add_file src/gowin_clkdiv/gowin_clkdiv.v
 add_file src/hdmi/audio_clock_regeneration_packet.sv
 add_file src/hdmi/audio_info_frame.sv

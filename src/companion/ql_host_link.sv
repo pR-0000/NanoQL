@@ -16,6 +16,14 @@ module ql_host_link (
     output reg  [15:0] mem_wdata,
     input  wire        mem_ready,
     input  wire        mem_write_done,
+    input  wire        mem_data_valid,
+    input  wire [15:0] mem_rdata,
+
+    input  wire [23:0] cpu_addr,
+    input  wire        cpu_as_n,
+    input  wire        cpu_rw,
+    input  wire        cpu_dtack_n,
+    input  wire [2:0]  cpu_fc,
 
     output reg         cpu_hold,
     output reg         boot_vectors_active,
@@ -29,6 +37,8 @@ module ql_host_link (
     localparam [7:0] CMD_WRITE  = 8'h02;
     localparam [7:0] CMD_EXEC   = 8'h03;
     localparam [7:0] CMD_QDOS   = 8'h04;
+    localparam [7:0] CMD_READ   = 8'h06;
+    localparam [7:0] CMD_RESULT = 8'h07;
 
     localparam [1:0] WR_IDLE = 2'd0;
     localparam [1:0] WR_REQ  = 2'd1;
@@ -47,11 +57,16 @@ module ql_host_link (
     reg [3:0] status_index;
     reg [31:0] exec_ssp;
     reg [31:0] exec_pc;
+    reg transfer_write;
+    reg [3:0] result_index;
+    reg [7:0] read_payload [0:7];
+    reg exec_fetch_seen;
+    reg exec_video_write_seen;
 
     wire busy = write_state != WR_IDLE;
     wire address_valid = (packet_addr >= 24'h020000) &&
                          (packet_addr <= 24'h03ffff);
-    assign mem_we = 1'b1;
+    assign mem_we = transfer_write;
 
     function [7:0] status_byte;
         input [3:0] index;
@@ -61,7 +76,9 @@ module ql_host_link (
                 4'd1: status_byte = 8'h51; // Q
                 4'd2: status_byte = 8'h4c; // L
                 4'd3: status_byte = 8'h31; // protocol 1
-                4'd4: status_byte = {3'b000, boot_vectors_active,
+                4'd4: status_byte = {exec_fetch_seen,
+                                     exec_video_write_seen, 1'b0,
+                                     boot_vectors_active,
                                      cpu_hold, protocol_error, busy,
                                      sdram_ready};
                 default: status_byte = 8'h00;
@@ -85,6 +102,10 @@ module ql_host_link (
             status_index <= 4'd0;
             exec_ssp <= 32'd0;
             exec_pc <= 32'd0;
+            transfer_write <= 1'b1;
+            result_index <= 4'd0;
+            exec_fetch_seen <= 1'b0;
+            exec_video_write_seen <= 1'b0;
             mem_req <= 1'b0;
             mem_addr <= 22'd0;
             mem_ds <= 2'b00;
@@ -94,16 +115,31 @@ module ql_host_link (
             boot_ssp <= 32'h0003fff0;
             boot_pc <= 32'h00030000;
             restart_pulse <= 1'b0;
-            for (i = 0; i < 8; i = i + 1)
+            for (i = 0; i < 8; i = i + 1) begin
                 payload[i] <= 8'd0;
+                read_payload[i] <= 8'd0;
+            end
         end else begin
             restart_pulse <= 1'b0;
+
+            if (boot_vectors_active && !cpu_as_n && !cpu_dtack_n) begin
+                if (cpu_rw && cpu_fc[1] &&
+                    (cpu_addr >= 24'h030000) &&
+                    (cpu_addr <= 24'h03ffff))
+                    exec_fetch_seen <= 1'b1;
+                if (!cpu_rw && (cpu_addr >= 24'h020000) &&
+                    (cpu_addr <= 24'h027fff))
+                    exec_video_write_seen <= 1'b1;
+            end
 
             case (write_state)
                 WR_REQ: begin
                     mem_req <= 1'b1;
                     mem_addr <= write_addr[22:1];
-                    if (!write_addr[0]) begin
+                    if (!transfer_write) begin
+                        mem_ds <= 2'b00;
+                        mem_wdata <= 16'h0000;
+                    end else if (!write_addr[0]) begin
                         mem_ds <= 2'b01;
                         mem_wdata <= {payload[write_index], 8'h00};
                     end else begin
@@ -117,7 +153,12 @@ module ql_host_link (
                 end
 
                 WR_WAIT: begin
-                    if (mem_write_done) begin
+                    if ((transfer_write && mem_write_done) ||
+                        (!transfer_write && mem_data_valid)) begin
+                        if (!transfer_write)
+                            read_payload[write_index] <= write_addr[0] ?
+                                                         mem_rdata[7:0] :
+                                                         mem_rdata[15:8];
                         if (write_index + 4'd1 >= packet_length) begin
                             write_state <= WR_IDLE;
                             write_index <= 4'd0;
@@ -144,17 +185,25 @@ module ql_host_link (
                         CMD_HOLD: begin
                             cpu_hold <= 1'b1;
                             boot_vectors_active <= 1'b0;
+                            exec_fetch_seen <= 1'b0;
+                            exec_video_write_seen <= 1'b0;
                             protocol_error <= 1'b0;
                         end
                         CMD_QDOS: begin
                             cpu_hold <= 1'b0;
                             boot_vectors_active <= 1'b0;
+                            exec_fetch_seen <= 1'b0;
+                            exec_video_write_seen <= 1'b0;
                             protocol_error <= 1'b0;
                             restart_pulse <= 1'b1;
                         end
                         CMD_STATUS: begin
                             status_index <= 4'd1;
                             data_out <= status_byte(4'd0);
+                        end
+                        CMD_RESULT: begin
+                            result_index <= 4'd1;
+                            data_out <= read_payload[0];
                         end
                         default: begin end
                     endcase
@@ -165,6 +214,13 @@ module ql_host_link (
                         data_out <= status_byte(status_index);
                         if (status_index != 4'd15)
                             status_index <= status_index + 4'd1;
+                    end else if (command == CMD_RESULT) begin
+                        if (result_index < 4'd8) begin
+                            data_out <= read_payload[result_index];
+                            result_index <= result_index + 4'd1;
+                        end else begin
+                            data_out <= 8'h00;
+                        end
                     end else if (command == CMD_WRITE) begin
                         case (field_index)
                             4'd0: packet_addr[23:16] <= data_in;
@@ -188,12 +244,36 @@ module ql_host_link (
                                          25'h0040000)) begin
                                         protocol_error <= 1'b1;
                                     end else begin
+                                        transfer_write <= 1'b1;
                                         write_addr <= packet_addr;
                                         write_index <= 4'd0;
                                         write_state <= WR_REQ;
                                     end
                                 end
                             end
+                        endcase
+                    end else if (command == CMD_READ) begin
+                        case (field_index)
+                            4'd0: packet_addr[23:16] <= data_in;
+                            4'd1: packet_addr[15:8] <= data_in;
+                            4'd2: packet_addr[7:0] <= data_in;
+                            4'd3: begin
+                                packet_length <= data_in[3:0];
+                                if (!cpu_hold || busy || !sdram_ready ||
+                                    !address_valid || (data_in == 8'd0) ||
+                                    (data_in > 8'd8) ||
+                                    ({1'b0, packet_addr} + data_in >
+                                     25'h0040000)) begin
+                                    protocol_error <= 1'b1;
+                                end else begin
+                                    protocol_error <= 1'b0;
+                                    transfer_write <= 1'b0;
+                                    write_addr <= packet_addr;
+                                    write_index <= 4'd0;
+                                    write_state <= WR_REQ;
+                                end
+                            end
+                            default: begin end
                         endcase
                     end else if (command == CMD_EXEC) begin
                         case (field_index)
@@ -217,6 +297,8 @@ module ql_host_link (
                                     boot_ssp <= exec_ssp;
                                     boot_pc <= {exec_pc[31:8], data_in};
                                     boot_vectors_active <= 1'b1;
+                                    exec_fetch_seen <= 1'b0;
+                                    exec_video_write_seen <= 1'b0;
                                     cpu_hold <= 1'b0;
                                     protocol_error <= 1'b0;
                                     restart_pulse <= 1'b1;

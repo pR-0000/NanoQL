@@ -1,9 +1,11 @@
 module ql_boot_status (
+    input  wire        clk,
+    input  wire        reset,
     input  wire [10:0] x,
     input  wire [9:0]  y,
     input  wire [3:0]  status,
     input  wire [7:0]  progress,
-    output wire [23:0] rgb
+    output reg  [23:0] rgb
 );
 
     localparam [3:0] STATUS_MEMORY      = 4'd0;
@@ -128,37 +130,83 @@ module ql_boot_status (
         end
     endfunction
 
-    wire text_area = (x >= 11'd104) && (x < 11'd616) &&
-                     (y >= 10'd176) && (y < 10'd240);
-    wire [8:0] text_x = x - 11'd104;
-    wire [5:0] text_y = y - 10'd176;
+    reg [10:0] x_d;
+    reg [9:0] y_d;
+    reg [3:0] status_d;
+    reg [7:0] progress_d;
+
+    always @(posedge clk) begin
+        if (reset) begin
+            x_d <= 11'd0;
+            y_d <= 10'd0;
+            status_d <= STATUS_MEMORY;
+            progress_d <= 8'd0;
+        end else begin
+            x_d <= x;
+            y_d <= y;
+            status_d <= status;
+            progress_d <= progress;
+        end
+    end
+
+    wire text_area = (x_d >= 11'd384) && (x_d < 11'd896) &&
+                     (y_d >= 10'd248) && (y_d < 10'd312);
+    wire [8:0] text_x = x_d - 11'd384;
+    wire [5:0] text_y = y_d - 10'd248;
     wire [4:0] column = text_x[8:4];
     wire [2:0] line = text_y[5:4];
     wire [2:0] glyph_x = text_x[3:1];
     wire [2:0] glyph_y = text_y[3:1];
-    wire [7:0] character = message_char(status, line, column);
-    wire [34:0] glyph_bits = glyph(character);
-    wire text_pixel = text_area && (glyph_x < 3'd5) &&
-                      (glyph_y < 3'd7) &&
-                      glyph_bits[34 - (glyph_y * 5 + glyph_x)];
+    reg [7:0] character_d;
+    reg [2:0] glyph_x_d;
+    reg [2:0] glyph_y_d;
+    reg text_area_d;
+    reg progress_border_d;
+    reg progress_fill_d;
+    reg [23:0] text_color_d;
 
-    wire progress_border = (status == STATUS_LOADING) &&
-                           (x >= 11'd104) && (x < 11'd616) &&
-                           (y >= 10'd272) && (y < 10'd296) &&
-                           ((x < 11'd108) || (x >= 11'd612) ||
-                            (y < 10'd276) || (y >= 10'd292));
-    wire progress_fill = (status == STATUS_LOADING) &&
-                         (x >= 11'd108) &&
-                         (x < 11'd108 + {progress[6:0], 2'b00}) &&
-                         (y >= 10'd276) && (y < 10'd292);
-    wire error_status = (status == STATUS_ROM_FAILED) ||
-                        (status == STATUS_SDRAM_FAIL);
-    wire [23:0] text_color = error_status ? 24'hff6058 :
-                              (status == STATUS_LOADING) ? 24'h40d8d0 :
-                                                           24'hffffff;
+    always @(posedge clk) begin
+        if (reset) begin
+            character_d <= 8'h20;
+            glyph_x_d <= 3'd0;
+            glyph_y_d <= 3'd0;
+            text_area_d <= 1'b0;
+            progress_border_d <= 1'b0;
+            progress_fill_d <= 1'b0;
+            text_color_d <= 24'hffffff;
+        end else begin
+            character_d <= message_char(status_d, line, column);
+            glyph_x_d <= glyph_x;
+            glyph_y_d <= glyph_y;
+            text_area_d <= text_area;
+            progress_border_d <= (status_d == STATUS_LOADING) &&
+                (x_d >= 11'd384) && (x_d < 11'd896) &&
+                (y_d >= 10'd344) && (y_d < 10'd368) &&
+                ((x_d < 11'd388) || (x_d >= 11'd892) ||
+                 (y_d < 10'd348) || (y_d >= 10'd364));
+            progress_fill_d <= (status_d == STATUS_LOADING) &&
+                (x_d >= 11'd388) &&
+                (x_d < 11'd388 + {progress_d[6:0], 2'b00}) &&
+                (y_d >= 10'd348) && (y_d < 10'd364);
+            text_color_d <= ((status_d == STATUS_ROM_FAILED) ||
+                             (status_d == STATUS_SDRAM_FAIL)) ? 24'hff6058 :
+                            (status_d == STATUS_LOADING) ? 24'h40d8d0 :
+                                                          24'hffffff;
+        end
+    end
 
-    assign rgb = text_pixel ? text_color :
-                 progress_border ? 24'hffffff :
-                 progress_fill ? 24'h40d8d0 : 24'h061211;
+    wire [34:0] glyph_bits = glyph(character_d);
+    wire text_pixel = text_area_d && (glyph_x_d < 3'd5) &&
+                      (glyph_y_d < 3'd7) &&
+                      glyph_bits[34 - (glyph_y_d * 5 + glyph_x_d)];
+
+    always @(posedge clk) begin
+        if (reset)
+            rgb <= 24'h061211;
+        else
+            rgb <= text_pixel ? text_color_d :
+                   progress_border_d ? 24'hffffff :
+                   progress_fill_d ? 24'h40d8d0 : 24'h061211;
+    end
 
 endmodule

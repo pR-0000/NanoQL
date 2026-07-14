@@ -1,0 +1,524 @@
+diff --git a/src/bl616/CMakeLists.txt b/src/bl616/CMakeLists.txt
+index e659f09..9c6b0b5 100644
+--- a/src/bl616/CMakeLists.txt
++++ b/src/bl616/CMakeLists.txt
+@@ -17,7 +17,7 @@ set(CONFIG_CHERRYUSB_HOST_MSC 1)
+ set(CONFIG_CHERRYUSB_HOST_XBOX 1)
+ set(CONFIG_CHERRYUSB_DEVICE 1)
+ set(CONFIG_CHERRYUSB_DEVICE_HID 1)
+-#set(CONFIG_CHERRYUSB_DEVICE_CDC_ACM 1)
++set(CONFIG_CHERRYUSB_DEVICE_CDC_ACM 1)
+ set(CONFIG_BSP_SDH_SD 1)
+ set(CONFIG_BSP_SDH_SDCARD 1)
+ set(CONFIG_BSP_SDH_OSAL_POLLING_MODE 0)
+@@ -128,6 +128,7 @@ sdk_add_include_directories(. ../u8g2/csrc)
+ 
+ target_sources(app PRIVATE
+    	mcu_hw.c
++    nanoql_usb.c
+    	../hidparser.c
+    	../hid.c
+    	../inifile.c
+diff --git a/src/bl616/mcu_hw.c b/src/bl616/mcu_hw.c
+index f7d5c21..8aa0dd7 100644
+--- a/src/bl616/mcu_hw.c
++++ b/src/bl616/mcu_hw.c
+@@ -27,6 +27,7 @@
+ #include "../inifile.h"
+ #include "../menu.h"
+ #include "../gowin.h"
++#include "nanoql_usb.h"
+ 
+ #include <bl616_hbn.h>
+ #include "bl616_glb.h"
+@@ -1352,9 +1353,18 @@ void mcu_hw_init(void) {
+ #ifdef ENABLE_JTAG
+   mcu_hw_jtag_init();
+ #endif
+-  usb_host();
++  if(nanoql_development_requested()) {
++    if(!nanoql_usb_start()) {
++      usb_host();
++      nanoql_development_watch();
++    }
++  } else {
++    usb_host();
++    nanoql_development_watch();
++  }
+ 
+-  xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
++  if(!nanoql_usb_is_active())
++    xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
+ }
+ 
+ void stop_hid(void) {
+@@ -1385,7 +1395,7 @@ void mcu_hw_reset(void) {
+   struct bflb_wdg_config_s wdg_cfg;
+   wdg_cfg.clock_source = WDG_CLKSRC_32K;
+   wdg_cfg.clock_div = 31;
+-  wdg_cfg.comp_val = 1500;
++  wdg_cfg.comp_val = nanoql_usb_is_active() ? 100 : 1500;
+   wdg_cfg.mode = WDG_MODE_RESET;
+ 
+   wdg = bflb_device_get_by_name("watchdog0");
+@@ -1393,6 +1403,11 @@ void mcu_hw_reset(void) {
+   bflb_wdg_init(wdg, &wdg_cfg);
+   bflb_wdg_start(wdg);
+ 
++  // CDC mode has no USB host state to tear down. Let the watchdog perform
++  // the same power-on reset without dereferencing the host-only usb_dev.
++  if(nanoql_usb_is_active())
++    while(1) bflb_mtimer_delay_ms(100);
++
+   stop_hid();
+   bflb_mtimer_delay_ms(500);
+ 
+diff --git a/src/bl616/usb_config.h b/src/bl616/usb_config.h
+index 3dd5ac3..735d235 100644
+--- a/src/bl616/usb_config.h
++++ b/src/bl616/usb_config.h
+@@ -62,7 +62,7 @@
+ // #define CONFIG_USBDEV_TEST_MODE
+ 
+ /* enable advance desc register api */
+-//#define CONFIG_USBDEV_ADVANCE_DESC
++#define CONFIG_USBDEV_ADVANCE_DESC
+ 
+ /* move ep0 setup handler from isr to thread */
+ // #define CONFIG_USBDEV_EP0_THREAD
+diff --git a/src/gowin.c b/src/gowin.c
+index f2bbfd3..e15cdbc 100644
+--- a/src/gowin.c
++++ b/src/gowin.c
+@@ -16,6 +16,11 @@
+ 
+ // idcode is stored globally so the FPGA routines can address the right FPGA
+ static uint32_t idcode = 0;
++static bool gowin_stream_active = false;
++static bool gowin_flash_stream_active = false;
++static uint8_t gowin_flash_page[256];
++static uint16_t gowin_flash_page_used;
++static uint32_t gowin_flash_page_index;
+ 
+ static void gowin_printStatusReg(uint32_t status) {
+     if (status & GOWIN_STATUS_CRC_ERROR)            gowin_debugf("Bit 0: CRC ERROR detected");
+@@ -252,6 +257,311 @@ static bool gowin_open(void) {
+          idcode == IDCODE_GW5AST138);
+ }
+ 
++bool gowin_stream_begin(void) {
++  if(gowin_stream_active)
++    gowin_stream_abort();
++
++  if(!gowin_open()) {
++    gowin_debugf("FPGA not detected");
++    jtag_close();
++    return false;
++  }
++
++  if(!gowin_eraseSRAM()) {
++    gowin_debugf("Failed to erase SRAM");
++    jtag_close();
++    return false;
++  }
++
++  if(idcode == IDCODE_GW5AST138 && !gowin_eraseSRAM()) {
++    gowin_debugf("Failed to erase SRAM a second time");
++    jtag_close();
++    return false;
++  }
++
++  gowin_writeSRAM_prepare();
++#ifdef MCU_HW_JTAG_GPIO_OUT_MODE
++  mcu_hw_jtag_enter_gpio_out_mode();
++#endif
++  gowin_stream_active = true;
++  return true;
++}
++
++bool gowin_stream_data(const uint8_t *data, uint16_t length, bool last) {
++  if(!gowin_stream_active || !data || !length)
++    return false;
++
++#ifndef MCU_HW_JTAG_GPIO_OUT_MODE
++  uint8_t buffer[length];
++  memcpy(buffer, data, length);
++  for(uint16_t i=0;i<length;i++) buffer[i] = reverse_byte(buffer[i]);
++  gowin_writeSRAM_transfer(buffer, length, last);
++#else
++  mcu_hw_jtag_writeTDI_msb_first_gpio_out_mode((uint8_t *)data, length, last);
++#endif
++  return true;
++}
++
++static void gowin_stream_leave_shift(void) {
++#ifdef MCU_HW_JTAG_GPIO_OUT_MODE
++  mcu_hw_jtag_exit_gpio_out_mode();
++  mcu_hw_jtag_tms(1, 0b01, 2);
++#endif
++}
++
++bool gowin_stream_end(void) {
++  if(!gowin_stream_active)
++    return false;
++
++  gowin_stream_leave_shift();
++  bool success = gowin_writeSRAM_postproc(0xffffffff);
++  jtag_close();
++  gowin_stream_active = false;
++  return success;
++}
++
++void gowin_stream_abort(void) {
++  if(!gowin_stream_active)
++    return;
++
++  gowin_stream_leave_shift();
++  jtag_close();
++  gowin_stream_active = false;
++}
++
++// The GW2AR-18 uses the Tang Nano 20K's external 64-Mbit SPI Flash for
++// persistent configuration. Command 0x16 bridges JTAG to the MSPI pins. The
++// transfer and read-bit alignment follow Gowin UG290 and openFPGALoader.
++#define GOWIN_SPI_MAX_TRANSFER 262
++#define SPI_FLASH_READ         0x03
++#define SPI_FLASH_PAGE_PROGRAM 0x02
++#define SPI_FLASH_READ_STATUS  0x05
++#define SPI_FLASH_WRITE_ENABLE 0x06
++#define SPI_FLASH_SECTOR_ERASE 0x20
++#define SPI_FLASH_READ_ID      0x9f
++#define SPI_FLASH_RESET_ENABLE 0x66
++#define SPI_FLASH_RESET        0x99
++#define SPI_FLASH_POWER_UP     0xab
++
++static uint32_t gowin_flash_size;
++
++static bool gowin_spi_transfer(const uint8_t *tx, uint8_t *rx,
++                               uint16_t length) {
++  if(!tx || !length || length + (rx ? 1 : 0) > GOWIN_SPI_MAX_TRANSFER)
++    return false;
++
++  uint8_t wire_tx[GOWIN_SPI_MAX_TRANSFER];
++  uint8_t wire_rx[GOWIN_SPI_MAX_TRANSFER];
++  uint16_t wire_length = length + (rx ? 1 : 0);
++  memset(wire_tx, 0, wire_length);
++  memset(wire_rx, 0, wire_length);
++  for(uint16_t i = 0; i < length; ++i)
++    wire_tx[i] = reverse_byte(tx[i]);
++
++  jtag_command_u08(GOWIN_COMMAND_TRANSFER_SPI);
++  // RUN-TEST/IDLE -> SELECT-DR -> CAPTURE-DR -> EXIT1-DR -> PAUSE-DR
++  // -> EXIT2-DR. Bits are sent least-significant first by this helper.
++  mcu_hw_jtag_tms(1, 0b10101, 5);
++  jtag_shiftDR_from_exit2(wire_tx, rx ? wire_rx : NULL,
++                          wire_length * 8);
++
++  if(rx) {
++    for(uint16_t i = 0; i < length; ++i)
++      rx[i] = reverse_byte(wire_rx[i] >> 1) | (wire_rx[i + 1] & 1);
++  }
++  return true;
++}
++
++static bool gowin_spi_command(uint8_t command) {
++  return gowin_spi_transfer(&command, NULL, 1);
++}
++
++static bool gowin_flash_read_status(uint8_t *status) {
++  uint8_t tx[2] = { SPI_FLASH_READ_STATUS, 0 };
++  uint8_t rx[2];
++  if(!gowin_spi_transfer(tx, rx, sizeof(tx)))
++    return false;
++  *status = rx[1];
++  return true;
++}
++
++static bool gowin_flash_wait_ready(uint32_t timeout_ms) {
++  vTaskDelay(pdMS_TO_TICKS(2));
++  for(uint32_t elapsed = 0; elapsed < timeout_ms; ++elapsed) {
++    uint8_t status;
++    if(!gowin_flash_read_status(&status))
++      return false;
++    if((status & 1) == 0)
++      return true;
++    vTaskDelay(pdMS_TO_TICKS(1));
++  }
++  gowin_debugf("SPI Flash busy timeout");
++  return false;
++}
++
++static bool gowin_flash_write_enable(void) {
++  if(!gowin_spi_command(SPI_FLASH_WRITE_ENABLE))
++    return false;
++  uint8_t status;
++  return gowin_flash_read_status(&status) && (status & 2) != 0;
++}
++
++static bool gowin_flash_erase_sector(uint32_t address) {
++  uint8_t command[4] = {
++    SPI_FLASH_SECTOR_ERASE,
++    (uint8_t)(address >> 16),
++    (uint8_t)(address >> 8),
++    (uint8_t)address
++  };
++  return gowin_flash_write_enable() &&
++         gowin_spi_transfer(command, NULL, sizeof(command)) &&
++         gowin_flash_wait_ready(5000);
++}
++
++static bool gowin_flash_read(uint32_t address, uint8_t *data,
++                             uint16_t length) {
++  uint8_t tx[260];
++  uint8_t rx[260];
++  uint16_t transfer_length = length + 4;
++  if(!data || length > 256)
++    return false;
++  memset(tx, 0, transfer_length);
++  tx[0] = SPI_FLASH_READ;
++  tx[1] = (uint8_t)(address >> 16);
++  tx[2] = (uint8_t)(address >> 8);
++  tx[3] = (uint8_t)address;
++  if(!gowin_spi_transfer(tx, rx, transfer_length))
++    return false;
++  memcpy(data, &rx[4], length);
++  return true;
++}
++
++static bool gowin_writeFLASH_page(void) {
++  uint32_t address = gowin_flash_page_index * sizeof(gowin_flash_page);
++  uint8_t command[260];
++  uint8_t verify[sizeof(gowin_flash_page)];
++
++  if((address & 0xfff) == 0 && !gowin_flash_erase_sector(address)) {
++    gowin_debugf("SPI Flash erase failed at 0x%08lx", address);
++    return false;
++  }
++
++  command[0] = SPI_FLASH_PAGE_PROGRAM;
++  command[1] = (uint8_t)(address >> 16);
++  command[2] = (uint8_t)(address >> 8);
++  command[3] = (uint8_t)address;
++  memcpy(&command[4], gowin_flash_page, sizeof(gowin_flash_page));
++  if(!gowin_flash_write_enable() ||
++     !gowin_spi_transfer(command, NULL, sizeof(command)) ||
++     !gowin_flash_wait_ready(1000) ||
++     !gowin_flash_read(address, verify, sizeof(verify)) ||
++     memcmp(verify, gowin_flash_page, sizeof(verify)) != 0) {
++    gowin_debugf("SPI Flash program/verify failed at 0x%08lx", address);
++    return false;
++  }
++
++  gowin_flash_page_index++;
++  gowin_flash_page_used = 0;
++  memset(gowin_flash_page, 0xff, sizeof(gowin_flash_page));
++  return true;
++}
++
++bool gowin_flash_stream_begin(uint32_t image_size) {
++  if(gowin_flash_stream_active)
++    gowin_flash_stream_abort();
++
++  if(!image_size || !gowin_open() || idcode != IDCODE_GW2AR18) {
++    gowin_debugf("GW2AR-18 FPGA not detected");
++    jtag_close();
++    return false;
++  }
++  if(!gowin_eraseSRAM()) {
++    gowin_debugf("Failed to prepare GW2AR external Flash access");
++    jtag_close();
++    return false;
++  }
++
++  if(!gowin_spi_command(SPI_FLASH_RESET_ENABLE) ||
++     !gowin_spi_command(SPI_FLASH_RESET)) {
++    jtag_close();
++    return false;
++  }
++  vTaskDelay(pdMS_TO_TICKS(2));
++  if(!gowin_spi_command(SPI_FLASH_POWER_UP)) {
++    jtag_close();
++    return false;
++  }
++
++  uint8_t id_tx[4] = { SPI_FLASH_READ_ID, 0, 0, 0 };
++  uint8_t id_rx[4];
++  if(!gowin_spi_transfer(id_tx, id_rx, sizeof(id_tx))) {
++    jtag_close();
++    return false;
++  }
++  uint32_t jedec = ((uint32_t)id_rx[1] << 16) |
++                   ((uint32_t)id_rx[2] << 8) | id_rx[3];
++  if(jedec == 0 || jedec == 0xffffff ||
++     id_rx[3] < 20 || id_rx[3] > 24) {
++    gowin_debugf("Invalid SPI Flash JEDEC ID: 0x%06lx", jedec);
++    jtag_close();
++    return false;
++  }
++  gowin_flash_size = UINT32_C(1) << id_rx[3];
++  if(image_size > gowin_flash_size) {
++    gowin_debugf("FPGA image is larger than SPI Flash");
++    jtag_close();
++    return false;
++  }
++  gowin_debugf("SPI Flash detected: 0x%06lx, %lu bytes", jedec,
++               (unsigned long)gowin_flash_size);
++
++  memset(gowin_flash_page, 0xff, sizeof(gowin_flash_page));
++  gowin_flash_page_used = 0;
++  gowin_flash_page_index = 0;
++  gowin_flash_stream_active = true;
++  return true;
++}
++
++bool gowin_flash_stream_data(const uint8_t *data, uint16_t length) {
++  if(!gowin_flash_stream_active || !data || !length)
++    return false;
++
++  while(length != 0) {
++    uint16_t available = sizeof(gowin_flash_page) - gowin_flash_page_used;
++    uint16_t count = length < available ? length : available;
++    memcpy(&gowin_flash_page[gowin_flash_page_used], data, count);
++    gowin_flash_page_used += count;
++    data += count;
++    length -= count;
++    if(gowin_flash_page_used == sizeof(gowin_flash_page) &&
++       !gowin_writeFLASH_page())
++      return false;
++  }
++  return true;
++}
++
++bool gowin_flash_stream_end(void) {
++  if(!gowin_flash_stream_active)
++    return false;
++
++  bool success = gowin_flash_page_used == 0 || gowin_writeFLASH_page();
++  if(success) {
++    jtag_command_u08(GOWIN_COMMAND_RECONFIG);
++    jtag_command_u08(GOWIN_COMMAND_NOOP);
++    jtag_clk_us(600000);
++  }
++  jtag_close();
++  gowin_flash_stream_active = false;
++  return success;
++}
++
++void gowin_flash_stream_abort(void) {
++  if(!gowin_flash_stream_active)
++    return;
++  jtag_close();
++  gowin_flash_stream_active = false;
++}
++
+ // try to open "core.bin" on the sd card and try to transfer it via JTAG to
+ // the FPGA
+ static bool gowin_upload_core_bin(const char *name) {
+diff --git a/src/gowin.h b/src/gowin.h
+index bf062aa..ac23d61 100644
+--- a/src/gowin.h
++++ b/src/gowin.h
+@@ -85,6 +85,14 @@
+ #define IDCODE_GW5A25     0x1281b
+ 
+ bool gowin_upload_core(const char *name);
++bool gowin_stream_begin(void);
++bool gowin_stream_data(const uint8_t *data, uint16_t length, bool last);
++bool gowin_stream_end(void);
++void gowin_stream_abort(void);
++bool gowin_flash_stream_begin(uint32_t image_size);
++bool gowin_flash_stream_data(const uint8_t *data, uint16_t length);
++bool gowin_flash_stream_end(void);
++void gowin_flash_stream_abort(void);
+ void gowin_fpgaReset(void);
+ 
+ #endif // GOWIN_H
+diff --git a/src/jtag.c b/src/jtag.c
+index ff136f6..6ee5216 100644
+--- a/src/jtag.c
++++ b/src/jtag.c
+@@ -74,6 +74,20 @@ void jtag_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, bool last) {
+     mcu_hw_jtag_data(tx, rx, len);  
+ }
+ 
++// GW2A command 0x16 exposes its external configuration Flash through a
++// special DR path entered from EXIT2-DR. The transition clock itself carries
++// no payload; data shifting starts once SHIFT-DR has been reached.
++void jtag_shiftDR_from_exit2(uint8_t *tx, uint8_t *rx, uint16_t len) {
++  mcu_hw_jtag_tms(1, 0, 1);  // EXIT2-DR -> SHIFT-DR
++  mcu_hw_jtag_data(tx, rx, len - 1);
++
++  uint8_t lrx = mcu_hw_jtag_tms(
++      tx ? ((tx[(len - 1) / 8] & 0x80) ? 1 : 0) : 1, 0b1, 1);
++  if(rx)
++    rx[(len - 1) / 8] = (rx[(len - 1) / 8] & 0x7f) | (lrx & 0x80);
++  mcu_hw_jtag_tms(1, 0b01, 2);
++}
++
+ uint32_t jtag_command_u08_read32(uint8_t cmd) {
+   uint32_t retval = 0;
+   
+diff --git a/src/jtag.h b/src/jtag.h
+index bbc5244..7a58da4 100644
+--- a/src/jtag.h
++++ b/src/jtag.h
+@@ -22,6 +22,7 @@ uint32_t jtag_command_u08_read32(uint8_t cmd);
+ void jtag_enter_shiftDR(void);
+ void jtag_shiftDR(uint8_t *tx, uint8_t *rx, uint16_t len);
+ void jtag_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, bool last);
++void jtag_shiftDR_from_exit2(uint8_t *tx, uint8_t *rx, uint16_t len);
+ 
+ // toggle the jtag clock for the given time
+ static inline void jtag_clk_us(uint32_t us) { mcu_hw_jtag_toggleClk(15 * us); }
+diff --git a/src/mcu_hw.h b/src/mcu_hw.h
+index a53cf9f..777a0de 100644
+--- a/src/mcu_hw.h
++++ b/src/mcu_hw.h
+@@ -50,7 +50,7 @@ char mcu_hw_wifi_scan_start(mcu_hw_wifi_scan_cb_func);
+ #define PIN_TF_SDIO_SEL GPIO_PIN_16
+ #define DIRECT_SDC_SUPPORTED
+ #endif
+-#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)
++#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_NANO20K_V3923)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)
+ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);
+ uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len);
+ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
+diff --git a/src/menu.c b/src/menu.c
+index 5b8883d..f33d576 100644
+--- a/src/menu.c
++++ b/src/menu.c
+@@ -448,9 +448,9 @@ static void menu_draw_title(const char *s, bool arrow, bool selected) {
+     // "single button" mode
+   
+     // no arrow? Then this is the root menu. In that case
+-    // a cross is drawn in "single button mode"
+-    u8g2_DrawXBM(&u8g2, 0, 1, 8, 8, icn_empty_bits);    
+-    x = 10;
++    // a cross is drawn at the right in "single button mode"
++    u8g2_DrawXBM(&u8g2, u8g2_GetDisplayWidth(&u8g2) - 8,
++                 1, 8, 8, icn_empty_bits);
+   }
+   
+   // draw title in bold and seperator line
+diff --git a/src/sysctrl.c b/src/sysctrl.c
+index 8a1d83e..2d57e93 100644
+--- a/src/sysctrl.c
++++ b/src/sysctrl.c
+@@ -269,7 +269,7 @@ static void sys_handle_event(bool ignore_coldboot) {
+ 
+     // the second button controls the OSD, so it can be used in conjunction
+     // with 
+-#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)
++#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_NANO20K_V3923)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)
+     if(!mcu_hw_jtag_is_active())
+ #endif
+ 
+@@ -284,7 +284,7 @@ static void sys_handle_event(bool ignore_coldboot) {
+     else {
+       sys_debugf("FPGA cold boot detected, reseting MCU ...");
+ 
+-#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)
++#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_NANO20K_V3923)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)
+       // Check for USB-JTAG activity and don't reset (and thus break
+       // the JTAG activity)
+       if(mcu_hw_jtag_is_active()) {

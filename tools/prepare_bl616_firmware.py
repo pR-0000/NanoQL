@@ -112,6 +112,16 @@ def main() -> int:
         type=Path,
         help="locally built nanoql_link_nano20k_v3923.bin",
     )
+    parser.add_argument(
+        "--unified-3921",
+        type=Path,
+        help="locally built nanoql_companion_nano20k.bin",
+    )
+    parser.add_argument(
+        "--unified-3923",
+        type=Path,
+        help="locally built nanoql_companion_nano20k_v3923.bin",
+    )
     args = parser.parse_args()
 
     repository = Path(__file__).resolve().parent.parent
@@ -148,8 +158,12 @@ def main() -> int:
         "2_TEST_3923_companion_only.ini",
         "3_LINK_3921_usb_cdc.ini",
         "3_LINK_3923_usb_cdc.ini",
+        "4_NANOQL_3921_unified.ini",
+        "4_NANOQL_3923_unified.ini",
         "nanoql_link_nano20k.bin",
         "nanoql_link_nano20k_v3923.bin",
+        "nanoql_companion_nano20k.bin",
+        "nanoql_companion_nano20k_v3923.bin",
     ):
         (package / stale_name).unlink(missing_ok=True)
     for source_name, destination_name in configurations:
@@ -174,6 +188,29 @@ def main() -> int:
     }
     for revision in revisions:
         source, firmware_name, config_source, config_name = link_firmware[revision]
+        if source is None:
+            continue
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        shutil.copy2(source, package / firmware_name)
+        shutil.copy2(repository / "firmware" / "bl616" / config_source, package / config_name)
+
+    unified_firmware = {
+        "3921": (
+            args.unified_3921,
+            "nanoql_companion_nano20k.bin",
+            "flash_nano20k_3921_unified.ini",
+            "4_NANOQL_3921_unified.ini",
+        ),
+        "3923": (
+            args.unified_3923,
+            "nanoql_companion_nano20k_v3923.bin",
+            "flash_nano20k_3923_unified.ini",
+            "4_NANOQL_3923_unified.ini",
+        ),
+    }
+    for revision in revisions:
+        source, firmware_name, config_source, config_name = unified_firmware[revision]
         if source is None:
             continue
         if not source.is_file():
@@ -207,6 +244,8 @@ def main() -> int:
         print(f"Revision {revision} test:   {package / f'2_TEST_{revision}_companion_only.ini'}")
         if link_firmware[revision][0] is not None:
             print(f"Revision {revision} link:   {package / f'3_LINK_{revision}_usb_cdc.ini'}")
+        if unified_firmware[revision][0] is not None:
+            print(f"Revision {revision} NanoQL: {package / f'4_NANOQL_{revision}_unified.ini'}")
     print("\nNORMAL keeps the Gowin programmer when USB data is connected.")
     print("To run Companion with NORMAL, boot the FPGA from its Flash and power")
     print("the board from USB without a data host. TEST disables the programmer")

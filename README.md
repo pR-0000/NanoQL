@@ -12,14 +12,16 @@ NanoQL démarre une ROM Sinclair QL depuis la carte microSD et fournit :
 
 - un cœur 68000 `fx68k` ;
 - 128 Kio de RAM QL dans la SDRAM de la Tang Nano 20K ;
-- les modes vidéo QL 4 et 8 sur HDMI 576p ;
-- une image 512 x 256 centrée, sans pixels déformés ;
+- les modes vidéo QL 4 et 8 sur HDMI 720p50 ;
+- une image 512 x 256 centrée avec quatre largeurs sélectionnables ;
 - le contrôleur IPC 8049 et la matrice clavier QL ;
 - un clavier USB raccordé par hub au BL616 intégré ;
 - le chargement automatique de `QL.rom` depuis la microSD ;
-- un menu OSD accessible avec `F12` pour choisir la ROM et réinitialiser le QL.
+- un menu OSD accessible avec `F12` pour choisir la ROM, le cadrage vidéo et réinitialiser le QL.
 
 Les lecteurs Microdrive et leurs images ne sont pas encore implémentés.
+
+Le menu vidéo propose `Monitor`, `TV`, `Wide +6%` et `Wide +30%`. Tous affichent les 512 × 256 échantillons de l'image QL sans supprimer de ligne ni de colonne. `Monitor` utilise des blocs réguliers de 2 × 2 pixels HDMI, tandis que les modes larges corrigent progressivement la géométrie particulière des pixels du QL. Leur agrandissement fractionnaire reste un rendu au plus proche voisin, sans filtre de lissage dans le FPGA.
 
 ### Matériel nécessaire
 
@@ -128,7 +130,7 @@ Dans Gowin EDA, l'option **Use JTAG as regular IO** doit rester décochée.
 5. Reliez le hub à la Tang Nano 20K, puis alimentez l'ensemble.
 6. Attendez l'écran QL et appuyez sur `F1` pour le mode moniteur ou `F2` pour le mode TV.
 7. À l'invite QL, testez par exemple `PRINT 2+2`, puis Entrée.
-8. Appuyez sur `F12` pour ouvrir ou fermer le menu NanoQL.
+8. Appuyez sur `F12` pour ouvrir le menu NanoQL et choisir le cadrage dans `Video`.
 
 ### Dépannage court
 
@@ -143,14 +145,16 @@ Dernière compilation du build principal :
 
 | Ressource    |            Utilisation |
 | ------------ | ---------------------: |
-| Logic        | 10 724 / 20 736 (52 %) |
-| LUT          |                 10 103 |
-| ALU          |                    555 |
-| Registres    |                  4 449 |
-| CLS          |  6 780 / 10 368 (66 %) |
+| Logic        | 10 510 / 20 736 (51 %) |
+| LUT          |                  9 866 |
+| ALU          |                    578 |
+| Registres    |                  4 219 |
+| CLS          |  6 501 / 10 368 (63 %) |
 | BSRAM        |         45 / 46 (98 %) |
-| E/S          |         26 / 66 (40 %) |
-| Fmax mesurée |             51,717 MHz |
+| E/S          |         27 / 66 (41 %) |
+| rPLL         |           2 / 2 (100 %) |
+| Fmax système | 67,787 MHz pour 31,8 MHz |
+| Fmax HDMI    | 76,627 MHz pour 74,25 MHz |
 | TNS setup    |                   0 ns |
 
 Ces valeurs sont mises à jour après les changements significatifs du build principal.
@@ -163,6 +167,8 @@ microSD -> BL616 FPGA Companion -> chargeur ROM -> BSRAM dédiée
 OSD FPGA Companion + vidéo QL -> HDMI
 ROM + SDRAM + ZX8301/ZX8302 -> fx68k
 ```
+
+La sortie HDMI utilise le mode standard 1280 × 720p50. Le domaine QL/SDRAM reste à 31,8 MHz et un tampon de ligne à double horloge alimente le domaine HDMI à 74,25 MHz. Le cadrage `Monitor` agrandit chaque échantillon du framebuffer QL en un bloc régulier de 2 × 2 pixels carrés. Les cadrages plus larges conservent les 512 × 256 échantillons complets ; `Wide +30%` garde en plus une marge HDMI de 40 pixels à gauche et à droite.
 
 Le CPU utilise des phases 68008 à 7,5 MHz, le repliement matériel de l'espace d'adressage 128 Kio sur 256 Kio et le modèle de contention RAM `ql_timing` du core QL MiSTer.
 
@@ -178,7 +184,7 @@ Le ZX8302 applique chaque écriture de registre sur la phase négative du 68008 
 
 Le HDL et les contraintes sont dans `src/`, l'intégration Companion dans `src/companion/` et les outils utilisateur dans `tools/`.
 
-L'interface de développement USB permettant de charger et d'exécuter directement un binaire 68000 est décrite dans [`docs/NANOQL_LINK.md`](docs/NANOQL_LINK.md). Elle utilise un profil BL616 séparé afin de ne pas perturber le clavier, la microSD et l'OSD du fonctionnement normal.
+L'interface de développement USB permettant de charger et d'exécuter directement un binaire 68000 est décrite dans [`docs/NANOQL_LINK.md`](docs/NANOQL_LINK.md). Le firmware BL616 unifié démarre avec le clavier USB normal et passe à NanoQL Link lorsqu'on appuie sur S1 après le démarrage du FPGA. Cette interface peut reconfigurer temporairement la SRAM du FPGA avec le `.bin` produit par Gowin, puis revenir automatiquement en mode Companion. La programmation persistante reste confiée à Gowin Programmer.
 
 ### Références
 
@@ -196,14 +202,16 @@ NanoQL boots a Sinclair QL ROM from microSD and currently provides:
 
 - an `fx68k` 68000 core;
 - 128 KiB of QL RAM in the Tang Nano 20K SDRAM;
-- QL mode 4 and mode 8 video over 576p HDMI;
-- a centered 512 x 256 image with uniform pixels;
+- QL mode 4 and mode 8 video over 720p50 HDMI;
+- a centered 512 x 256 image with four selectable display widths;
 - the 8049 IPC controller and QL keyboard matrix;
 - a USB keyboard through the integrated BL616 and a powered USB hub;
 - automatic loading of `QL.rom` from microSD;
-- an `F12` on-screen display for ROM selection and QL reset.
+- an `F12` on-screen display for ROM selection, video framing, and QL reset.
 
 Microdrives and their images are not implemented yet.
+
+The video menu provides `Monitor`, `TV`, `Wide +6%`, and `Wide +30%`. Every mode preserves all 512 × 256 QL image samples. `Monitor` uses uniform 2 × 2 HDMI pixel blocks, while the wider modes progressively compensate for the QL's non-square pixel geometry. Fractional enlargement remains nearest-neighbour output, with no smoothing filter in the FPGA.
 
 ### Required hardware and software
 
@@ -253,7 +261,7 @@ Keep Gowin EDA's **Use JTAG as regular IO** option disabled.
 
 #### 5. Boot and test
 
-Power the board off, insert the prepared microSD card, connect HDMI, and attach the keyboard through a powered USB OTG hub. Power it on without a USB data connection to the computer. At the QL boot screen, press `F1` for monitor mode or `F2` for TV mode. At the prompt, type `PRINT 2+2` and press Enter. Press `F12` to open or close the NanoQL menu.
+Power the board off, insert the prepared microSD card, connect HDMI, and attach the keyboard through a powered USB OTG hub. Power it on without a USB data connection to the computer. At the QL boot screen, press `F1` for monitor mode or `F2` for TV mode. At the prompt, type `PRINT 2+2` and press Enter. Press `F12` to open the NanoQL menu and select a framing mode under `Video`.
 
 ### Quick troubleshooting
 
@@ -268,14 +276,15 @@ Latest main build:
 
 | Resource      |           Utilization |
 | ------------- | --------------------: |
-| Logic         | 10,724 / 20,736 (52%) |
-| LUT           |                10,103 |
-| ALU           |                   555 |
-| Registers     |                 4,449 |
-| CLS           |  6,780 / 10,368 (66%) |
+| Logic         | 10,510 / 20,736 (51%) |
+| LUT           |                 9,866 |
+| ALU           |                   578 |
+| Registers     |                 4,219 |
+| CLS           |  6,501 / 10,368 (63%) |
 | BSRAM         |         45 / 46 (98%) |
-| I/O           |         26 / 66 (40%) |
-| Measured Fmax |            51.717 MHz |
+| I/O           |         27 / 66 (41%) |
+| System Fmax   | 67.787 MHz at 31.8 MHz |
+| HDMI Fmax     | 76.627 MHz at 74.25 MHz |
 | Setup TNS     |                  0 ns |
 
 ### Architecture and references
@@ -286,6 +295,8 @@ microSD -> BL616 FPGA Companion -> ROM loader -> dedicated BSRAM
 FPGA Companion OSD + QL video -> HDMI
 ROM + SDRAM + ZX8301/ZX8302 -> fx68k
 ```
+
+HDMI output uses standard 1280 × 720p50 timings. The QL/SDRAM domain remains at 31.8 MHz, while a dual-clock line buffer feeds the 74.25 MHz HDMI domain. `Monitor` maps each QL sample to a uniform 2 × 2 HDMI block. Wider modes preserve all 512 × 256 source samples, and `Wide +30%` keeps a 40-pixel HDMI safety margin on both sides.
 
 The CPU uses 7.5 MHz 68008 phases, the base machine's 128 KiB RAM address-space wrapping at 256 KiB, and QL MiSTer's `ql_timing` RAM-contention model.
 
@@ -300,5 +311,7 @@ The 8049 firmware ROM uses a synchronous output and is synthesized into one of t
 The ZX8302 applies each register write on the negative 68008 phase and returns `DTACK` only after it has committed. Its registers, IPC serial link, and interrupts follow the QL MiSTer module structure.
 
 HDL and constraints are under `src/`, Companion integration is under `src/companion/`, and user tools are under `tools/`.
+
+The direct USB development interface is documented in [`docs/NANOQL_LINK.md`](docs/NANOQL_LINK.md). The unified BL616 firmware starts with the normal USB keyboard and switches to NanoQL Link when S1 is pressed after FPGA startup. It can temporarily reconfigure FPGA SRAM with Gowin's generated `.bin` file, then automatically returns to Companion mode. Persistent programming currently remains a Gowin Programmer operation.
 
 Reference projects: [QL MiSTer](https://github.com/MiSTer-devel/QL_MiSTer), [QL MiST](https://github.com/mist-devel/ql), [MiSTeryNano](https://github.com/MiSTle-Dev/MiSTeryNano), [NanoMIG](https://github.com/MiSTle-Dev/NanoMIG), and the [Tang Nano 20K documentation](https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html).

@@ -4,7 +4,11 @@
 
 NanoQL Link est l'interface de développement direct du core. Elle permet d'arrêter le fx68k, d'écrire un programme dans les 128 Kio de RAM du QL, puis de le démarrer avec un pointeur de pile et un compteur ordinal choisis par le développeur. Ce premier mode est volontairement bare-metal : il ne dépend ni de SuperBASIC, ni des microdrives, ni des structures internes d'une version particulière de QDOS.
 
-Le transport est le suivant : PC en USB CDC, BL616, SPI interne cible 4, arbitre SDRAM, puis fx68k. Le BL616 fonctionne alors comme périphérique USB et le clavier USB hôte n'est pas disponible pendant la session de développement. Un redémarrage en profil Companion normal restaure le clavier, la microSD et l'overlay.
+Le transport suit ce chemin : PC en USB CDC, BL616, SPI interne cible 4, arbitre SDRAM, puis fx68k. Le firmware BL616 unifié démarre normalement en mode USB hôte pour le clavier. Un appui sur S1 après la configuration du FPGA, y compris lorsque QDOS fonctionne déjà, déconnecte le clavier USB hôte et fait apparaître le port série `NanoQL Link`. Le FPGA, QDOS, la SDRAM, la microSD et l'overlay ne sont pas réinitialisés. Le clavier distant prend alors le relais.
+
+S1 est aussi la broche MODE0 du FPGA Gowin. Ne le maintenez pas pendant la mise sous tension. Appuyez brièvement sur S1 seulement après l'apparition de l'image HDMI ou l'allumage des LED NanoQL. S2 n'est pas utilisé par NanoQL Link.
+
+Ce mode CDC n'est pas le périphérique double canal `SIPEED USB Debugger` du firmware FPGA Partner officiel et ne peut donc pas être utilisé directement par Gowin Programmer. Pour le développement courant, la commande `fpga` ci-dessous programme la SRAM du FPGA sans changer de firmware BL616. Gowin Programmer nécessite de restaurer temporairement le profil FPGA Partner officiel.
 
 Carte mémoire v1 :
 
@@ -21,26 +25,46 @@ Commandes SPI de la cible 4 :
 - `02 A2 A1 A0 LEN DATA...` : écriture de 1 à 8 octets.
 - `03 SSP[31:0] PC[31:0]` : installation des vecteurs et exécution.
 - `04` : désactivation des vecteurs injectés et redémarrage de QDOS.
+- `05 KEY` : événement clavier HID distant.
+- `06 A2 A1 A0 LEN` : demande de lecture de 1 à 8 octets.
+- `07` : récupération du résultat de lecture.
 
-Le script PC est `tools/nanoql_link.py`. Le firmware source dédié se trouve dans `firmware/bl616/nanoql_link`. Il est construit séparément pour les révisions 3921 et 3923 par le workflow `Build BL616 NanoQL Link`, sans publier de ROM ni de binaire dans l'historique Git.
+Le script PC est `tools/nanoql_link.py`. Le firmware unifié est construit à partir des sources de `firmware/bl616/nanoql_companion` pour les révisions 3921 et 3923.
 
 ### Premier essai matériel
 
-1. Téléchargez l'artefact du workflow correspondant à la révision de la carte.
-2. Préparez le paquet FlashCube en passant le binaire au script `prepare_bl616_firmware.py` avec `--link-3921` ou `--link-3923`.
-3. Flashez le fichier `3_LINK_..._usb_cdc.ini` en maintenant `UPDATE` lors du branchement.
-4. Programmez le bitstream NanoQL courant dans la mémoire Flash du FPGA avant d'activer le profil Link, car ce profil ne fournit pas le programmateur Gowin.
-5. Rebranchez normalement la carte au PC. Un port série nommé `NanoQL Link` doit apparaître.
-6. Exécutez `python tools/nanoql_link.py status`, puis `python tools/nanoql_link.py demo`.
+1. Flashez une fois le firmware BL616 NanoQL unifié correspondant à la révision de la carte.
+2. Démarrez normalement NanoQL et attendez QDOS.
+3. Reliez l'USB-C de la carte au PC avec un câble de données, attendez le démarrage du FPGA, puis appuyez brièvement sur S1.
+4. Attendez l'apparition du port série `NanoQL Link`, puis exécutez `python tools/nanoql_link.py --port COMx status`.
+5. Utilisez `python tools/nanoql_link.py --port COMx keyboard` pour le clavier distant ou `python tools/nanoql_link.py --port COMx demo` pour la mire bare-metal. Le profil QL est choisi automatiquement d'après la disposition Windows ; `--ql-layout fr` et `--ql-layout uk` permettent de le forcer.
 
-La démo arrête QDOS, charge un court programme 68000 à `0x030000` et remplit la VRAM avec une mire. Pour revenir au démarrage QDOS sans reflasher le FPGA, utilisez `python tools/nanoql_link.py qdos`. Pour retrouver le clavier, la microSD et l'OSD, reflashez ensuite le profil BL616 `1_NORMAL`.
+La démo arrête QDOS, charge un court programme 68000 à `0x030000`, écrit une seule fois une bande verte de 32 lignes au centre de la VRAM, puis s'arrête sur une boucle locale. Elle évite ainsi de saturer l'arbitre SDRAM pendant le balayage HDMI. Utilisez `python tools/nanoql_link.py --port COMx qdos` pour quitter le programme injecté et redémarrer QDOS. Un redémarrage électrique restaure le mode USB hôte normal.
+
+Pour reconfigurer temporairement la SRAM du FPGA sans remplacer le firmware BL616, utilisez le fichier `.bin` produit par Gowin :
+
+```text
+python tools/nanoql_link.py --port COMx fpga impl/pnr/NanoQL_sd_rom.bin
+```
+
+Le bitstream passe directement de l'USB au moteur JTAG du BL616, sans fichier temporaire et sans écriture sur la microSD. Sa taille et son CRC sont vérifiés avant la finalisation du FPGA. Après l'accusé de réception, le BL616 redémarre automatiquement en mode Companion et le port COM disparaît. Cette commande est destinée aux essais de développement ; après une coupure d'alimentation, le bitstream conservé dans la Flash FPGA redémarre.
+
+La programmation persistante depuis NanoQL Link est temporairement désactivée : une première implémentation n'a pas restauré correctement le FPGA après un échec d'accès à la Flash SPI. Utilisez `fpga` pour les essais rapides en SRAM et Gowin Programmer pour enregistrer un bitstream validé dans la Flash de configuration.
 
 ## English
 
 NanoQL Link is the core's direct development interface. It can hold the fx68k in reset, write a program into the QL's 128 KiB RAM, and start it with developer-provided stack and program-counter values. This first mode is intentionally bare-metal and does not depend on SuperBASIC, microdrives, or private data structures from a particular QDOS release.
 
-The transport path is PC USB CDC, BL616, internal SPI target 4, SDRAM arbiter, then fx68k. In this profile the BL616 is a USB device, so USB-host keyboard support is unavailable during the development session. Rebooting into the normal Companion profile restores keyboard, microSD, and overlay operation.
+The transport path is PC USB CDC, BL616, internal SPI target 4, SDRAM arbiter, then fx68k. The unified BL616 firmware normally starts as a USB host for the keyboard. Pressing S1 after FPGA configuration, including while QDOS is already running, disconnects the USB-host keyboard and enumerates the `NanoQL Link` serial port. The FPGA, QDOS, SDRAM, microSD, and overlay are not reset. The remote keyboard can then take over.
 
-The PC utility is `tools/nanoql_link.py`. Its dedicated source firmware lives in `firmware/bl616/nanoql_link` and is built separately for board revisions 3921 and 3923 by the `Build BL616 NanoQL Link` workflow. Generated firmware, ROMs, and bitstreams are not committed.
+S1 is also the Gowin FPGA MODE0 pin. Do not hold it while powering the board. Briefly press S1 only after the HDMI image appears or the NanoQL LEDs turn on. S2 is not used by NanoQL Link.
 
-Build or download the workflow artifact for the correct revision, add it to a FlashCube package with `prepare_bl616_firmware.py --link-3921` or `--link-3923`, and flash the generated `3_LINK_..._usb_cdc.ini`. The FPGA bitstream must already be stored in FPGA Flash. After reconnecting the board, run `python tools/nanoql_link.py status` and then `python tools/nanoql_link.py demo`. Reflash the BL616 `1_NORMAL` profile to restore keyboard, microSD, OSD, and the Gowin programmer.
+This CDC device is not the official FPGA Partner firmware's dual-channel `SIPEED USB Debugger`, so Gowin Programmer cannot use it directly. For normal development, the `fpga` command below programs FPGA SRAM without changing BL616 firmware. Gowin Programmer requires temporarily restoring the official FPGA Partner profile.
+
+The PC utility is `tools/nanoql_link.py`. Unified firmware sources are in `firmware/bl616/nanoql_companion` and support board revisions 3921 and 3923.
+
+Flash the matching unified BL616 firmware once, boot NanoQL normally, connect the board to the PC with a USB data cable, wait for FPGA startup, and briefly press S1. Once the `NanoQL Link` serial port appears, run `python tools/nanoql_link.py --port COMx status`, followed by either `keyboard` or `demo`. Keyboard mode automatically selects the QL layout from the active Windows layout; `--ql-layout fr` and `--ql-layout uk` override it. The demo writes one central 32-line green band and then stops writing SDRAM. Use the `qdos` command to leave injected code and restart QDOS. A power cycle restores normal USB-host mode.
+
+The command `python tools/nanoql_link.py --port COMx fpga impl/pnr/NanoQL_sd_rom.bin` streams Gowin's `.bin` output directly from USB into FPGA SRAM through the BL616 JTAG engine, without writing the microSD. After acknowledging completion, the BL616 automatically restarts in Companion mode and the COM port disappears. It is temporary development programming; the FPGA Flash bitstream returns after power cycling.
+
+Persistent programming from NanoQL Link is temporarily disabled because the first implementation did not reliably restore the FPGA after an SPI Flash access failure. Use `fpga` for quick SRAM tests and Gowin Programmer to store a validated bitstream in configuration Flash.

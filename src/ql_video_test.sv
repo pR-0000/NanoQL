@@ -1,6 +1,9 @@
 module ql_video_test(
+    input  wire        clk_bus,
     input  wire        clk_pixel,
     input  wire        reset,
+    input  wire        core_reset,
+    input  wire [1:0]  aspect_mode,
     output wire [18:0] mem_addr,
     output wire        mem_rd,
     input  wire        mem_ready,
@@ -17,11 +20,10 @@ module ql_video_test(
     output reg  [9:0]  y
 );
 
-    // HDMI PAL standard mode from the MiSTeryNano HDMI core:
-    // visible area 720x576, total frame 1024x626, pixel clock 32 MHz.
-    localparam [10:0] FRAME_W = 11'd1024;
-    localparam [9:0]  FRAME_H = 10'd626;
-    assign vblank = y >= 10'd576;
+    // CEA-861 1280x720p50: 74.25 MHz, 1980x750 total pixels.
+    localparam [10:0] FRAME_W = 11'd1980;
+    localparam [9:0]  FRAME_H = 10'd750;
+    assign vblank = y >= 10'd720;
 
     wire visible_now;
     wire ql_area_now;
@@ -31,8 +33,11 @@ module ql_video_test(
     wire [7:0] ql_y_now;
 
     ql_hdmi_window hdmi_window (
+        .clk(clk_pixel),
+        .reset(reset),
         .x(x),
         .y(y),
+        .aspect_mode(aspect_mode),
         .visible(visible_now),
         .ql_area(ql_area_now),
         .ql_fetch_start(ql_fetch_start_now),
@@ -77,8 +82,9 @@ module ql_video_test(
 
     ql_zx8301_lite zx8301_lite (
         .reset(reset),
+        .core_reset(core_reset),
         .clk_pixel(clk_pixel),
-        .clk_bus(clk_pixel),
+        .clk_bus(clk_bus),
         .cpu_cs(mc_stat_wr),
         .cpu_data(mc_stat_data),
         .visible(visible_now),

@@ -2,6 +2,7 @@
 
 module nanoql_top(
     input  wire       clk_27m,
+    input  wire       key_s1,
     output wire [5:0] leds_n,
 
     output wire       tmds_clk_n,
@@ -37,6 +38,9 @@ module nanoql_top(
     wire clk_pixel_x5;
     wire clk_pixel;
     wire pll_lock;
+    wire clk_hdmi_x5;
+    wire clk_hdmi;
+    wire pll_hdmi_lock;
 
     pll_160m pll_hdmi (
         .clkout(clk_pixel_x5),
@@ -50,9 +54,21 @@ module nanoql_top(
         .clkout(clk_pixel)
     );
 
+    pll_371m pll_720p (
+        .clkout(clk_hdmi_x5),
+        .lock(pll_hdmi_lock),
+        .clkin(clk_27m)
+    );
+
+    Gowin_CLKDIV clk_hdmi_div_5 (
+        .hclkin(clk_hdmi_x5),
+        .resetn(pll_hdmi_lock),
+        .clkout(clk_hdmi)
+    );
+
     reg [15:0] reset_shift = 16'hffff;
-    always @(posedge clk_pixel or negedge pll_lock) begin
-        if (!pll_lock)
+    always @(posedge clk_pixel or negedge pll_lock or negedge pll_hdmi_lock) begin
+        if (!pll_lock || !pll_hdmi_lock)
             reset_shift <= 16'hffff;
         else
             reset_shift <= {reset_shift[14:0], 1'b0};
@@ -143,6 +159,8 @@ module nanoql_top(
     wire ql_native_frame;
     wire [9:0] ql_native_h;
     wire [9:0] ql_native_v;
+    wire ql_system_reset;
+    wire cpu_run_enable;
 
     wire mcu_sys_strobe;
     wire mcu_hid_strobe;
@@ -162,8 +180,11 @@ module nanoql_top(
     wire companion_sd_irq;
     wire companion_sd_iack;
     wire [1:0] companion_system_reset;
+    wire [1:0] companion_video_aspect;
     wire companion_status_seen;
     wire companion_config_seen;
+    reg [1:0] key_s1_sync;
+    reg key_s1_latched;
     reg companion_sdc_seen;
     reg companion_any_strobe_seen;
     reg companion_sys_strobe_seen;
@@ -208,6 +229,8 @@ module nanoql_top(
     wire [15:0] host_mem_wdata;
     wire host_mem_ready;
     wire host_mem_write_done;
+    wire host_mem_data_valid;
+    wire [15:0] host_mem_rdata;
     wire host_cpu_hold;
     wire host_boot_vectors_active;
     wire [31:0] host_boot_ssp;
@@ -231,6 +254,8 @@ module nanoql_top(
                                      sdram_system_write_done;
     assign host_mem_ready = host_cpu_hold && sdram_system_ready;
     assign host_mem_write_done = host_cpu_hold && sdram_system_write_done;
+    assign host_mem_data_valid = host_cpu_hold && sdram_system_data_valid;
+    assign host_mem_rdata = sdram_system_data;
 
     assign rom_store_req = rom_loader_owns_store ?
                            rom_loader_req : mapped_rom_req;
@@ -285,6 +310,13 @@ module nanoql_top(
         .mem_wdata(host_mem_wdata),
         .mem_ready(host_mem_ready),
         .mem_write_done(host_mem_write_done),
+        .mem_data_valid(host_mem_data_valid),
+        .mem_rdata(host_mem_rdata),
+        .cpu_addr(cpu_addr),
+        .cpu_as_n(cpu_as_n),
+        .cpu_rw(cpu_rw),
+        .cpu_dtack_n(cpu_dtack_n),
+        .cpu_fc(cpu_fc),
         .cpu_hold(host_cpu_hold),
         .boot_vectors_active(host_boot_vectors_active),
         .boot_ssp(host_boot_ssp),
@@ -293,6 +325,17 @@ module nanoql_top(
     );
 
     assign spi_dir = companion_miso;
+
+    always @(posedge clk_pixel) begin
+        if (video_reset) begin
+            key_s1_sync <= 2'b00;
+            key_s1_latched <= 1'b0;
+        end else begin
+            key_s1_sync <= {key_s1_sync[0], key_s1};
+            if (key_s1_sync[1])
+                key_s1_latched <= 1'b1;
+        end
+    end
 
     ql_companion_sysctrl companion_sysctrl (
         .clk(clk_pixel),
@@ -304,7 +347,9 @@ module nanoql_top(
         .sd_irq(companion_sd_irq),
         .sd_iack(companion_sd_iack),
         .int_out_n(spi_irqn),
+        .buttons({1'b0, key_s1_latched}),
         .system_reset(companion_system_reset),
+        .video_aspect(companion_video_aspect),
         .status_seen(companion_status_seen),
         .config_seen(companion_config_seen)
     );
@@ -447,8 +492,11 @@ module nanoql_top(
     );
 
     ql_video_test ql_video_test (
-        .clk_pixel(clk_pixel),
+        .clk_bus(clk_pixel),
+        .clk_pixel(clk_hdmi),
         .reset(video_reset),
+        .core_reset(ql_system_reset),
+        .aspect_mode(companion_video_aspect),
         .mem_addr(video_mem_addr),
         .mem_rd(video_mem_rd),
         .mem_ready(video_mem_ready),
@@ -482,9 +530,9 @@ module nanoql_top(
             ql_reset_count <= ql_reset_count - 15'd1;
     end
 
-    wire ql_system_reset = video_reset || host_cpu_hold ||
-                           (ql_reset_count != 15'd0);
-    wire cpu_run_enable = ql_core_ready && !ql_system_reset;
+    assign ql_system_reset = video_reset || host_cpu_hold ||
+                             (ql_reset_count != 15'd0);
+    assign cpu_run_enable = ql_core_ready && !ql_system_reset;
 
     // 31.8 MHz * 22668 / 65536 = 11.0002 MHz. QL_MiSTer uses the same
     // fractional-enable scheme for the 8049 rather than a coarse divider.
@@ -721,6 +769,8 @@ module nanoql_top(
 
     wire [23:0] companion_diag_rgb;
     ql_boot_status boot_status_display (
+        .clk(clk_hdmi),
+        .reset(video_reset),
         .x(x),
         .y(y),
         .status(boot_status),
@@ -1017,7 +1067,8 @@ module nanoql_top(
     wire [23:0] osd_rgb;
 
     ql_companion_osd companion_osd (
-        .clk(clk_pixel),
+        .clk_bus(clk_pixel),
+        .clk_pixel(clk_hdmi),
         .reset(video_reset),
         .data_strobe(mcu_osd_strobe),
         .data_start(mcu_start),
@@ -1029,10 +1080,10 @@ module nanoql_top(
     );
 
     nanoql_hdmi #(
-        .PIXEL_CLOCK(32_000_000)
+        .PIXEL_CLOCK(74_250_000)
     ) hdmi_out (
-        .clk_pixel_x5(clk_pixel_x5),
-        .clk_pixel(clk_pixel),
+        .clk_pixel_x5(clk_hdmi_x5),
+        .clk_pixel(clk_hdmi),
         .reset(video_reset),
         .rgb(osd_rgb),
         .tmds_clk_n(tmds_clk_n),
