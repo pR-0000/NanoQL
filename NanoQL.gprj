@@ -21,6 +21,8 @@
         <File path="src/ql_memory_map.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_sd_boot_rom.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_cpu_address.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_cpu_phase.sv" type="file.verilog" enable="1"/>
+        <File path="src/ql_sd_qlromext.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_cpu_fx68k.sv" type="file.verilog" enable="1"/>
         <File path="src/ql_cpu_boot_monitor.sv" type="file.verilog" enable="1"/>
         <File path="src/companion/ql_companion_sysctrl.sv" type="file.verilog" enable="1"/>
@@ -31,6 +33,7 @@
         <File path="src/companion/ql_sd_rom_loader.sv" type="file.verilog" enable="1"/>
         <File path="src/companion/vendor/mcu_spi.v" type="file.verilog" enable="1"/>
         <File path="src/companion/vendor/sd_card.v" type="file.verilog" enable="1"/>
+        <File path="src/companion/vendor/ql_sd_card.sv" type="file.verilog" enable="1"/>
         <File path="src/companion/vendor/sd_rw.v" type="file.verilog" enable="1"/>
         <File path="src/companion/vendor/sdcmd_ctrl.v" type="file.verilog" enable="1"/>
         <File path="src/companion/vendor/sector_dpram.v" type="file.verilog" enable="1"/>

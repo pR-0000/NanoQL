@@ -25,6 +25,11 @@ module ql_memory_map(
     input  wire        dynamic_rom_data_valid,
     input  wire [15:0] dynamic_rom_data,
 
+    output wire        qlsd_access,
+    output wire [15:0] qlsd_address,
+    input  wire        qlsd_dtack,
+    input  wire [7:0]  qlsd_data,
+
     output reg         mc_stat_wr,
     output reg  [7:0]  mc_stat_data,
 
@@ -62,6 +67,12 @@ module ql_memory_map(
                             (bus_addr <= 22'd3) && !bus_we;
     wire dynamic_rom_read = rom_selected && rom_is_dynamic && !bus_we &&
                             !boot_vector_read;
+    wire [15:0] byte_address = {bus_addr[14:0],
+                                bus_ds[1] && !bus_ds[0]};
+    wire qlsd_selected = rom_selected && !bus_we &&
+                         ((byte_address[15:4] == 12'hfee) ||
+                          (byte_address[15:4] == 12'hfef) ||
+                          (byte_address[15:8] == 8'hff));
     // These ranges are the word-address equivalents of QL_MiSTer's original
     // RAM decode. Mode 3 is kept internal until Gold Card support is complete.
     wire base_ram_selected = (bus_addr >= RAM_FIRST_WORD) &&
@@ -92,6 +103,10 @@ module ql_memory_map(
     reg io_data_valid;
     reg [15:0] io_data_latched;
     reg local_write_done;
+    reg qlsd_read_pending;
+    reg [15:0] qlsd_address_latched;
+    reg qlsd_data_valid;
+    reg [15:0] qlsd_data_latched;
 
     ql_boot_rom boot_rom (
         .word_addr(rom_addr),
@@ -101,20 +116,21 @@ module ql_memory_map(
     );
 
     // ROM writes are acknowledged and ignored, like writes to physical ROM.
-    assign bus_ready = rom_selected ?
+    assign bus_ready = qlsd_selected ? !qlsd_read_pending : rom_selected ?
                          ((rom_is_dynamic && !boot_vector_read) ?
                            (bus_we ? 1'b1 : dynamic_rom_ready) :
                            !rom_read_pending) :
                        ram_selected ? ram_ready : !io_read_pending;
-    assign bus_data_valid = rom_data_valid || dynamic_rom_data_valid ||
+    assign bus_data_valid = qlsd_data_valid || rom_data_valid || dynamic_rom_data_valid ||
                             io_data_valid || ram_data_valid;
     assign bus_write_done = local_write_done || zx8302_write_done ||
                             ram_write_done;
-    assign bus_data = rom_data_valid ? rom_data_latched :
+    assign bus_data = qlsd_data_valid ? qlsd_data_latched :
+                      rom_data_valid ? rom_data_latched :
                       dynamic_rom_data_valid ? dynamic_rom_data :
                       io_data_valid ? io_data_latched : ram_data;
 
-    assign dynamic_rom_req = bus_req && dynamic_rom_read;
+    assign dynamic_rom_req = bus_req && dynamic_rom_read && !qlsd_selected;
     assign dynamic_rom_addr = bus_addr[14:0];
     assign ram_req = bus_req && ram_selected;
     assign ram_we = ram_selected && bus_we;
@@ -124,6 +140,8 @@ module ql_memory_map(
     assign zx8302_addr = {bus_addr[4], bus_addr[0]};
     assign zx8302_ds = bus_ds;
     assign zx8302_wdata = bus_wdata;
+    assign qlsd_access = qlsd_read_pending || (bus_req && qlsd_selected);
+    assign qlsd_address = qlsd_read_pending ? qlsd_address_latched : byte_address;
 
     always @(posedge clk) begin
         if (reset) begin
@@ -138,12 +156,27 @@ module ql_memory_map(
             mc_stat_wr <= 1'b0;
             mc_stat_data <= 8'd0;
             zx8302_wr <= 1'b0;
+            qlsd_read_pending <= 1'b0;
+            qlsd_address_latched <= 16'd0;
+            qlsd_data_valid <= 1'b0;
+            qlsd_data_latched <= 16'd0;
         end else begin
             rom_data_valid <= 1'b0;
             io_data_valid <= 1'b0;
             local_write_done <= 1'b0;
             mc_stat_wr <= 1'b0;
             zx8302_wr <= 1'b0;
+            qlsd_data_valid <= 1'b0;
+
+            if (bus_req && qlsd_selected && !qlsd_read_pending) begin
+                qlsd_address_latched <= byte_address;
+                qlsd_read_pending <= 1'b1;
+            end
+            if (qlsd_read_pending && qlsd_dtack) begin
+                qlsd_data_latched <= {qlsd_data, qlsd_data};
+                qlsd_data_valid <= 1'b1;
+                qlsd_read_pending <= 1'b0;
+            end
 
             if (bus_req && bus_we && !ram_selected && !zx8302_selected)
                 local_write_done <= 1'b1;
@@ -162,7 +195,7 @@ module ql_memory_map(
                 endcase
                 rom_data_valid <= 1'b1;
                 rom_read_pending <= 1'b0;
-            end else if (bus_req && rom_selected &&
+            end else if (bus_req && rom_selected && !qlsd_selected &&
                          (!rom_is_dynamic || boot_vector_read) && !bus_we) begin
                 rom_addr <= bus_addr[14:0];
                 rom_read_pending <= 1'b1;

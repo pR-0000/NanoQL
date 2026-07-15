@@ -3,6 +3,7 @@ module ql_cpu_fx68k(
     input  wire        reset,
     input  wire        enable,
     input  wire [1:0]  ram_config,
+    input  wire [1:0]  cpu_speed,
 
     output wire [23:0] cpu_addr,
     output wire [15:0] cpu_data_out,
@@ -18,38 +19,19 @@ module ql_cpu_fx68k(
     output wire        ce_bus_n
 );
 
-    // QL_MiSTer drives fx68k with alternating 15 MHz phase enables to model
-    // the original 7.5 MHz 68008. The 31.8 MHz NanoQL system clock therefore
-    // needs a fractional divider rather than the former divide-by-four clock.
-    localparam [15:0] PHASE_STEP = 16'd30913;
-    reg [15:0] phase_accum;
-    reg phase_polarity;
-    wire [16:0] phase_sum = {1'b0, phase_accum} + {1'b0, PHASE_STEP};
-    wire phase_tick = phase_sum[16];
     wire cpu_reset = reset || !enable;
-    reg en_phi1;
-    reg en_phi2;
+    wire en_phi1;
+    wire en_phi2;
     wire [23:1] cpu_word_addr;
     wire cpu_vpa_n = (cpu_fc != 3'b111);
 
-    // QL_MiSTer prepares these enables on the opposite clock edge. On Gowin,
-    // register them one rising edge ahead instead: all consumers observe the
-    // previous registered value, giving a full system cycle of setup time
-    // without introducing an inverted internal clock domain.
-    always @(posedge clk) begin
-        if (cpu_reset) begin
-            phase_accum <= 16'd0;
-            phase_polarity <= 1'b0;
-            en_phi1 <= 1'b0;
-            en_phi2 <= 1'b0;
-        end else begin
-            phase_accum <= phase_sum[15:0];
-            en_phi1 <= phase_tick && !phase_polarity;
-            en_phi2 <= phase_tick && phase_polarity;
-            if (phase_tick)
-                phase_polarity <= !phase_polarity;
-        end
-    end
+    ql_cpu_phase phase_generator (
+        .clk(clk),
+        .reset(cpu_reset),
+        .cpu_speed(cpu_speed),
+        .en_phi1(en_phi1),
+        .en_phi2(en_phi2)
+    );
 
     assign ce_bus_p = en_phi1;
     assign ce_bus_n = en_phi2;

@@ -29,6 +29,48 @@ $hostLinkOutput = Join-Path $env:TEMP "nanoql_host_link.vvp"
 $hdmiAudioOutput = Join-Path $env:TEMP "nanoql_hdmi_audio.vvp"
 $sdramRouterOutput = Join-Path $env:TEMP "nanoql_sdram_router.vvp"
 $memoryMapOutput = Join-Path $env:TEMP "nanoql_memory_map_ram.vvp"
+$cpuPhaseOutput = Join-Path $env:TEMP "nanoql_cpu_phase.vvp"
+$qlromextOutput = Join-Path $env:TEMP "nanoql_qlromext.vvp"
+$qlsdBufferOutput = Join-Path $env:TEMP "nanoql_qlsd_buffer.vvp"
+
+& $iverilog -g2012 -s tb_ql_sd_card_buffer -o $qlsdBufferOutput `
+    (Join-Path $projectRoot "sim\tb_ql_sd_card_buffer.sv") `
+    (Join-Path $projectRoot "src\companion\vendor\ql_sd_card.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "QL-SD sector-buffer simulation compilation failed."
+}
+
+& $vvp $qlsdBufferOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "QL-SD sector-buffer simulation failed."
+}
+
+& $iverilog -g2012 -s tb_ql_sd_qlromext -o $qlromextOutput `
+    (Join-Path $projectRoot "sim\tb_ql_sd_qlromext.sv") `
+    (Join-Path $projectRoot "src\ql_sd_qlromext.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "QLROMEXT simulation compilation failed."
+}
+
+& $vvp $qlromextOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "QLROMEXT simulation failed."
+}
+
+& $iverilog -g2012 -s tb_ql_cpu_phase -o $cpuPhaseOutput `
+    (Join-Path $projectRoot "sim\tb_ql_cpu_phase.sv") `
+    (Join-Path $projectRoot "src\ql_cpu_phase.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "CPU phase simulation compilation failed."
+}
+
+& $vvp $cpuPhaseOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "CPU phase simulation failed."
+}
 
 & $iverilog -g2012 -s tb_ql_memory_map_ram -o $memoryMapOutput `
     (Join-Path $projectRoot "sim\tb_ql_memory_map_ram.sv") `

@@ -10,10 +10,10 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 11 119 / 20 736 cellules logiques utilisées (54 %).
-- BSRAM : 13 / 46 blocs utilisés (29 %) après migration de la ROM dynamique en SDRAM.
+- FPGA : 12 206 / 20 736 cellules logiques utilisées (59 %).
+- BSRAM : 14 / 46 blocs utilisés (31 %), dont un nouveau tampon sectoriel QL-SD.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
-- Domaine système : 31,8 MHz, avec une Fmax mesurée de 65,549 MHz.
+- Domaine système : 31,8 MHz, avec une Fmax mesurée de 60,010 MHz.
 - HDMI : 720p50 avec audio PCM 48 kHz fonctionnel.
 
 Le pourcentage de LUT restant ne suffit pas à garantir toutes les extensions. La migration de la ROM QL dynamique vers une zone réservée de la SDRAM a toutefois libéré 32 blocs BSRAM pour les ROM et tampons des fonctions suivantes. La fréquence du domaine système devient maintenant la contrainte principale pour les modes CPU rapides.
@@ -42,11 +42,12 @@ La Tang Nano 20K ne possédant pas de pile RTC, une heure absolue correcte aprè
 
 #### 3. Vitesses CPU
 
-- Proposer `QL`, `16 MHz`, `24 MHz` et `42 MHz` dans l'OSD.
+- `QL` et `16 MHz` sont disponibles et commutables à chaud dans l'OSD.
+- Ajouter `24 MHz` et `42 MHz` après augmentation et validation du domaine système.
 - Conserver la contention vidéo originale uniquement en mode `QL`.
 - Valider QDOS, les interruptions, le clavier, le son et la SDRAM à chaque vitesse.
 
-Le mode 16 MHz est proche de la limite du domaine actuel. Le mode 24 MHz devrait nécessiter un domaine système plus rapide mais reste réaliste. Le mode 42 MHz requiert environ 84 MHz pour l'architecture MiSTer actuelle ; il est donc expérimental tant que les chemins critiques n'ont pas été optimisés au-delà de la Fmax actuelle de 63,261 MHz.
+Le mode 16 MHz fonctionne à 15,9 MHz avec le domaine actuel. Le mode 24 MHz nécessite un domaine système plus rapide mais reste réaliste. Le mode 42 MHz requiert environ 84 MHz pour l'architecture MiSTer actuelle ; il est donc expérimental tant que les chemins critiques n'ont pas été optimisés au-delà de la Fmax actuelle de 60,010 MHz.
 
 #### 4. Gold Card et SMSQ/E
 
@@ -59,17 +60,17 @@ La ROM Gold Card ne sera incluse au dépôt que si sa licence de redistribution 
 
 #### 5. QL-SD et images QXL.WIN
 
-- Porter fidèlement `qlromext` et l'interface QL-SD de QL_MiSTer.
-- Exposer un fichier `QXL.WIN` de la microSD comme carte SD virtuelle bloc par bloc.
-- Ajouter un sélecteur `QL-SD image` dans l'OSD.
-- Gérer lecture, écriture, protection en écriture, démontage propre et changement dynamique d'image.
-- Vérifier le fonctionnement avec le pilote QL-SD 1.08 ou ultérieur.
+- `qlromext`, la carte SD virtuelle et le transport sectoriel de QL_MiSTer sont portés.
+- Un fichier `QXL.WIN` de la microSD peut être monté depuis le sélecteur `QL-SD image` de l'OSD.
+- La lecture d'une image `QXL.WIN` avec le pilote QL-SD 1.09 est validée physiquement.
+- Valider l'écriture, la protection en écriture, le démontage propre et le changement dynamique d'image.
 - Prévoir une récupération sûre après retrait ou erreur de fichier.
 
 Le support d'une vraie seconde carte QL-SD nécessitera un connecteur microSD supplémentaire sur un PCB externe. La carte Tang Nano 20K seule permet en priorité les images QXL.WIN stockées sur sa microSD intégrée.
 
 #### 6. Outils USB et installation
 
+- Le chargement de sources SuperBASIC par clavier distant est disponible comme outil expérimental ; QL-SD est le chemin fiable pour les programmes.
 - Ajouter à NanoQL Link des commandes de liste, envoi, téléchargement, renommage et suppression de fichiers sur la microSD.
 - Utiliser une écriture temporaire, une vérification CRC/SHA-256 puis un renommage atomique pour éviter les fichiers partiels.
 - Intégrer le flash du firmware BL616 dans l'outil Python sous Windows, Linux et macOS.
@@ -93,10 +94,21 @@ La capture d'écran est réaliste. La vidéo est un objectif expérimental : ell
 - Exposer les ports série QL par USB CDC lorsque cela peut être fait fidèlement.
 - Ajouter un écran de diagnostic OSD pour RAM, ROM, IPC, SDRAM, QL-SD et firmware Companion.
 - Ajouter des profils de configuration exportables afin de partager facilement une combinaison ROM, RAM, CPU, vidéo et disque.
+- Étudier une extension QSound optionnelle fidèle à l'AY-3-8910 à 0,75 MHz, avec mixage sur HDMI et compatibilité avec les logiciels existants.
+- Étudier un mode vidéo Q60 optionnel en SDRAM, sans modifier le mode QL fidèle par défaut ; valider d'abord la carte mémoire, les registres et la bande passante du framebuffer 16 bits.
+
+### Parité matérielle étendue
+
+Les fonctions de Q-emuLator constituent une cible de compatibilité utile, mais NanoQL doit conserver comme priorité un chemin QL déterministe et mesurable. Les extensions seront optionnelles et ne remplaceront jamais le profil matériel original.
+
+- Priorité haute : QIMI/souris USB, joysticks, images Microdrive, accès aux fichiers hôte via le BL616, RAM disk, débogueur 68000 matériel et ports série USB CDC.
+- Priorité moyenne : QSound, QL Sampled Sound System, imprimante parallèle virtuelle et extraction contrôlée des paquets ZIP/QLPAK vers une image QDOS.
+- Priorité avancée : Gold Card/SMSQ/E, Aurora et modes vidéo Q40/Q60. Les framebuffers tiennent dans 8 Mio, mais les modes 1024 pixels 16 bits exigent une hausse importante de la bande passante SDRAM.
+- Priorité expérimentale : TCP/IP par le BL616, de préférence derrière une interface QL documentée ou un lien série/SLIP afin de ne pas contourner QDOS de manière opaque.
 
 ### Prochaine étape retenue
 
-Le registre de configuration extensible et les choix de RAM 128/640/896 Kio sont implémentés. La prochaine validation physique doit confirmer le démarrage, la quantité de RAM détectée et la stabilité de QDOS dans les trois modes avant de poursuivre avec le RTC.
+Valider l'écriture QL-SD, puis ajouter le RTC absolu et les commandes USB de gestion des fichiers microSD.
 
 ## English
 
@@ -108,10 +120,10 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 11,119 / 20,736 logic cells used (54%).
-- BSRAM: 13 / 46 blocks used (29%) after moving the dynamic ROM to SDRAM.
+- FPGA: 12,206 / 20,736 logic cells used (59%).
+- BSRAM: 14 / 46 blocks used (31%), including one new QL-SD sector buffer.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
-- System domain: 31.8 MHz, with a measured Fmax of 65.549 MHz.
+- System domain: 31.8 MHz, with a measured Fmax of 60.010 MHz.
 - HDMI: working 720p50 output with 48 kHz PCM audio.
 
 The remaining LUT percentage alone does not guarantee that every extension will fit. Moving the dynamic QL ROM to a reserved SDRAM area has nevertheless freed 32 BSRAM blocks for future ROMs and buffers. System-domain timing is now the main constraint for faster CPU modes.
@@ -140,11 +152,12 @@ The Tang Nano 20K has no battery-backed RTC. Correct absolute time after complet
 
 #### 3. CPU speeds
 
-- Provide `QL`, `16 MHz`, `24 MHz`, and `42 MHz` in the OSD.
+- `QL` and `16 MHz` are available and live-switchable in the OSD.
+- Add `24 MHz` and `42 MHz` after increasing and validating the system domain.
 - Keep original video contention only in `QL` mode.
 - Validate QDOS, interrupts, keyboard, audio, and SDRAM at every speed.
 
-16 MHz is close to the limit of the current domain. 24 MHz should require a faster system domain but remains realistic. 42 MHz needs about 84 MHz with the current MiSTer architecture and is therefore experimental until critical paths improve beyond the current 63.261 MHz Fmax.
+The 16 MHz mode runs at 15.9 MHz with the current domain. 24 MHz requires a faster system domain but remains realistic. 42 MHz needs about 84 MHz with the current MiSTer architecture and is therefore experimental until critical paths improve beyond the current 60.010 MHz Fmax.
 
 #### 4. Gold Card and SMSQ/E
 
@@ -157,17 +170,17 @@ The Gold Card ROM will only be committed if its redistribution license is explic
 
 #### 5. QL-SD and QXL.WIN images
 
-- Faithfully port QL_MiSTer's `qlromext` and QL-SD interface.
-- Expose a microSD `QXL.WIN` file as a sector-based virtual SD card.
-- Add a `QL-SD image` selector to the OSD.
-- Support reads, writes, write protection, clean unmount, and dynamic image changes.
-- Validate operation with QL-SD driver 1.08 or newer.
+- QL_MiSTer's `qlromext`, virtual SD card, and sector transport are ported.
+- A microSD `QXL.WIN` file can be mounted from the OSD `QL-SD image` selector.
+- Reading a `QXL.WIN` image with QL-SD driver 1.09 is physically validated.
+- Validate writes, write protection, clean unmount, and dynamic image changes.
 - Recover safely from file removal and I/O errors.
 
 A real secondary QL-SD card requires an additional microSD connector on an external PCB. The standalone Tang Nano 20K can primarily support QXL.WIN images stored on its integrated microSD.
 
 #### 6. USB tools and installation
 
+- Remote-keyboard SuperBASIC loading is available as an experimental tool; QL-SD is the reliable program path.
 - Add microSD list, upload, download, rename, and delete commands to NanoQL Link.
 - Use temporary files, CRC/SHA-256 verification, and atomic rename to prevent partial files.
 - Integrate BL616 firmware flashing into the Python tool on Windows, Linux, and macOS.
@@ -191,7 +204,18 @@ Screenshots are realistic. Video recording is experimental because it depends on
 - Expose QL serial ports over USB CDC where this can be implemented faithfully.
 - Add an OSD diagnostics page for RAM, ROM, IPC, SDRAM, QL-SD, and Companion firmware.
 - Add exportable profiles combining ROM, RAM, CPU, video, and disk settings.
+- Investigate a faithful optional QSound expansion using the 0.75 MHz AY-3-8910, mixed into HDMI audio and compatible with existing software.
+- Investigate an optional SDRAM-backed Q60 video mode without changing the faithful default QL mode; validate its memory map, registers, and 16-bit framebuffer bandwidth first.
+
+### Extended hardware parity
+
+Q-emuLator's feature set is a useful compatibility target, but NanoQL must prioritize a deterministic, measurable QL hardware path. Every extension remains optional and never replaces the original-machine profile.
+
+- High priority: QIMI/USB mouse, joysticks, Microdrive images, BL616 host-file access, RAM disk, hardware 68000 debugger, and USB CDC serial ports.
+- Medium priority: QSound, QL Sampled Sound System, virtual parallel printer, and controlled ZIP/QLPAK extraction into a QDOS image.
+- Advanced priority: Gold Card/SMSQ/E, Aurora, and Q40/Q60 video modes. Their framebuffers fit in 8 MiB, but 1024-pixel 16-bit modes require substantially more SDRAM bandwidth.
+- Experimental priority: TCP/IP through the BL616, preferably behind a documented QL device or serial/SLIP link rather than an opaque QDOS bypass.
 
 ### Selected next step
 
-The extensible configuration register and 128/640/896 KiB RAM choices are implemented. The next physical validation must confirm boot, detected RAM size, and QDOS stability in all three modes before RTC work begins.
+Validate QL-SD writes, then add absolute RTC and USB microSD file-management commands.

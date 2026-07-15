@@ -32,6 +32,8 @@ add_file src/ql_timing.sv
 add_file src/ql_memory_map.sv
 add_file $rom_source
 add_file src/ql_cpu_address.sv
+add_file src/ql_cpu_phase.sv
+add_file src/ql_sd_qlromext.sv
 add_file src/ql_cpu_fx68k.sv
 add_file src/ql_cpu_boot_monitor.sv
 add_file src/companion/ql_companion_sysctrl.sv
@@ -42,6 +44,7 @@ add_file src/companion/ql_rom_sector_buffer.sv
 add_file src/companion/ql_sd_rom_loader.sv
 add_file src/companion/vendor/mcu_spi.v
 add_file src/companion/vendor/sd_card.v
+add_file src/companion/vendor/ql_sd_card.sv
 add_file src/companion/vendor/sd_rw.v
 add_file src/companion/vendor/sdcmd_ctrl.v
 add_file src/companion/vendor/sector_dpram.v

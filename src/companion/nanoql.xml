@@ -27,6 +27,7 @@
   </actions>
   <menu label="NanoQL">
     <fileselector label="QL ROM:" ext="rom;bin" index="0" default="QL.rom"/>
+    <fileselector label="QL-SD image:" ext="win;qxl" index="1"/>
     <list label="Video:" id="A" default="0" action="save">
       <listentry label="Monitor" value="0"/>
       <listentry label="TV" value="1"/>
@@ -37,6 +38,10 @@
       <listentry label="128 KiB" value="0"/>
       <listentry label="640 KiB" value="1"/>
       <listentry label="896 KiB" value="2"/>
+    </list>
+    <list label="CPU:" id="C" default="0" action="save">
+      <listentry label="QL" value="0"/>
+      <listentry label="16 MHz" value="1"/>
     </list>
     <button label="Reset QL" action="reset"/>
   </menu>

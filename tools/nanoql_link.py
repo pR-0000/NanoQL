@@ -50,6 +50,8 @@ CMD_QDOS = 0x04
 CMD_KEY = 0x05
 CMD_READ = 0x06
 CMD_READ_RESULT = 0x07
+CMD_QLSD_DIAG = 0x08
+CMD_CPU_DIAG = 0x09
 CMD_FPGA_BEGIN = 0xF0
 CMD_FPGA_DATA = 0xF1
 CMD_FPGA_PROGRAM = 0xF2
@@ -86,42 +88,15 @@ ASCII_KEYS = {
     "*": (0x25, True), "(": (0x26, True), ")": (0x27, True),
 }
 
-# Logical characters produced by the original French MGF keyboard table.
-# Values are physical USB usages followed by the QL modifiers to hold.
+# Windows has already converted AZERTY scan codes to logical characters by
+# the time msvcrt returns them. Only characters absent from the UK QL matrix
+# need a French-profile override; ordinary ASCII must not be remapped twice.
 QL_FRENCH_KEYS = {
-    letter: (ASCII_KEYS[letter][0], ()) for letter in "abcdefghijklmnopqrstuvwxyz"
-}
-QL_FRENCH_KEYS.update({
-    "a": (0x14, ()), "q": (0x04, ()),
-    "z": (0x1A, ()), "w": (0x1D, ()), "m": (0x33, ()),
-    "1": (0x1E, ()), "2": (0x1F, ()), "3": (0x20, ()),
-    "4": (0x21, ()), "5": (0x22, ()), "6": (0x23, ()),
-    "7": (0x24, ()), "8": (0x25, ()), "9": (0x26, ()),
-    "0": (0x27, ()),
-    "!": (0x1E, (MOD_LEFT_SHIFT,)),
-    '"': (0x1F, (MOD_LEFT_SHIFT,)),
-    "#": (0x20, (MOD_LEFT_SHIFT,)),
-    "$": (0x21, (MOD_LEFT_SHIFT,)),
-    "%": (0x22, (MOD_LEFT_SHIFT,)),
-    "'": (0x23, (MOD_LEFT_SHIFT,)),
-    "&": (0x24, (MOD_LEFT_SHIFT,)),
-    "*": (0x25, (MOD_LEFT_SHIFT,)),
-    "(": (0x26, (MOD_LEFT_SHIFT,)),
-    ")": (0x27, (MOD_LEFT_SHIFT,)),
-    "-": (0x2D, ()), "_": (0x2D, (MOD_LEFT_SHIFT,)),
-    "=": (0x2E, ()), "+": (0x2E, (MOD_LEFT_SHIFT,)),
     "é": (0x2F, ()), "\\": (0x2F, (MOD_LEFT_SHIFT,)),
     "è": (0x30, ()), "ù": (0x31, ()), "`": (0x31, (MOD_LEFT_SHIFT,)),
     "à": (0x34, ()), "/": (0x34, (MOD_LEFT_SHIFT,)),
-    ",": (0x10, ()), "<": (0x10, (MOD_LEFT_SHIFT,)),
-    ".": (0x36, ()), ">": (0x36, (MOD_LEFT_SHIFT,)),
-    ";": (0x37, ()), ":": (0x37, (MOD_LEFT_SHIFT,)),
     "ç": (0x38, ()), "?": (0x38, (MOD_LEFT_SHIFT,)),
-    " ": (0x2C, ()),
-})
-for _letter in "abcdefghijklmnopqrstuvwxyz":
-    _usage, _modifiers = QL_FRENCH_KEYS[_letter]
-    QL_FRENCH_KEYS[_letter.upper()] = (_usage, (MOD_LEFT_SHIFT,))
+}
 
 WINDOWS_EXTENDED_KEYS = {
     "H": 0x52, "P": 0x51, "K": 0x50, "M": 0x4F,
@@ -224,10 +199,41 @@ def find_port(explicit: str | None) -> str:
 class NanoQLLink:
     def __init__(self, port: str, timeout: float = 2.0,
                  keyboard_layout: str = "host", ql_layout: str = "uk"):
-        self.serial = serial.Serial(port, 115200, timeout=timeout, write_timeout=timeout)
+        self.port = port
+        self.timeout = timeout
+        self.serial = self._open_serial()
         self.sequence = 0
+        self.reconnect_count = 0
         self.keyboard_layout = keyboard_layout
         self.ql_layout = ql_layout
+
+    def _open_serial(self):
+        return serial.Serial(
+            self.port, 115200, timeout=self.timeout,
+            write_timeout=self.timeout,
+        )
+
+    def _reconnect(self, deadline: float) -> None:
+        try:
+            self.serial.close()
+        except Exception:
+            pass
+        print("\nNanoQL Link disconnected; waiting for the same serial port...", flush=True)
+        last_error: Exception | None = None
+        while time.monotonic() < deadline:
+            try:
+                self.serial = self._open_serial()
+                time.sleep(0.15)
+                self.serial.reset_input_buffer()
+                self.reconnect_count += 1
+                print("NanoQL Link reconnected; resuming the transfer.", flush=True)
+                return
+            except (serial.SerialException, PermissionError, OSError) as error:
+                last_error = error
+                time.sleep(0.25)
+        raise RuntimeError(
+            f"NanoQL Link did not return on {self.port} within 15 seconds."
+        ) from last_error
 
     def close(self) -> None:
         self.serial.close()
@@ -241,34 +247,105 @@ class NanoQLLink:
         self.sequence = (self.sequence + 1) & 0xFF
         body = bytes((PROTOCOL_VERSION, self.sequence, len(spi_payload))) + spi_payload
         frame = REQUEST_MAGIC + body + bytes((crc8(body),))
-        self.serial.reset_input_buffer()
-        self.serial.write(frame)
-        self.serial.flush()
+        reconnect_deadline = time.monotonic() + 15.0
+        attempts = 0
+        while True:
+            try:
+                self.serial.reset_input_buffer()
+                self.serial.write(frame)
+                self.serial.flush()
 
-        header = self.serial.read(5)
-        if len(header) != 5 or header[:2] != RESPONSE_MAGIC:
-            raise RuntimeError("Missing or invalid response from the NanoQL Link BL616 firmware.")
-        version, sequence, length = header[2], header[3], header[4]
-        payload_and_crc = self.serial.read(length + 1)
-        if len(payload_and_crc) != length + 1:
-            raise RuntimeError("Incomplete NanoQL Link response.")
-        response_body = bytes((version, sequence, length)) + payload_and_crc[:-1]
-        if version != PROTOCOL_VERSION or sequence != self.sequence:
-            raise RuntimeError("Invalid NanoQL Link version or sequence.")
-        if crc8(response_body) != payload_and_crc[-1]:
-            raise RuntimeError("Invalid NanoQL Link CRC.")
-        payload = payload_and_crc[:-1]
-        if len(payload) == 2 and payload[0] == 0xFF:
-            detail = FIRMWARE_ERRORS.get(payload[1], f"error {payload[1]}")
-            raise RuntimeError(f"The BL616 firmware rejected the request: {detail}.")
-        return payload
+                header = self.serial.read(5)
+                if len(header) != 5 or header[:2] != RESPONSE_MAGIC:
+                    raise RuntimeError(
+                        "Missing or invalid response from the NanoQL Link BL616 firmware."
+                    )
+                version, sequence, length = header[2], header[3], header[4]
+                payload_and_crc = self.serial.read(length + 1)
+                if len(payload_and_crc) != length + 1:
+                    raise RuntimeError("Incomplete NanoQL Link response.")
+                response_body = bytes((version, sequence, length)) + payload_and_crc[:-1]
+                if version != PROTOCOL_VERSION or sequence != self.sequence:
+                    raise RuntimeError("Invalid NanoQL Link version or sequence.")
+                if crc8(response_body) != payload_and_crc[-1]:
+                    raise RuntimeError("Invalid NanoQL Link CRC.")
+                payload = payload_and_crc[:-1]
+                if len(payload) == 2 and payload[0] == 0xFF:
+                    error_code = payload[1]
+                    if error_code == 3 and len(spi_payload) <= 17 and attempts < 3:
+                        # Windows may briefly suspend CDC when the port opens.
+                        # A frame already in flight can then be discarded; all
+                        # NanoQL SPI commands are state-setting and safe to retry.
+                        attempts += 1
+                        time.sleep(0.05)
+                        self.serial.reset_input_buffer()
+                        continue
+                    detail = FIRMWARE_ERRORS.get(error_code, f"error {error_code}")
+                    raise RuntimeError(
+                        f"The BL616 firmware rejected the request: {detail}."
+                    )
+                return payload
+            except (serial.SerialException, PermissionError, OSError):
+                attempts += 1
+                if attempts > 3 or time.monotonic() >= reconnect_deadline:
+                    raise
+                self._reconnect(reconnect_deadline)
 
-    def status(self) -> int:
-        rx = self.transact(bytes((CMD_STATUS, 0, 0, 0, 0, 0, 0)))
+    def status_payload(self) -> bytes:
+        # SPI is full duplex: the byte selected by CMD_STATUS appears during
+        # the following transfer, so 16 status bytes require 16 dummy bytes.
+        rx = self.transact(bytes((CMD_STATUS,)) + bytes(16))
         signature_at = rx.find(b"NQL1")
         if signature_at < 0 or signature_at + 4 >= len(rx):
             raise RuntimeError("The bitstream did not respond as NanoQL Link v1.")
-        return rx[signature_at + 4]
+        return rx[signature_at:]
+
+    def status(self) -> int:
+        return self.status_payload()[4]
+
+    def keyboard_report_count(self) -> int:
+        payload = self.status_payload()
+        if len(payload) < 6:
+            raise RuntimeError(
+                "This bitstream does not expose the keyboard-consumption counter."
+            )
+        return payload[5]
+
+    def qlsd_status(self) -> tuple[int, int, bytes, int, int, bytes]:
+        payload = self.status_payload()
+        if len(payload) < 16:
+            raise RuntimeError("This bitstream does not expose QL-SD diagnostics.")
+        flags = payload[6]
+        lba = int.from_bytes(payload[7:10], "big")
+        header = bytes(payload[10:14])
+        byte_count = int.from_bytes(payload[14:16], "big")
+        detail_rx = self.transact(bytes((CMD_QLSD_DIAG,)) + bytes(16))
+        detail_at = detail_rx.find(b"QSD1")
+        if detail_at < 0 or detail_at + 16 > len(detail_rx):
+            raise RuntimeError("This bitstream does not expose complete QL-SD diagnostics.")
+        detail = detail_rx[detail_at:detail_at + 16]
+        crc32 = int.from_bytes(detail[4:8], "big")
+        sample = bytes(detail[8:16])
+        return flags, lba, header, byte_count, crc32, sample
+
+    def cpu_diagnostic(self) -> tuple[int, int]:
+        rx = self.transact(bytes((CMD_CPU_DIAG,)) + bytes(16))
+        detail_at = rx.find(b"CPU1")
+        if detail_at < 0 or detail_at + 9 > len(rx):
+            raise RuntimeError("This bitstream does not expose CPU diagnostics.")
+        detail = rx[detail_at:detail_at + 9]
+        return detail[4] & 0x03, int.from_bytes(detail[5:9], "big")
+
+    def measure_cpu_rate(self, interval: float = 0.25) -> tuple[int, float]:
+        speed, first_count = self.cpu_diagnostic()
+        started = time.monotonic()
+        time.sleep(interval)
+        current_speed, second_count = self.cpu_diagnostic()
+        elapsed = time.monotonic() - started
+        if current_speed != speed:
+            raise RuntimeError("The FPGA CPU mode changed while it was being measured.")
+        pulses = (second_count - first_count) & 0xFFFFFFFF
+        return speed, pulses / elapsed
 
     def hold(self) -> None:
         self.transact(bytes((CMD_HOLD,)))
@@ -356,11 +433,24 @@ class NanoQLLink:
         event = usage if pressed else usage | 0x80
         self.transact(bytes((CMD_KEY, event)))
 
-    def tap_key(self, usage: int, hold_time: float = 0.05) -> None:
+    def tap_key(self, usage: int, hold_time: float = 0.05,
+                release_time: float = 0.03, wait_consumed: bool = False,
+                consume_timeout: float = 5.0) -> None:
+        report_before = self.keyboard_report_count() if wait_consumed else 0
         self.key_event(usage, True)
-        time.sleep(hold_time)
-        self.key_event(usage, False)
-        time.sleep(0.03)
+        try:
+            time.sleep(hold_time)
+            if wait_consumed:
+                deadline = time.monotonic() + consume_timeout
+                while self.keyboard_report_count() == report_before:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(
+                            f"QL IPC did not consume HID key 0x{usage:02x}."
+                        )
+                    time.sleep(0.02)
+        finally:
+            self.key_event(usage, False)
+        time.sleep(release_time)
 
     def character_key(self, character: str) -> tuple[int, tuple[int, ...]]:
         if self.ql_layout == "fr" and character in QL_FRENCH_KEYS:
@@ -376,12 +466,20 @@ class NanoQLLink:
                 return host_key
         raise ValueError(f"Unsupported character: {character!r}")
 
-    def type_character(self, character: str) -> None:
+    def type_character(self, character: str, hold_time: float = 0.05,
+                       release_time: float = 0.03,
+                       wait_consumed: bool = False,
+                       modifier_release_time: float = 0.005) -> None:
         control_usage = {
             "\n": 0x28, "\r": 0x28, "\x1b": 0x29, "\t": 0x2B,
         }.get(character)
         if control_usage is not None:
-            self.tap_key(control_usage, hold_time=0.15)
+            self.tap_key(
+                control_usage,
+                hold_time=max(0.15, hold_time),
+                release_time=max(0.12, release_time),
+                wait_consumed=wait_consumed,
+            )
             return
         if character == "\b":
             # The original QL has no Backspace key. MiST/MiSTer implement it
@@ -399,15 +497,28 @@ class NanoQLLink:
             self.key_event(modifier, True)
         if modifiers:
             time.sleep(0.008)
-        self.tap_key(usage)
+        self.tap_key(
+            usage,
+            hold_time=hold_time,
+            release_time=release_time,
+            wait_consumed=wait_consumed,
+        )
         if modifiers:
             time.sleep(0.005)
         for modifier in reversed(modifiers):
             self.key_event(modifier, False)
+        if modifiers:
+            time.sleep(modifier_release_time)
 
-    def type_text(self, value: str) -> None:
+    def type_text(self, value: str, hold_time: float = 0.05,
+                  release_time: float = 0.03,
+                  wait_consumed: bool = False,
+                  modifier_release_time: float = 0.005) -> None:
         for character in value:
-            self.type_character(character)
+            self.type_character(
+                character, hold_time, release_time, wait_consumed,
+                modifier_release_time
+            )
 
 
 def interactive_keyboard(link: NanoQLLink) -> None:
@@ -542,6 +653,98 @@ def run_demo(link: NanoQLLink) -> None:
     print("VRAM is correct. A central green band should remain visible on screen.")
 
 
+def run_link_stress(link: NanoQLLink, duration: float) -> None:
+    if duration <= 0:
+        raise ValueError("Stress-test duration must be positive.")
+    deadline = time.monotonic() + duration
+    transactions = 0
+    print(f"Running NanoQL Link USB stress test for {duration:g} seconds...")
+    while time.monotonic() < deadline:
+        link.status()
+        transactions += 1
+        if transactions % 100 == 0:
+            print(f"\rUSB transactions: {transactions}", end="", flush=True)
+    print()
+    print(f"USB stress test completed: {transactions} transactions, "
+          f"{link.reconnect_count} reconnect(s).")
+
+
+def basic_source_lines(path: Path, skip_comments: bool = False) -> list[str]:
+    text = path.read_text(encoding="utf-8-sig")
+    lines = []
+    for source_line in text.splitlines():
+        line = source_line.strip()
+        if not line:
+            continue
+        if not re.match(r"^[0-9]+(?:\s|$)", line):
+            raise ValueError(
+                f"{path}: every non-empty SuperBASIC line must start with a line number: {line!r}"
+            )
+        if skip_comments and re.match(r"^[0-9]+\s+rem(?:ark)?(?:\s|$)", line,
+                                      flags=re.IGNORECASE):
+            continue
+        lines.append(line)
+    if not lines:
+        raise ValueError(f"{path}: no numbered SuperBASIC lines were found.")
+    return lines
+
+
+def load_basic_program(link: NanoQLLink, path: Path, run: bool,
+                       skip_comments: bool = False,
+                       line_delay: float = 0.75) -> None:
+    lines = basic_source_lines(path, skip_comments=skip_comments)
+    transmitted_lines = [line.lower() for line in lines]
+    for line in transmitted_lines:
+        for character in line:
+            link.character_key(character)
+
+    print(f"Loading {len(lines)} SuperBASIC lines from {path} into QDOS RAM...")
+    print("Keep the QL at the SuperBASIC prompt until the transfer completes.")
+    cpu_speed, cpu_rate = link.measure_cpu_rate()
+    cpu_label = "QL" if cpu_speed == 0 else "16 MHz" if cpu_speed == 1 else f"mode {cpu_speed}"
+    print(f"FPGA CPU mode: {cpu_label}; measured phase rate: {cpu_rate / 1_000_000:.2f} MHz.")
+
+    # Lowercase keeps the transfer independent of host Shift/AZERTY handling.
+    # SuperBASIC tokenizes keywords without regard to case.
+    # The physical 8049 keyboard scanner consumes events much more slowly
+    # than the USB link accepts them. Keep each key down across several scans
+    # and leave a real key-up interval so no character or Enter is swallowed.
+    def submit_line(value: str, confirm_enter: bool = False) -> None:
+        link.type_text(
+            value, hold_time=0.08, release_time=0.05,
+            wait_consumed=True,
+            modifier_release_time=0.10,
+        )
+        link.type_character(
+            "\r", hold_time=0.15, release_time=0.15,
+            wait_consumed=True,
+        )
+        if confirm_enter:
+            # A second Enter at an empty prompt is harmless. It ensures a
+            # costly SuperBASIC tokenization cannot merge the following line.
+            time.sleep(0.25)
+            link.type_character(
+                "\r", hold_time=0.15, release_time=0.15,
+                wait_consumed=True,
+            )
+
+    submit_line("new")
+    time.sleep(1.0)
+    for index, line in enumerate(transmitted_lines, start=1):
+        submit_line(line, confirm_enter=True)
+        # QDOS edits and tokenizes the complete line after Enter. Sending the
+        # next line immediately can overrun that work, especially at QL speed.
+        time.sleep(line_delay)
+        print(f"\rSuperBASIC transfer: {index * 100 // len(lines):3d}%", end="", flush=True)
+    print()
+
+    if run:
+        print("Starting the SuperBASIC program...")
+        submit_line("run")
+    else:
+        print("Program loaded. Type RUN on the QL when ready.")
+
+
 def find_native_programmer(explicit: Path | None) -> tuple[str, Path]:
     if explicit is not None:
         tool = explicit.expanduser().resolve()
@@ -668,9 +871,22 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("status", help="read the link status")
+    subparsers.add_parser("cpu-status", help="measure the active FPGA CPU rate")
+    subparsers.add_parser("qlsd-status", help="read the last QL-SD sector diagnostic")
     subparsers.add_parser("qdos", help="leave the injected program and restart QDOS")
     subparsers.add_parser("demo", help="inject a bare-metal 68000 test pattern")
+    subparsers.add_parser(
+        "benchmark", help="load and run the included Sinclair QL Basic benchmark"
+    )
     subparsers.add_parser("keyboard", help="use the Windows terminal keyboard")
+
+    stress_parser = subparsers.add_parser(
+        "link-stress", help="run a non-destructive NanoQL Link USB stress test"
+    )
+    stress_parser.add_argument(
+        "--seconds", type=float, default=30.0,
+        help="test duration in seconds (default: 30)",
+    )
 
     type_parser = subparsers.add_parser("type", help="send text as keyboard input")
     type_parser.add_argument("text")
@@ -681,6 +897,14 @@ def main() -> int:
     load_parser.add_argument("--address", type=parse_number, default=0x030000)
     load_parser.add_argument("--pc", type=parse_number)
     load_parser.add_argument("--stack", type=parse_number, default=0x03FFF0)
+
+    basic_parser = subparsers.add_parser(
+        "basic", help="enter a numbered SuperBASIC source file into QDOS RAM"
+    )
+    basic_parser.add_argument("source", type=Path)
+    basic_parser.add_argument(
+        "--no-run", action="store_true", help="load the program without typing RUN"
+    )
 
     fpga_parser = subparsers.add_parser(
         "fpga", help="load a Gowin .bin bitstream into FPGA SRAM"
@@ -730,13 +954,34 @@ def main() -> int:
     try:
         if args.command == "status":
             print(f"NanoQL Link status: 0x{link.status():02x}")
+        elif args.command == "cpu-status":
+            cpu_speed, cpu_rate = link.measure_cpu_rate()
+            cpu_label = "QL" if cpu_speed == 0 else "16 MHz" if cpu_speed == 1 else f"mode {cpu_speed}"
+            print(f"FPGA CPU mode: {cpu_label}")
+            print(f"Measured phase rate: {cpu_rate / 1_000_000:.3f} MHz")
+        elif args.command == "qlsd-status":
+            flags, lba, header, byte_count, crc32, sample = link.qlsd_status()
+            print(f"QL-SD flags: 0x{flags:02x}")
+            print(f"Last requested LBA: {lba}")
+            print(f"First bytes: {header.hex(' ')} ({header.decode('ascii', errors='replace')})")
+            print(f"Bytes received: {byte_count}")
+            print(f"Sector 0 CRC32: 0x{crc32:08x}")
+            print(f"Bytes 4-11: {sample.hex(' ')}")
         elif args.command == "qdos":
             link.qdos()
             print("QDOS restart requested.")
         elif args.command == "demo":
             run_demo(link)
+        elif args.command == "benchmark":
+            benchmark = Path(__file__).resolve().parent.parent / "examples" / \
+                        "basic-benchmark" / "bench_ql_bas"
+            load_basic_program(link, benchmark, run=True, skip_comments=True)
+        elif args.command == "basic":
+            load_basic_program(link, args.source, run=not args.no_run)
         elif args.command == "keyboard":
             interactive_keyboard(link)
+        elif args.command == "link-stress":
+            run_link_stress(link, args.seconds)
         elif args.command == "type":
             link.type_text(args.text)
             if args.enter:

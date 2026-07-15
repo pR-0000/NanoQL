@@ -1,5 +1,5 @@
 diff --git a/src/bl616/CMakeLists.txt b/src/bl616/CMakeLists.txt
-index e659f09..9c6b0b5 100644
+index e659f09..6165f9d 100644
 --- a/src/bl616/CMakeLists.txt
 +++ b/src/bl616/CMakeLists.txt
 @@ -17,7 +17,7 @@ set(CONFIG_CHERRYUSB_HOST_MSC 1)
@@ -11,7 +11,18 @@ index e659f09..9c6b0b5 100644
  set(CONFIG_BSP_SDH_SD 1)
  set(CONFIG_BSP_SDH_SDCARD 1)
  set(CONFIG_BSP_SDH_OSAL_POLLING_MODE 0)
-@@ -128,6 +128,7 @@ sdk_add_include_directories(. ../u8g2/csrc)
+@@ -32,6 +32,10 @@ set(CONFIG_VSNPRINTF_FLOAT_EX   1)
+ set(CONFIG_VSNPRINTF_LONG_LONG  1)
+ set(CONFIG_CLI_CMD_ENABLE 1)
+ 
++if(NANOQL_LINK_ONLY)
++    add_definitions(-DNANOQL_LINK_ONLY)
++endif()
++
+ # wifi support
+ set(CONFIG_LWIP 1)
+ set(CONFIG_WIFI6 1)
+@@ -128,6 +132,7 @@ sdk_add_include_directories(. ../u8g2/csrc)
  
  target_sources(app PRIVATE
     	mcu_hw.c
@@ -19,8 +30,22 @@ index e659f09..9c6b0b5 100644
     	../hidparser.c
     	../hid.c
     	../inifile.c
+diff --git a/src/bl616/Makefile b/src/bl616/Makefile
+index 3dbe4a0..e87f93a 100644
+--- a/src/bl616/Makefile
++++ b/src/bl616/Makefile
+@@ -11,6 +11,9 @@ BOARD ?= bl616dk
+ TANG_BOARD ?= m0sdock
+ CROSS_COMPILE ?= riscv64-unknown-elf-
+ cmake_definition+=-DTANG_BOARD=$(TANG_BOARD)
++ifneq ($(NANOQL_LINK_ONLY),)
++cmake_definition+=-DNANOQL_LINK_ONLY=$(NANOQL_LINK_ONLY)
++endif
+ 
+ include $(BL_SDK_BASE)/project.build
+ 
 diff --git a/src/bl616/mcu_hw.c b/src/bl616/mcu_hw.c
-index f7d5c21..8aa0dd7 100644
+index f7d5c21..0da1fdd 100644
 --- a/src/bl616/mcu_hw.c
 +++ b/src/bl616/mcu_hw.c
 @@ -27,6 +27,7 @@
@@ -31,11 +56,15 @@ index f7d5c21..8aa0dd7 100644
  
  #include <bl616_hbn.h>
  #include "bl616_glb.h"
-@@ -1352,9 +1353,18 @@ void mcu_hw_init(void) {
+@@ -1352,9 +1353,23 @@ void mcu_hw_init(void) {
  #ifdef ENABLE_JTAG
    mcu_hw_jtag_init();
  #endif
 -  usb_host();
++#ifdef NANOQL_LINK_ONLY
++  if(!nanoql_usb_start())
++    debugf("NanoQL: unable to start link-only USB mode");
++#else
 +  if(nanoql_development_requested()) {
 +    if(!nanoql_usb_start()) {
 +      usb_host();
@@ -49,10 +78,11 @@ index f7d5c21..8aa0dd7 100644
 -  xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
 +  if(!nanoql_usb_is_active())
 +    xTaskCreate(shell_task_runner, "runner", 2048, NULL, 5, NULL);
++#endif
  }
  
  void stop_hid(void) {
-@@ -1385,7 +1395,7 @@ void mcu_hw_reset(void) {
+@@ -1385,7 +1400,7 @@ void mcu_hw_reset(void) {
    struct bflb_wdg_config_s wdg_cfg;
    wdg_cfg.clock_source = WDG_CLKSRC_32K;
    wdg_cfg.clock_div = 31;
@@ -61,7 +91,7 @@ index f7d5c21..8aa0dd7 100644
    wdg_cfg.mode = WDG_MODE_RESET;
  
    wdg = bflb_device_get_by_name("watchdog0");
-@@ -1393,6 +1403,11 @@ void mcu_hw_reset(void) {
+@@ -1393,6 +1408,11 @@ void mcu_hw_reset(void) {
    bflb_wdg_init(wdg, &wdg_cfg);
    bflb_wdg_start(wdg);
  
@@ -192,14 +222,51 @@ index bf062aa..21409f7 100644
  void gowin_fpgaReset(void);
  
  #endif // GOWIN_H
+diff --git a/src/jtag.c b/src/jtag.c
+index ff136f6..6ee5216 100644
+--- a/src/jtag.c
++++ b/src/jtag.c
+@@ -74,6 +74,20 @@ void jtag_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, bool last) {
+     mcu_hw_jtag_data(tx, rx, len);  
+ }
+ 
++// GW2A command 0x16 exposes its external configuration Flash through a
++// special DR path entered from EXIT2-DR. The transition clock itself carries
++// no payload; data shifting starts once SHIFT-DR has been reached.
++void jtag_shiftDR_from_exit2(uint8_t *tx, uint8_t *rx, uint16_t len) {
++  mcu_hw_jtag_tms(1, 0, 1);  // EXIT2-DR -> SHIFT-DR
++  mcu_hw_jtag_data(tx, rx, len - 1);
++
++  uint8_t lrx = mcu_hw_jtag_tms(
++      tx ? ((tx[(len - 1) / 8] & 0x80) ? 1 : 0) : 1, 0b1, 1);
++  if(rx)
++    rx[(len - 1) / 8] = (rx[(len - 1) / 8] & 0x7f) | (lrx & 0x80);
++  mcu_hw_jtag_tms(1, 0b01, 2);
++}
++
+ uint32_t jtag_command_u08_read32(uint8_t cmd) {
+   uint32_t retval = 0;
+   
+diff --git a/src/jtag.h b/src/jtag.h
+index bbc5244..7a58da4 100644
+--- a/src/jtag.h
++++ b/src/jtag.h
+@@ -22,6 +22,7 @@ uint32_t jtag_command_u08_read32(uint8_t cmd);
+ void jtag_enter_shiftDR(void);
+ void jtag_shiftDR(uint8_t *tx, uint8_t *rx, uint16_t len);
+ void jtag_shiftDR_part(uint8_t *tx, uint8_t *rx, uint16_t len, bool last);
++void jtag_shiftDR_from_exit2(uint8_t *tx, uint8_t *rx, uint16_t len);
+ 
+ // toggle the jtag clock for the given time
+ static inline void jtag_clk_us(uint32_t us) { mcu_hw_jtag_toggleClk(15 * us); }
 diff --git a/src/main.c b/src/main.c
-index 7880ac8..1ea40ae 100644
+index 7880ac8..9ed8b21 100644
 --- a/src/main.c
 +++ b/src/main.c
-@@ -15,6 +15,9 @@
+@@ -15,6 +15,10 @@
  #include "../xml.h"
  #include "../at_wifi.h"
--
+ 
 +#if defined(TANG_NANO20K) || defined(TANG_NANO20K_V3923)
 +#include "bl616/nanoql_usb.h"
 +#endif
@@ -207,13 +274,101 @@ index 7880ac8..1ea40ae 100644
  /*-----------------------------------------------------------*/
  /*---            main FPGA communication task            ----*/
  /*-----------------------------------------------------------*/
-@@ -131,4 +134,7 @@ int main( void )
-   // run FPGA com thread
--  xTaskCreate( com_task, "FPGA Com", 4096, NULL, CONFIG_MAX_PRIORITY-1, &com_task_handle );
--
+@@ -90,15 +94,26 @@ static void com_task(__attribute__((unused)) void *p ) {
+     } else
+       debugf("Image upload in progress, delaying ready action");
+     
+-    // finally prepare for wifi communication
+-    at_wifi_init();
++    // Wi-Fi is unrelated to NanoQL Link and adds avoidable background work.
 +#if defined(TANG_NANO20K) || defined(TANG_NANO20K_V3923)
-+  if(!nanoql_usb_is_active())
++    if(!nanoql_usb_is_active())
 +#endif
-+    xTaskCreate( com_task, "FPGA Com", 4096, NULL, CONFIG_MAX_PRIORITY-1, &com_task_handle );
-+
++      at_wifi_init();
+ 
+     debugf("Entering main loop");
+   
+     for(;;) {
+       mcu_hw_irq_ack();  // (re-)enable interrupt
+-      ulTaskNotifyTake( pdTRUE, portMAX_DELAY);    
+-      sys_handle_interrupts(sys_irq_ctrl(0xff), false);
++      ulTaskNotifyTake( pdTRUE, portMAX_DELAY);
++      unsigned char pending = sys_irq_ctrl(0xff);
++#if defined(TANG_NANO20K) || defined(TANG_NANO20K_V3923)
++      if(nanoql_usb_is_active()) {
++        // Keep only virtual-disk sector service alive in development mode.
++        // Reset, USB-host and autonomous menu events remain disabled.
++        if(pending & 0x08) sdc_handle_event();
++      } else
++#endif
++        sys_handle_interrupts(pending, false);
+     }
+   }
+ 
+@@ -129,7 +144,14 @@ int main( void )
+   mcu_hw_init();
+   
+   // run FPGA com thread
++#if defined(TANG_NANO20K) || defined(TANG_NANO20K_V3923)
++  UBaseType_t com_priority = nanoql_usb_is_active() ?
++      configMAX_PRIORITIES - 3 : CONFIG_MAX_PRIORITY - 1;
++  xTaskCreate(com_task, "FPGA Com", 4096, NULL,
++              com_priority, &com_task_handle);
++#else
+   xTaskCreate( com_task, "FPGA Com", 4096, NULL, CONFIG_MAX_PRIORITY-1, &com_task_handle );
++#endif
+ 
    mcu_hw_main_loop();
+ 
+diff --git a/src/mcu_hw.h b/src/mcu_hw.h
+index a53cf9f..777a0de 100644
+--- a/src/mcu_hw.h
++++ b/src/mcu_hw.h
+@@ -50,7 +50,7 @@ char mcu_hw_wifi_scan_start(mcu_hw_wifi_scan_cb_func);
+ #define PIN_TF_SDIO_SEL GPIO_PIN_16
+ #define DIRECT_SDC_SUPPORTED
+ #endif
+-#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)
++#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_NANO20K_V3923)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)
+ void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);
+ uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len);
+ void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
+diff --git a/src/menu.c b/src/menu.c
+index 5b8883d..f33d576 100644
+--- a/src/menu.c
++++ b/src/menu.c
+@@ -448,9 +448,9 @@ static void menu_draw_title(const char *s, bool arrow, bool selected) {
+     // "single button" mode
+   
+     // no arrow? Then this is the root menu. In that case
+-    // a cross is drawn in "single button mode"
+-    u8g2_DrawXBM(&u8g2, 0, 1, 8, 8, icn_empty_bits);    
+-    x = 10;
++    // a cross is drawn at the right in "single button mode"
++    u8g2_DrawXBM(&u8g2, u8g2_GetDisplayWidth(&u8g2) - 8,
++                 1, 8, 8, icn_empty_bits);
+   }
+   
+   // draw title in bold and seperator line
+diff --git a/src/sysctrl.c b/src/sysctrl.c
+index 8a1d83e..2d57e93 100644
+--- a/src/sysctrl.c
++++ b/src/sysctrl.c
+@@ -269,7 +269,7 @@ static void sys_handle_event(bool ignore_coldboot) {
+ 
+     // the second button controls the OSD, so it can be used in conjunction
+     // with 
+-#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)
++#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_NANO20K_V3923)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)
+     if(!mcu_hw_jtag_is_active())
+ #endif
+ 
+@@ -284,7 +284,7 @@ static void sys_handle_event(bool ignore_coldboot) {
+     else {
+       sys_debugf("FPGA cold boot detected, reseting MCU ...");
+ 
+-#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)
++#if defined(M0S_DOCK)||defined(TANG_CONSOLE60K)||defined(TANG_NANO20K)||defined(TANG_NANO20K_V3923)||defined(TANG_MEGA138KPRO)||defined(TANG_MEGA60K)||defined(TANG_PRIMER25K)||(MISTLE_BOARD == 2)||(MISTLE_BOARD == 4)||(MISTLE_BOARD == 5)
+       // Check for USB-JTAG activity and don't reset (and thus break
+       // the JTAG activity)
+       if(mcu_hw_jtag_is_active()) {

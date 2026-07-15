@@ -28,6 +28,12 @@ module tb_ql_host_link;
         .sdram_ready(1'b1), .mem_req(mem_req), .mem_we(mem_we),
         .mem_addr(mem_addr), .mem_ds(mem_ds), .mem_wdata(mem_wdata),
         .mem_ready(1'b1), .mem_write_done(mem_write_done),
+        .keyboard_report_count(8'h5a),
+        .qlsd_status_flags(8'ha5), .qlsd_last_lba(24'h123456),
+        .qlsd_header(32'h514c5741), .qlsd_byte_count(16'd512),
+        .qlsd_crc32(32'h9abeb599),
+        .qlsd_sample(64'h0005514c2d534420),
+        .cpu_speed(2'd1), .cpu_phase_count(32'h12345678),
         .cpu_hold(cpu_hold), .boot_vectors_active(boot_vectors_active),
         .boot_ssp(boot_ssp), .boot_pc(boot_pc),
         .restart_pulse(restart_pulse)
@@ -64,6 +70,75 @@ module tb_ql_host_link;
     initial begin
         repeat (3) @(posedge clk);
         reset = 1'b0;
+
+        send_byte(8'h00, 1'b1);
+        if (data_out != 8'h4e) $fatal(1, "status signature N mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h51) $fatal(1, "status signature Q mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h4c) $fatal(1, "status signature L mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h31) $fatal(1, "status version mismatch");
+        send_byte(8'h00, 1'b0);
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h5a) $fatal(1, "keyboard counter mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'ha5) $fatal(1, "QL-SD flags mismatch");
+        send_byte(8'h00, 1'b0);
+        send_byte(8'h00, 1'b0);
+        send_byte(8'h00, 1'b0);
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h51) $fatal(1, "QL-SD header byte 0 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h4c) $fatal(1, "QL-SD header byte 1 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h57) $fatal(1, "QL-SD header byte 2 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h41) $fatal(1, "QL-SD header byte 3 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h02) $fatal(1, "QL-SD byte count high mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h00) $fatal(1, "QL-SD byte count low mismatch");
+
+        send_byte(8'h08, 1'b1);
+        if (data_out != 8'h51) $fatal(1, "QL-SD detail Q mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h53) $fatal(1, "QL-SD detail S mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h44) $fatal(1, "QL-SD detail D mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h31) $fatal(1, "QL-SD detail version mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h9a) $fatal(1, "QL-SD CRC byte 0 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'hbe) $fatal(1, "QL-SD CRC byte 1 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'hb5) $fatal(1, "QL-SD CRC byte 2 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h99) $fatal(1, "QL-SD CRC byte 3 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h00) $fatal(1, "QL-SD sample byte 0 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h05) $fatal(1, "QL-SD sample byte 1 mismatch");
+
+        send_byte(8'h09, 1'b1);
+        if (data_out != 8'h43) $fatal(1, "CPU detail C mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h50) $fatal(1, "CPU detail P mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h55) $fatal(1, "CPU detail U mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h31) $fatal(1, "CPU detail version mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h01) $fatal(1, "CPU speed mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h12) $fatal(1, "CPU phase byte 0 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h34) $fatal(1, "CPU phase byte 1 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h56) $fatal(1, "CPU phase byte 2 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h78) $fatal(1, "CPU phase byte 3 mismatch");
 
         send_byte(8'h01, 1'b1);
         if (!cpu_hold) $fatal(1, "HOLD did not stop the CPU");

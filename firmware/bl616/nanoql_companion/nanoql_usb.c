@@ -47,7 +47,10 @@
 #define NANOQL_USB_PID 0x4e51
 #define NANOQL_PROTOCOL_VERSION 1
 #define NANOQL_MAX_PAYLOAD 245
-#define NANOQL_SPI_MAX_PAYLOAD 13
+#define NANOQL_SPI_MAX_PAYLOAD 17
+#if NANOQL_SPI_MAX_PAYLOAD < 17
+#error "NanoQL status and diagnostics require 17 SPI payload bytes"
+#endif
 #define NANOQL_SPI_TARGET 4
 #define NANOQL_S1_MASK 0x01
 #define NANOQL_CMD_KEY 0x05
@@ -74,6 +77,7 @@ static volatile uint16_t rx_head;
 static volatile uint16_t rx_tail;
 static volatile bool usb_ready;
 static volatile bool usb_tx_busy;
+static volatile bool usb_rx_reset_requested;
 static bool fpga_upload_open;
 static uint32_t fpga_upload_size;
 static uint32_t fpga_upload_received;
@@ -172,15 +176,16 @@ bool nanoql_usb_is_active(void)
     return development_active;
 }
 
-static void stop_companion_task(void)
+static void prioritize_link_over_companion(void)
 {
     TaskHandle_t task = com_task_handle;
     if (task == NULL || task == xTaskGetCurrentTaskHandle())
         return;
 
-    com_task_handle = NULL;
-    vTaskDelete(task);
-    debugf("NanoQL: autonomous Companion task stopped");
+    /* mcu_hw_spi_begin/end serialize the shared FPGA SPI bus. Keep Companion
+       alive for microSD and OSD service, below the CDC link priority. */
+    vTaskPrioritySet(task, configMAX_PRIORITIES - 3);
+    debugf("NanoQL: Companion retained below NanoQL Link priority");
 }
 
 extern void stop_hid(void);
@@ -502,6 +507,15 @@ static void link_task(void *argument)
     uint8_t payload[NANOQL_MAX_PAYLOAD];
 
     for (;;) {
+        if (usb_rx_reset_requested) {
+            uintptr_t flags = bflb_irq_save();
+            rx_tail = rx_head;
+            usb_rx_reset_requested = false;
+            bflb_irq_restore(flags);
+            state = WAIT_MAGIC_N;
+            payload_index = 0;
+        }
+
         uint8_t value;
         if (!rx_pop(&value)) {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -562,7 +576,14 @@ static void usb_event_handler(uint8_t busid, uint8_t event)
     switch (event) {
     case USBD_EVENT_RESET:
     case USBD_EVENT_DISCONNECTED:
+        usb_ready = false;
+        usb_tx_busy = false;
+        usb_rx_reset_requested = true;
+        notify_link_task();
+        break;
     case USBD_EVENT_SUSPEND:
+        // Windows may suspend and immediately resume CDC while opening COM.
+        // Preserve an otherwise valid NanoQL frame across that transition.
         usb_ready = false;
         usb_tx_busy = false;
         notify_link_task();
@@ -660,8 +681,7 @@ bool nanoql_usb_start(void)
         return false;
     }
 
-    /* Companion and NanoQL Link must never drive the FPGA SPI bus together. */
-    stop_companion_task();
+    prioritize_link_over_companion();
 
     xTaskCreate(link_task, "NanoQL Link", 1024, NULL,
                 configMAX_PRIORITIES - 2, &link_task_handle);

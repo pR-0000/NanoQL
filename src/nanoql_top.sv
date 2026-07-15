@@ -183,6 +183,7 @@ module nanoql_top(
     wire [1:0] companion_system_reset;
     wire [1:0] companion_video_aspect;
     wire [1:0] companion_ram_config;
+    wire [1:0] companion_cpu_speed;
     wire companion_status_seen;
     wire companion_config_seen;
     reg [1:0] key_s1_sync;
@@ -215,6 +216,61 @@ module nanoql_top(
     wire rom_load_done;
     wire rom_load_fail;
     wire [7:0] rom_sector_progress;
+    wire qlsd_access;
+    wire [15:0] qlsd_address;
+    wire [7:0] qlsd_data;
+    wire qlsd_dtack;
+    wire qlsd_spi_clk;
+    wire qlsd_spi_mosi;
+    wire qlsd_spi_miso;
+    wire qlsd_cs1_n;
+    wire qlsd_cs2_n;
+    reg qlsd_ce;
+    wire [31:0] qlsd_lba;
+    wire qlsd_sd_read;
+    wire qlsd_sd_write;
+    reg qlsd_sd_ack;
+    reg [2:0] qlsd_ack_count;
+    wire [2:0] companion_sd_source;
+    wire [7:0] qlsd_buffer_data;
+    reg qlsd_mount_delay;
+    reg qlsd_image_present;
+    reg qlsd_read_previous;
+    reg qlsd_write_previous;
+    reg qlsd_bridge_read_pending;
+    reg qlsd_bridge_write_pending;
+    reg [31:0] qlsd_bridge_lba;
+    reg qlsd_capture_sector_zero;
+    reg qlsd_sector_seen;
+    reg [23:0] qlsd_last_lba;
+    reg [31:0] qlsd_header;
+    reg [15:0] qlsd_byte_count;
+    reg [31:0] qlsd_crc_state;
+    reg [31:0] qlsd_crc32;
+    reg [63:0] qlsd_sample;
+    reg [8:0] qlsd_last_byte_addr;
+    reg qlsd_byte_addr_valid;
+    wire [7:0] qlsd_status_flags = {
+        4'd0,
+        qlsd_header == 32'h514c5741,
+        qlsd_byte_count == 16'd512,
+        qlsd_sector_seen,
+        qlsd_image_present
+    };
+
+    function automatic [31:0] qlsd_crc32_byte;
+        input [31:0] crc;
+        input [7:0] data;
+        integer bit_index;
+        reg [31:0] value;
+        begin
+            value = crc ^ data;
+            for (bit_index = 0; bit_index < 8; bit_index = bit_index + 1)
+                value = value[0] ? (value >> 1) ^ 32'hedb88320 :
+                                   value >> 1;
+            qlsd_crc32_byte = value;
+        end
+    endfunction
     wire rom_loader_owns_sdram = rom_is_dynamic && !rom_load_done;
     wire host_mem_req;
     wire host_mem_we;
@@ -230,6 +286,8 @@ module nanoql_top(
     wire [31:0] host_boot_ssp;
     wire [31:0] host_boot_pc;
     wire host_restart_pulse;
+    reg [7:0] ipc_keyboard_report_count = 8'd0;
+    reg [31:0] cpu_phase_count = 32'd0;
 
     // Reserve the final 64 KiB of the 8 MiB SDRAM for the runtime QL ROM.
     // QL RAM can later grow to 4 MiB without colliding with this region.
@@ -328,6 +386,15 @@ module nanoql_top(
         .cpu_rw(cpu_rw),
         .cpu_dtack_n(cpu_dtack_n),
         .cpu_fc(cpu_fc),
+        .keyboard_report_count(ipc_keyboard_report_count),
+        .qlsd_status_flags(qlsd_status_flags),
+        .qlsd_last_lba(qlsd_last_lba),
+        .qlsd_header(qlsd_header),
+        .qlsd_byte_count(qlsd_byte_count),
+        .qlsd_crc32(qlsd_crc32),
+        .qlsd_sample(qlsd_sample),
+        .cpu_speed(companion_cpu_speed),
+        .cpu_phase_count(cpu_phase_count),
         .cpu_hold(host_cpu_hold),
         .boot_vectors_active(host_boot_vectors_active),
         .boot_ssp(host_boot_ssp),
@@ -362,6 +429,7 @@ module nanoql_top(
         .system_reset(companion_system_reset),
         .video_aspect(companion_video_aspect),
         .ram_config(companion_ram_config),
+        .cpu_speed(companion_cpu_speed),
         .status_seen(companion_status_seen),
         .config_seen(companion_config_seen)
     );
@@ -419,16 +487,152 @@ module nanoql_top(
         .iack(companion_sd_iack),
         .image_size(companion_image_size),
         .image_mounted(companion_image_mounted),
-        .rstart({7'd0, rom_sd_read_start}),
-        .wstart(8'd0),
-        .rsector(rom_sd_sector),
-        .rsrc(),
+        .rstart({6'd0, qlsd_bridge_read_pending, rom_sd_read_start}),
+        .wstart({6'd0, qlsd_bridge_write_pending, 1'b0}),
+        .rsector((qlsd_bridge_read_pending || qlsd_bridge_write_pending ||
+                  companion_sd_source == 3'd1) ?
+                 qlsd_bridge_lba : rom_sd_sector),
+        .rsrc(companion_sd_source),
         .rbusy(companion_sd_busy),
         .rdone(companion_sd_done),
-        .inbyte(8'd0),
+        .inbyte(qlsd_buffer_data),
         .outen(companion_sd_byte_valid),
         .outaddr(companion_sd_byte_addr),
         .outbyte(companion_sd_byte)
+    );
+
+    always @(posedge clk_pixel) begin
+        if (video_reset) begin
+            qlsd_ce <= 1'b0;
+            qlsd_sd_ack <= 1'b0;
+            qlsd_ack_count <= 3'd0;
+            qlsd_mount_delay <= 1'b0;
+            qlsd_image_present <= 1'b0;
+            qlsd_read_previous <= 1'b0;
+            qlsd_write_previous <= 1'b0;
+            qlsd_bridge_read_pending <= 1'b0;
+            qlsd_bridge_write_pending <= 1'b0;
+            qlsd_bridge_lba <= 32'd0;
+            qlsd_capture_sector_zero <= 1'b0;
+            qlsd_sector_seen <= 1'b0;
+            qlsd_last_lba <= 24'd0;
+            qlsd_header <= 32'd0;
+            qlsd_byte_count <= 16'd0;
+            qlsd_crc_state <= 32'hffffffff;
+            qlsd_crc32 <= 32'd0;
+            qlsd_sample <= 64'd0;
+            qlsd_last_byte_addr <= 9'd0;
+            qlsd_byte_addr_valid <= 1'b0;
+        end else begin
+            // ql_sd_card samples SCK synchronously. Running QLROMEXT on every
+            // other system cycle provides four samples per fast SPI period,
+            // matching the timing margin used by the MiSTer implementation.
+            qlsd_ce <= !qlsd_ce;
+            qlsd_mount_delay <= companion_image_mounted[1];
+            qlsd_read_previous <= qlsd_sd_read;
+            qlsd_write_previous <= qlsd_sd_write;
+            if (companion_image_mounted[1])
+                qlsd_image_present <= companion_image_size != 0;
+
+            // The Companion protocol expects a request level until the
+            // physical transfer starts. Drop only this bridge-level request
+            // once busy; ql_sd_card keeps its own request until sd_ack.
+            if (companion_sd_busy && companion_sd_source == 3'd1) begin
+                qlsd_bridge_read_pending <= 1'b0;
+                qlsd_bridge_write_pending <= 1'b0;
+            end
+            if (qlsd_sd_read && !qlsd_read_previous) begin
+                qlsd_bridge_read_pending <= 1'b1;
+                qlsd_bridge_lba <= qlsd_lba;
+                qlsd_last_lba <= qlsd_lba[23:0];
+                qlsd_capture_sector_zero <= qlsd_lba == 0;
+                if (qlsd_lba == 0) begin
+                    qlsd_sector_seen <= 1'b1;
+                    qlsd_header <= 32'd0;
+                    qlsd_byte_count <= 16'd0;
+                    qlsd_crc_state <= 32'hffffffff;
+                    qlsd_crc32 <= 32'd0;
+                    qlsd_sample <= 64'd0;
+                    qlsd_byte_addr_valid <= 1'b0;
+                end
+            end
+            if (qlsd_sd_write && !qlsd_write_previous) begin
+                qlsd_bridge_write_pending <= 1'b1;
+                qlsd_bridge_lba <= qlsd_lba;
+            end
+            if (companion_sd_byte_valid && companion_sd_source == 3'd1 &&
+                qlsd_capture_sector_zero &&
+                (!qlsd_byte_addr_valid ||
+                 companion_sd_byte_addr != qlsd_last_byte_addr)) begin
+                qlsd_byte_addr_valid <= 1'b1;
+                qlsd_last_byte_addr <= companion_sd_byte_addr;
+                if (qlsd_byte_count != 16'hffff)
+                    qlsd_byte_count <= qlsd_byte_count + 16'd1;
+                qlsd_crc_state <=
+                    qlsd_crc32_byte(qlsd_crc_state, companion_sd_byte);
+                case (companion_sd_byte_addr)
+                    9'd0: qlsd_header[31:24] <= companion_sd_byte;
+                    9'd1: qlsd_header[23:16] <= companion_sd_byte;
+                    9'd2: qlsd_header[15:8] <= companion_sd_byte;
+                    9'd3: qlsd_header[7:0] <= companion_sd_byte;
+                    9'd4: qlsd_sample[63:56] <= companion_sd_byte;
+                    9'd5: qlsd_sample[55:48] <= companion_sd_byte;
+                    9'd6: qlsd_sample[47:40] <= companion_sd_byte;
+                    9'd7: qlsd_sample[39:32] <= companion_sd_byte;
+                    9'd8: qlsd_sample[31:24] <= companion_sd_byte;
+                    9'd9: qlsd_sample[23:16] <= companion_sd_byte;
+                    9'd10: qlsd_sample[15:8] <= companion_sd_byte;
+                    9'd11: qlsd_sample[7:0] <= companion_sd_byte;
+                    default: ;
+                endcase
+            end
+            if (companion_sd_done && companion_sd_source == 3'd1) begin
+                if (qlsd_capture_sector_zero)
+                    qlsd_crc32 <= ~qlsd_crc_state;
+                qlsd_sd_ack <= 1'b1;
+                qlsd_ack_count <= 3'd5;
+            end else if (qlsd_ack_count != 0) begin
+                qlsd_ack_count <= qlsd_ack_count - 3'd1;
+                if (qlsd_ack_count == 1)
+                    qlsd_sd_ack <= 1'b0;
+            end
+        end
+    end
+
+    ql_sd_qlromext qlromext (
+        .clk(clk_pixel),
+        .reset(ql_system_reset),
+        .ce_sd(qlsd_ce),
+        .romoel(!qlsd_access),
+        .address(qlsd_address),
+        .data_out(qlsd_data),
+        .dtack(qlsd_dtack),
+        .sd_clk(qlsd_spi_clk),
+        .sd_cs1_n(qlsd_cs1_n),
+        .sd_cs2_n(qlsd_cs2_n),
+        .sd_mosi(qlsd_spi_mosi),
+        .sd_miso(qlsd_spi_miso)
+    );
+
+    ql_sd_card qlsd_virtual_card (
+        .clk_sys(clk_pixel),
+        .reset(video_reset),
+        .sdhc(1'b1),
+        .img_mounted(qlsd_mount_delay),
+        .img_size(companion_image_size),
+        .sd_lba(qlsd_lba),
+        .sd_rd(qlsd_sd_read),
+        .sd_wr(qlsd_sd_write),
+        .sd_ack(qlsd_sd_ack),
+        .sd_buff_addr(companion_sd_byte_addr),
+        .sd_buff_dout(companion_sd_byte),
+        .sd_buff_din(qlsd_buffer_data),
+        .sd_buff_wr(companion_sd_byte_valid && companion_sd_source == 3'd1),
+        .clk_spi(clk_pixel),
+        .ss(qlsd_cs1_n),
+        .sck(qlsd_spi_clk),
+        .mosi(qlsd_spi_mosi),
+        .miso(qlsd_spi_miso)
     );
 
     ql_sd_rom_loader rom_loader (
@@ -533,6 +737,13 @@ module nanoql_top(
                              (ql_reset_count != 15'd0);
     assign cpu_run_enable = ql_core_ready && !ql_system_reset;
 
+    always @(posedge clk_pixel) begin
+        if (ql_system_reset)
+            cpu_phase_count <= 32'd0;
+        else if (cpu_ce_bus_p)
+            cpu_phase_count <= cpu_phase_count + 32'd1;
+    end
+
     // 31.8 MHz * 22668 / 65536 = 11.0002 MHz. QL_MiSTer uses the same
     // fractional-enable scheme for the 8049 rather than a coarse divider.
     wire [16:0] ipc_ce_sum = {1'b0, ipc_ce_accumulator} + 17'd22668;
@@ -551,7 +762,7 @@ module nanoql_top(
     ql_timing ql_bus_timing (
         .clk_sys(clk_pixel),
         .reset(ql_system_reset),
-        .enable(cpu_run_enable),
+        .enable(cpu_run_enable && (companion_cpu_speed == 2'd0)),
         .ce_bus_p(cpu_ce_bus_p),
         .vblank(ql_native_vblank),
         .cpu_uds(!cpu_uds_n),
@@ -609,6 +820,10 @@ module nanoql_top(
         .dynamic_rom_ready(mapped_rom_ready),
         .dynamic_rom_data_valid(mapped_rom_data_valid),
         .dynamic_rom_data(mapped_rom_data),
+        .qlsd_access(qlsd_access),
+        .qlsd_address(qlsd_address),
+        .qlsd_dtack(qlsd_dtack),
+        .qlsd_data(qlsd_data),
         .mc_stat_wr(zx8301_mc_stat_wr),
         .mc_stat_data(zx8301_mc_stat_data),
         .zx8302_wr(zx8302_wr),
@@ -651,6 +866,7 @@ module nanoql_top(
         .reset(ql_system_reset),
         .enable(cpu_run_enable),
         .ram_config(companion_ram_config),
+        .cpu_speed(companion_cpu_speed),
         .cpu_addr(cpu_addr),
         .cpu_data_out(cpu_data_out),
         .cpu_data_in(cpu_data_in),
@@ -882,6 +1098,7 @@ module nanoql_top(
             qdos_ascii_address <= 22'd0;
             qdos_ascii_ds <= 2'b11;
             ipc_keyboard_result_latched <= 1'b0;
+            ipc_keyboard_report_count <= 8'd0;
         end else begin
             if (vblank_ack_pulse)
                 vblank_ack_count <= vblank_ack_count + 16'd1;
@@ -904,6 +1121,9 @@ module nanoql_top(
                             ipc_keyboard_response <= 1'b0;
                         end
                         if (ipc_command_next == 4'h8) begin
+                            if (!ipc_keyboard_command_seen)
+                                ipc_keyboard_report_count <=
+                                    ipc_keyboard_report_count + 8'd1;
                             ipc_keyboard_command_seen <= 1'b1;
                             ipc_keyboard_response <= 1'b1;
                             ipc_keyboard_read_count <= 5'd0;

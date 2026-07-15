@@ -24,6 +24,15 @@ module ql_host_link (
     input  wire        cpu_rw,
     input  wire        cpu_dtack_n,
     input  wire [2:0]  cpu_fc,
+    input  wire [7:0]  keyboard_report_count,
+    input  wire [7:0]  qlsd_status_flags,
+    input  wire [23:0] qlsd_last_lba,
+    input  wire [31:0] qlsd_header,
+    input  wire [15:0] qlsd_byte_count,
+    input  wire [31:0] qlsd_crc32,
+    input  wire [63:0] qlsd_sample,
+    input  wire [1:0]  cpu_speed,
+    input  wire [31:0] cpu_phase_count,
 
     output reg         cpu_hold,
     output reg         boot_vectors_active,
@@ -39,6 +48,8 @@ module ql_host_link (
     localparam [7:0] CMD_QDOS   = 8'h04;
     localparam [7:0] CMD_READ   = 8'h06;
     localparam [7:0] CMD_RESULT = 8'h07;
+    localparam [7:0] CMD_QLSD   = 8'h08;
+    localparam [7:0] CMD_CPU     = 8'h09;
 
     localparam [1:0] WR_IDLE = 2'd0;
     localparam [1:0] WR_REQ  = 2'd1;
@@ -81,7 +92,61 @@ module ql_host_link (
                                      boot_vectors_active,
                                      cpu_hold, protocol_error, busy,
                                      sdram_ready};
+                4'd5: status_byte = keyboard_report_count;
+                4'd6: status_byte = qlsd_status_flags;
+                4'd7: status_byte = qlsd_last_lba[23:16];
+                4'd8: status_byte = qlsd_last_lba[15:8];
+                4'd9: status_byte = qlsd_last_lba[7:0];
+                4'd10: status_byte = qlsd_header[31:24];
+                4'd11: status_byte = qlsd_header[23:16];
+                4'd12: status_byte = qlsd_header[15:8];
+                4'd13: status_byte = qlsd_header[7:0];
+                4'd14: status_byte = qlsd_byte_count[15:8];
+                4'd15: status_byte = qlsd_byte_count[7:0];
                 default: status_byte = 8'h00;
+            endcase
+        end
+    endfunction
+
+    function [7:0] qlsd_diag_byte;
+        input [3:0] index;
+        begin
+            case (index)
+                4'd0: qlsd_diag_byte = 8'h51; // Q
+                4'd1: qlsd_diag_byte = 8'h53; // S
+                4'd2: qlsd_diag_byte = 8'h44; // D
+                4'd3: qlsd_diag_byte = 8'h31; // protocol 1
+                4'd4: qlsd_diag_byte = qlsd_crc32[31:24];
+                4'd5: qlsd_diag_byte = qlsd_crc32[23:16];
+                4'd6: qlsd_diag_byte = qlsd_crc32[15:8];
+                4'd7: qlsd_diag_byte = qlsd_crc32[7:0];
+                4'd8: qlsd_diag_byte = qlsd_sample[63:56];
+                4'd9: qlsd_diag_byte = qlsd_sample[55:48];
+                4'd10: qlsd_diag_byte = qlsd_sample[47:40];
+                4'd11: qlsd_diag_byte = qlsd_sample[39:32];
+                4'd12: qlsd_diag_byte = qlsd_sample[31:24];
+                4'd13: qlsd_diag_byte = qlsd_sample[23:16];
+                4'd14: qlsd_diag_byte = qlsd_sample[15:8];
+                4'd15: qlsd_diag_byte = qlsd_sample[7:0];
+                default: qlsd_diag_byte = 8'h00;
+            endcase
+        end
+    endfunction
+
+    function [7:0] cpu_diag_byte;
+        input [3:0] index;
+        begin
+            case (index)
+                4'd0: cpu_diag_byte = 8'h43; // C
+                4'd1: cpu_diag_byte = 8'h50; // P
+                4'd2: cpu_diag_byte = 8'h55; // U
+                4'd3: cpu_diag_byte = 8'h31; // protocol 1
+                4'd4: cpu_diag_byte = {6'd0, cpu_speed};
+                4'd5: cpu_diag_byte = cpu_phase_count[31:24];
+                4'd6: cpu_diag_byte = cpu_phase_count[23:16];
+                4'd7: cpu_diag_byte = cpu_phase_count[15:8];
+                4'd8: cpu_diag_byte = cpu_phase_count[7:0];
+                default: cpu_diag_byte = 8'h00;
             endcase
         end
     endfunction
@@ -201,6 +266,14 @@ module ql_host_link (
                             status_index <= 4'd1;
                             data_out <= status_byte(4'd0);
                         end
+                        CMD_QLSD: begin
+                            status_index <= 4'd1;
+                            data_out <= qlsd_diag_byte(4'd0);
+                        end
+                        CMD_CPU: begin
+                            status_index <= 4'd1;
+                            data_out <= cpu_diag_byte(4'd0);
+                        end
                         CMD_RESULT: begin
                             result_index <= 4'd1;
                             data_out <= read_payload[0];
@@ -212,6 +285,14 @@ module ql_host_link (
 
                     if (command == CMD_STATUS) begin
                         data_out <= status_byte(status_index);
+                        if (status_index != 4'd15)
+                            status_index <= status_index + 4'd1;
+                    end else if (command == CMD_QLSD) begin
+                        data_out <= qlsd_diag_byte(status_index);
+                        if (status_index != 4'd15)
+                            status_index <= status_index + 4'd1;
+                    end else if (command == CMD_CPU) begin
+                        data_out <= cpu_diag_byte(status_index);
                         if (status_index != 4'd15)
                             status_index <= status_index + 4'd1;
                     end else if (command == CMD_RESULT) begin

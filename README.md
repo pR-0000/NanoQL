@@ -11,6 +11,7 @@ Portage progressif du Sinclair QL sur Sipeed Tang Nano 20K.
 NanoQL démarre une ROM Sinclair QL depuis la carte microSD et fournit :
 
 - un cœur 68000 `fx68k` ;
+- les vitesses CPU `QL` et `16 MHz`, commutables à chaud depuis l'OSD ;
 - 128, 640 ou 896 Kio de RAM QL sélectionnables dans la SDRAM de la Tang Nano 20K ;
 - les modes vidéo QL 4 et 8 sur HDMI 720p50 ;
 - le son mono du QL sur les deux canaux HDMI en PCM 48 kHz ;
@@ -18,7 +19,7 @@ NanoQL démarre une ROM Sinclair QL depuis la carte microSD et fournit :
 - le contrôleur IPC 8049 et la matrice clavier QL ;
 - un clavier USB raccordé par hub au BL616 intégré ;
 - le chargement automatique de `QL.rom` depuis la microSD ;
-- un menu OSD accessible avec `F12` pour choisir la ROM, la RAM, le cadrage vidéo et réinitialiser le QL.
+- un menu OSD accessible avec `F12` pour choisir la ROM, la RAM, la vitesse CPU, le cadrage vidéo et réinitialiser le QL.
 
 Les lecteurs Microdrive et leurs images ne sont pas encore implémentés.
 
@@ -30,10 +31,10 @@ Le menu vidéo propose `Monitor`, `TV`, `Wide +6%` et `Wide +30%`. Tous affichen
 
 - Sipeed Tang Nano 20K, révision 3921 ou 3923 ;
 - carte microSD formatée en FAT32 ou exFAT ;
-- écran HDMI ;
-- clavier USB ;
-- hub USB alimenté compatible USB OTG ;
-- un câble USB de données pour la programmation.
+- écran et câble HDMI ;
+- câble USB-C pour l'alimentation et la programmation.
+
+Un clavier USB et un hub USB alimenté compatible USB OTG sont optionnels. Ils sont uniquement nécessaires pour utiliser directement le clavier USB avec QDOS ; NanoQL peut démarrer et afficher le QL sans eux.
 
 La révision est imprimée sur la carte, par exemple `3923`.
 
@@ -43,11 +44,11 @@ Installez :
 
 1. [Git](https://git-scm.com/downloads)
 2. [Python 3](https://www.python.org/downloads/) avec Tkinter
-3. [Gowin EDA Education](https://www.gowinsemi.com/en/support/download_eda/)
+3. [Gowin EDA Education](https://www.gowinsemi.com/en/support/download_eda/) pour compiler le HDL
 
-Facultatif : [openFPGALoader](https://github.com/trabucayre/openFPGALoader), uniquement si vous préférez programmer la carte depuis l'assistant ou en ligne de commande.
+Pour programmer le FPGA, choisissez une seule solution : **Gowin Programmer**, installé avec Gowin EDA, ou [openFPGALoader](https://github.com/trabucayre/openFPGALoader). Gowin Programmer n'est pas obligatoire. Si vous utilisez un bitstream NanoQL déjà compilé, openFPGALoader permet de se passer entièrement de Gowin EDA pour la programmation.
 
-Sous Windows, cochez **Add Python to PATH** pendant l'installation. Sous Linux, Tkinter peut nécessiter le paquet `python3-tk`. VS Code n'est pas nécessaire. Gowin Programmer est inclus avec Gowin EDA et suffit pour programmer la carte ; il n'est donc pas nécessaire d'installer `openFPGALoader`.
+Sous Windows, cochez **Add Python to PATH** pendant l'installation. Sous Linux, Tkinter peut nécessiter le paquet `python3-tk`. VS Code n'est pas nécessaire.
 
 ### Installation pas à pas
 
@@ -115,6 +116,8 @@ Le bouton **Tout préparer et compiler** peut enchaîner la conversion IPC, la p
 
 Avec Gowin Programmer, ouvrez `impl/pnr/NanoQL_sd_rom.fs`. Pour un essai temporaire, choisissez **SRAM Mode**. Pour conserver NanoQL après extinction, choisissez **External Flash Mode**, l'opération d'effacement/programmation et **Generic Flash**. `openFPGALoader` n'est pas requis pour cette méthode.
 
+Avec openFPGALoader, aucune installation de Gowin Programmer n'est nécessaire. Le profil BL616 `ORIGINAL` doit néanmoins être actif pour exposer l'interface JTAG standard lors d'une programmation persistante.
+
 Compilation manuelle :
 
 ```sh
@@ -129,11 +132,18 @@ Dans Gowin EDA, l'option **Use JTAG as regular IO** doit rester décochée.
 1. Éteignez et débranchez la carte.
 2. Insérez la microSD préparée.
 3. Reliez HDMI à l'écran.
-4. Branchez le clavier sur un hub USB alimenté compatible OTG.
-5. Reliez le hub à la Tang Nano 20K, puis alimentez l'ensemble.
-6. Attendez l'écran QL et appuyez sur `F1` pour le mode moniteur ou `F2` pour le mode TV.
-7. À l'invite QL, testez par exemple `PRINT 2+2`, puis Entrée.
-8. Appuyez sur `F12` pour ouvrir le menu NanoQL et choisir le cadrage dans `Video`.
+4. Facultatif : pour utiliser un clavier USB, branchez-le sur un hub USB alimenté compatible OTG.
+5. Alimentez la Tang Nano 20K par USB-C ; si vous utilisez un clavier, reliez plutôt le hub à la carte et alimentez l'ensemble par le hub.
+6. Vérifiez que l'écran de démarrage du QL apparaît.
+7. Facultatif avec un clavier : appuyez sur `F1` ou `F2`, puis testez `PRINT 2+2` et ouvrez le menu NanoQL avec `F12`.
+
+Pour vérifier objectivement la vitesse CPU depuis un PC, passez en mode NanoQL Link avec S1 puis mesurez les phases du processeur :
+
+```text
+python tools/nanoql_link.py --port COM20 cpu-status
+```
+
+La commande affiche le mode sélectionné et sa fréquence effective. Pour charger des programmes QL de manière fiable, utilisez l'image QL-SD décrite plus bas.
 
 ### Dépannage court
 
@@ -148,17 +158,17 @@ Dernière compilation du build principal :
 
 | Ressource    |            Utilisation |
 | ------------ | ---------------------: |
-| Logic        | 11 119 / 20 736 (54 %) |
-| LUT          |                 10 451 |
-| ALU          |                    602 |
-| Registres    |                  4 684 |
-| CLS          |  7 026 / 10 368 (68 %) |
-| BSRAM        |         13 / 46 (29 %) |
+| Logic        | 12 206 / 20 736 (59 %) |
+| LUT          |                 11 488 |
+| ALU          |                    652 |
+| Registres    |                  5 260 |
+| CLS          |  7 621 / 10 368 (74 %) |
+| BSRAM        |         14 / 46 (31 %) |
 | E/S          |         27 / 66 (41 %) |
 | rPLL         |           2 / 2 (100 %) |
-| Fmax système | 65,549 MHz pour 31,8 MHz |
-| Fmax HDMI    | 80,134 MHz pour 74,25 MHz |
-| TNS setup    |                   0 ns |
+| Fmax système | 60,010 MHz pour 31,8 MHz |
+| Fmax HDMI    | 74,426 MHz pour 74,25 MHz |
+| TNS setup    | 0 ns (système et HDMI) |
 
 Ces valeurs sont mises à jour après les changements significatifs du build principal.
 
@@ -166,14 +176,18 @@ Ces valeurs sont mises à jour après les changements significatifs du build pri
 
 ```text
 Clavier USB -> BL616 FPGA Companion -> matrice QL -> IPC 8049
-microSD -> BL616 FPGA Companion -> chargeur ROM -> zone ROM SDRAM
+microSD -> BL616 FPGA Companion -> ROM et image QL-SD
 OSD FPGA Companion + vidéo QL -> HDMI
 ROM + SDRAM + ZX8301/ZX8302 -> fx68k
 ```
 
 La sortie HDMI utilise le mode standard 1280 × 720p50. Le domaine QL/SDRAM reste à 31,8 MHz et un tampon de ligne à double horloge alimente le domaine HDMI à 74,25 MHz. Le cadrage `Monitor` agrandit chaque échantillon du framebuffer QL en un bloc régulier de 2 × 2 pixels carrés. Les cadrages plus larges conservent les 512 × 256 échantillons complets ; `Wide +30%` garde en plus une marge HDMI de 40 pixels à gauche et à droite.
 
-Le CPU utilise des phases 68008 à 7,5 MHz et le modèle de contention RAM `ql_timing` du core QL MiSTer. Le menu RAM applique les mêmes masques d'adresses et plages d'extension que QL MiSTer : 128 Kio avec repliement sur 256 Kio, 640 Kio ou 896 Kio avec décodage sur 1 Mio. Le choix est conservé dans `nanoql.ini` et appliqué lors d'un reset QL.
+Le mode CPU `QL` utilise des phases 68008 à 7,5 MHz et le modèle de contention RAM `ql_timing` du core QL MiSTer. Le mode `16 MHz` utilise 15,9 MHz avec l'horloge système actuelle et désactive cette contention, comme le mode accéléré de QL MiSTer. La vitesse peut être changée à chaud et reste conservée dans `nanoql.ini`.
+
+Le menu RAM applique les mêmes masques d'adresses et plages d'extension que QL MiSTer : 128 Kio avec repliement sur 256 Kio, 640 Kio ou 896 Kio avec décodage sur 1 Mio. Le choix est conservé dans `nanoql.ini` et appliqué lors d'un reset QL.
+
+Le premier chemin QL-SD reprend QLROMEXT et l'émulateur de carte SD de QL_MiSTer. Le sélecteur `QL-SD image` monte un fichier `QXL.WIN` de la microSD comme carte SDHC virtuelle, avec transport sectoriel en lecture et en écriture. La procédure de validation avec le pilote QL-SD 1.08 ou ultérieur est décrite dans [`docs/QL_SD.md`](docs/QL_SD.md).
 
 La SDRAM suit la séquence complète de démarrage du GW2AR-18 : délai de stabilisation de 200 µs, précharge globale, deux auto-refresh, programmation du registre de mode, auto-précharge des accès et refresh périodique.
 
@@ -204,6 +218,7 @@ L'interface de développement USB permettant de charger et d'exécuter directeme
 NanoQL boots a Sinclair QL ROM from microSD and currently provides:
 
 - an `fx68k` 68000 core;
+- live-switchable `QL` and `16 MHz` CPU speeds in the OSD;
 - 128, 640, or 896 KiB of selectable QL RAM in the Tang Nano 20K SDRAM;
 - QL mode 4 and mode 8 video over 720p50 HDMI;
 - QL mono sound on both HDMI channels as 48 kHz PCM;
@@ -211,7 +226,7 @@ NanoQL boots a Sinclair QL ROM from microSD and currently provides:
 - the 8049 IPC controller and QL keyboard matrix;
 - a USB keyboard through the integrated BL616 and a powered USB hub;
 - automatic loading of `QL.rom` from microSD;
-- an `F12` on-screen display for ROM selection, RAM selection, video framing, and QL reset.
+- an `F12` on-screen display for ROM, RAM, CPU speed, video framing, and QL reset.
 
 Microdrives and their images are not implemented yet.
 
@@ -221,9 +236,11 @@ The video menu provides `Monitor`, `TV`, `Wide +6%`, and `Wide +30%`. Every mode
 
 ### Required hardware and software
 
-Hardware: a Tang Nano 20K revision 3921 or 3923, a FAT32 or exFAT microSD card, HDMI display, USB keyboard, powered USB OTG hub, and a USB data cable.
+Required hardware: a Tang Nano 20K revision 3921 or 3923, a FAT32 or exFAT microSD card, an HDMI display and cable, and a USB-C cable for power and programming.
 
-Install [Git](https://git-scm.com/downloads), [Python 3](https://www.python.org/downloads/) with Tkinter, and [Gowin EDA Education](https://www.gowinsemi.com/en/support/download_eda/). Gowin Programmer is included with Gowin EDA and is sufficient to program the board. [openFPGALoader](https://github.com/trabucayre/openFPGALoader) is an optional alternative. VS Code is not required.
+A USB keyboard and powered USB OTG hub are optional. They are only required for direct USB-keyboard input in QDOS; NanoQL can boot and display the QL without them.
+
+Install [Git](https://git-scm.com/downloads), [Python 3](https://www.python.org/downloads/) with Tkinter, and [Gowin EDA Education](https://www.gowinsemi.com/en/support/download_eda/) to compile the HDL. FPGA programming requires either Gowin Programmer, which is bundled with Gowin EDA, or [openFPGALoader](https://github.com/trabucayre/openFPGALoader). Gowin Programmer is not mandatory. When using a prebuilt NanoQL bitstream, openFPGALoader removes the need to install Gowin EDA for FPGA programming. VS Code is not required.
 
 ### Step-by-step setup
 
@@ -256,6 +273,8 @@ In **3. FPGA**, check the `gw_sh` path and click **Build**. The resulting bitstr
 
 With Gowin Programmer, select that `.fs` file. Use **SRAM Mode** for a temporary test, or **External Flash Mode**, an erase/program operation, and **Generic Flash** for persistent programming. When openFPGALoader is installed, the assistant's **Program SRAM** and **Program Flash** buttons provide the optional command-line method.
 
+openFPGALoader does not require Gowin Programmer. Persistent native programming still requires the BL616 `ORIGINAL` profile so that the board exposes its standard JTAG interface.
+
 Command-line equivalent:
 
 ```sh
@@ -267,7 +286,9 @@ Keep Gowin EDA's **Use JTAG as regular IO** option disabled.
 
 #### 5. Boot and test
 
-Power the board off, insert the prepared microSD card, connect HDMI, and attach the keyboard through a powered USB OTG hub. Power it on without a USB data connection to the computer. At the QL boot screen, press `F1` for monitor mode or `F2` for TV mode. At the prompt, type `PRINT 2+2` and press Enter. Press `F12` to open the NanoQL menu and select a framing mode under `Video`.
+Power the board off, insert the prepared microSD card, connect HDMI, and power the Tang Nano 20K through USB-C. The QL boot screen must appear without any keyboard or hub. For an optional interactive test, attach a USB keyboard through a powered USB OTG hub, press `F1` or `F2`, enter `PRINT 2+2`, and open the NanoQL menu with `F12`.
+
+For an objective CPU-speed check from a PC, enter NanoQL Link mode with S1 and run `python tools/nanoql_link.py --port COM20 cpu-status`. The command reports the selected mode and its effective clock rate. Use the QL-SD image described below for reliable QL program transfers.
 
 ### Quick troubleshooting
 
@@ -282,29 +303,33 @@ Latest main build:
 
 | Resource      |           Utilization |
 | ------------- | --------------------: |
-| Logic         | 11,119 / 20,736 (54%) |
-| LUT           |                10,451 |
-| ALU           |                   602 |
-| Registers     |                 4,684 |
-| CLS           |  7,026 / 10,368 (68%) |
-| BSRAM         |         13 / 46 (29%) |
+| Logic         | 12,206 / 20,736 (59%) |
+| LUT           |                11,488 |
+| ALU           |                   652 |
+| Registers     |                 5,260 |
+| CLS           |  7,621 / 10,368 (74%) |
+| BSRAM         |         14 / 46 (31%) |
 | I/O           |         27 / 66 (41%) |
-| System Fmax   | 65.549 MHz at 31.8 MHz |
-| HDMI Fmax     | 80.134 MHz at 74.25 MHz |
-| Setup TNS     |                  0 ns |
+| System Fmax   | 60.010 MHz at 31.8 MHz |
+| HDMI Fmax     | 74.426 MHz at 74.25 MHz |
+| Setup TNS     | 0 ns (system and HDMI) |
 
 ### Architecture and references
 
 ```text
 USB keyboard -> BL616 FPGA Companion -> QL matrix -> 8049 IPC
-microSD -> BL616 FPGA Companion -> ROM loader -> SDRAM ROM area
+microSD -> BL616 FPGA Companion -> ROM and QL-SD image
 FPGA Companion OSD + QL video -> HDMI
 ROM + SDRAM + ZX8301/ZX8302 -> fx68k
 ```
 
 HDMI output uses standard 1280 × 720p50 timings. The QL/SDRAM domain remains at 31.8 MHz, while a dual-clock line buffer feeds the 74.25 MHz HDMI domain. `Monitor` maps each QL sample to a uniform 2 × 2 HDMI block. Wider modes preserve all 512 × 256 source samples, and `Wide +30%` keeps a 40-pixel HDMI safety margin on both sides.
 
-The CPU uses 7.5 MHz 68008 phases and QL MiSTer's `ql_timing` RAM-contention model. The RAM menu applies the same address masks and expansion ranges as QL MiSTer: 128 KiB with 256 KiB wrapping, or 640/896 KiB with 1 MiB decoding. The selection is saved in `nanoql.ini` and applied on QL reset.
+The `QL` CPU mode uses 7.5 MHz 68008 phases and QL MiSTer's `ql_timing` RAM-contention model. The `16 MHz` mode runs at 15.9 MHz with the current system clock and disables this contention, as QL MiSTer's accelerated mode does. CPU speed is live-switchable and persisted in `nanoql.ini`.
+
+The RAM menu applies the same address masks and expansion ranges as QL MiSTer: 128 KiB with 256 KiB wrapping, or 640/896 KiB with 1 MiB decoding. The selection is saved in `nanoql.ini` and applied on QL reset.
+
+The initial QL-SD path ports QL_MiSTer's QLROMEXT and virtual SD-card implementation. The `QL-SD image` selector mounts a microSD `QXL.WIN` file as a read/write virtual SDHC card. Validation with QL-SD driver 1.08 or newer is documented in [`docs/QL_SD.md`](docs/QL_SD.md).
 
 The SDRAM follows the complete GW2AR-18 startup sequence: a 200 us stabilization delay, precharge-all, two auto-refresh commands, mode-register programming, access auto-precharge, and periodic refresh.
 
