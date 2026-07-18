@@ -28,11 +28,26 @@ module tb_ql_host_link;
         .sdram_ready(1'b1), .mem_req(mem_req), .mem_we(mem_we),
         .mem_addr(mem_addr), .mem_ds(mem_ds), .mem_wdata(mem_wdata),
         .mem_ready(1'b1), .mem_write_done(mem_write_done),
+        .mem_data_valid(1'b0), .mem_rdata(16'd0),
+        .cpu_addr(24'd0), .cpu_as_n(1'b1), .cpu_rw(1'b1),
+        .cpu_dtack_n(1'b1), .cpu_fc(3'd0),
         .keyboard_report_count(8'h5a),
         .qlsd_status_flags(8'ha5), .qlsd_last_lba(24'h123456),
         .qlsd_header(32'h514c5741), .qlsd_byte_count(16'd512),
         .qlsd_crc32(32'h9abeb599),
         .qlsd_sample(64'h0005514c2d534420),
+        .mdv_status_flags(8'h5f), .mdv_byte_position(18'h12345),
+        .mdv_current_sector(9'h123), .mdv_buffer_valid(2'b11),
+        .mdv_buffer_sector_0(9'h101), .mdv_buffer_sector_1(9'h002),
+        .mdv_bit_counter(4'ha), .mdv_rx_count(16'h3456),
+        .mdv_rx_missed_count(16'h1234),
+        .mdv_rx_xor(8'ha5), .mdv_rx_last(8'hbc),
+        .mdv_cpu_read_count(16'h789a), .mdv_cpu_read_xor(8'h5a),
+        .mdv_cpu_read_last(8'hde),
+        .mdv_cpu_trace_count(5'd16),
+        .mdv_cpu_trace(128'h00112233445566778899aabbccddeeff),
+        .mdv_data_trace_count(10'd518),
+        .mdv_data_trace(128'hfd000c10aa55aa55aa55aa55aa55aa55),
         .cpu_speed(2'd1), .cpu_phase_count(32'h12345678),
         .cpu_hold(cpu_hold), .boot_vectors_active(boot_vectors_active),
         .boot_ssp(boot_ssp), .boot_pc(boot_pc),
@@ -139,6 +154,65 @@ module tb_ql_host_link;
         if (data_out != 8'h56) $fatal(1, "CPU phase byte 2 mismatch");
         send_byte(8'h00, 1'b0);
         if (data_out != 8'h78) $fatal(1, "CPU phase byte 3 mismatch");
+
+        send_byte(8'h0a, 1'b1);
+        if (data_out != 8'h4d) $fatal(1, "Microdrive detail M mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h44) $fatal(1, "Microdrive detail D mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h56) $fatal(1, "Microdrive detail V mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h33) $fatal(1, "Microdrive detail version mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h5f) $fatal(1, "Microdrive flags mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h01) $fatal(1, "Microdrive position high mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h23) $fatal(1, "Microdrive position middle mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h45) $fatal(1, "Microdrive position low mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h34) $fatal(1, "Microdrive RX count high mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h56) $fatal(1, "Microdrive RX count low mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h78) $fatal(1, "Microdrive read count high mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h9a) $fatal(1, "Microdrive read count low mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h12) $fatal(1, "Microdrive missed count high mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h34) $fatal(1, "Microdrive missed count low mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'hbc) $fatal(1, "Microdrive stream byte mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'hde) $fatal(1, "Microdrive read byte mismatch");
+
+        send_byte(8'h0b, 1'b1);
+        if (data_out != 8'h4d) $fatal(1, "Microdrive trace M mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h54) $fatal(1, "Microdrive trace T mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h10) $fatal(1, "Microdrive trace count mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h00) $fatal(1, "Microdrive trace byte 0 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h11) $fatal(1, "Microdrive trace byte 1 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h22) $fatal(1, "Microdrive trace byte 2 mismatch");
+
+        send_byte(8'h0c, 1'b1);
+        if (data_out != 8'h4d) $fatal(1, "Microdrive data trace M mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h42) $fatal(1, "Microdrive data trace B mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h02) $fatal(1, "Microdrive data count high mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h06) $fatal(1, "Microdrive data count low mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'hfd) $fatal(1, "Microdrive data byte 0 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h00) $fatal(1, "Microdrive data byte 1 mismatch");
 
         send_byte(8'h01, 1'b1);
         if (!cpu_hold) $fatal(1, "HOLD did not stop the CPU");

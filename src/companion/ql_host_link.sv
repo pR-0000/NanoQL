@@ -31,6 +31,24 @@ module ql_host_link (
     input  wire [15:0] qlsd_byte_count,
     input  wire [31:0] qlsd_crc32,
     input  wire [63:0] qlsd_sample,
+    input  wire [7:0]  mdv_status_flags,
+    input  wire [17:0] mdv_byte_position,
+    input  wire [8:0]  mdv_current_sector,
+    input  wire [1:0]  mdv_buffer_valid,
+    input  wire [8:0]  mdv_buffer_sector_0,
+    input  wire [8:0]  mdv_buffer_sector_1,
+    input  wire [3:0]  mdv_bit_counter,
+    input  wire [15:0] mdv_rx_count,
+    input  wire [15:0] mdv_rx_missed_count,
+    input  wire [7:0]  mdv_rx_xor,
+    input  wire [7:0]  mdv_rx_last,
+    input  wire [15:0] mdv_cpu_read_count,
+    input  wire [7:0]  mdv_cpu_read_xor,
+    input  wire [7:0]  mdv_cpu_read_last,
+    input  wire [4:0]  mdv_cpu_trace_count,
+    input  wire [127:0] mdv_cpu_trace,
+    input  wire [9:0]  mdv_data_trace_count,
+    input  wire [127:0] mdv_data_trace,
     input  wire [1:0]  cpu_speed,
     input  wire [31:0] cpu_phase_count,
 
@@ -50,6 +68,9 @@ module ql_host_link (
     localparam [7:0] CMD_RESULT = 8'h07;
     localparam [7:0] CMD_QLSD   = 8'h08;
     localparam [7:0] CMD_CPU     = 8'h09;
+    localparam [7:0] CMD_MDV      = 8'h0a;
+    localparam [7:0] CMD_MDV_TRACE = 8'h0b;
+    localparam [7:0] CMD_MDV_DATA_TRACE = 8'h0c;
 
     localparam [1:0] WR_IDLE = 2'd0;
     localparam [1:0] WR_REQ  = 2'd1;
@@ -147,6 +168,81 @@ module ql_host_link (
                 4'd7: cpu_diag_byte = cpu_phase_count[15:8];
                 4'd8: cpu_diag_byte = cpu_phase_count[7:0];
                 default: cpu_diag_byte = 8'h00;
+            endcase
+        end
+    endfunction
+
+    function [7:0] mdv_diag_byte;
+        input [3:0] index;
+        begin
+            case (index)
+                4'd0: mdv_diag_byte = 8'h4d; // M
+                4'd1: mdv_diag_byte = 8'h44; // D
+                4'd2: mdv_diag_byte = 8'h56; // V
+                4'd3: mdv_diag_byte = 8'h33; // protocol 3
+                4'd4: mdv_diag_byte = mdv_status_flags;
+                4'd5: mdv_diag_byte = {6'd0, mdv_byte_position[17:16]};
+                4'd6: mdv_diag_byte = mdv_byte_position[15:8];
+                4'd7: mdv_diag_byte = mdv_byte_position[7:0];
+                4'd8: mdv_diag_byte = mdv_rx_count[15:8];
+                4'd9: mdv_diag_byte = mdv_rx_count[7:0];
+                4'd10: mdv_diag_byte = mdv_cpu_read_count[15:8];
+                4'd11: mdv_diag_byte = mdv_cpu_read_count[7:0];
+                4'd12: mdv_diag_byte = mdv_rx_missed_count[15:8];
+                4'd13: mdv_diag_byte = mdv_rx_missed_count[7:0];
+                4'd14: mdv_diag_byte = mdv_rx_last;
+                4'd15: mdv_diag_byte = mdv_cpu_read_last;
+                default: mdv_diag_byte = 8'h00;
+            endcase
+        end
+    endfunction
+
+    function [7:0] mdv_trace_byte;
+        input [3:0] index;
+        begin
+            case (index)
+                4'd0: mdv_trace_byte = 8'h4d; // M
+                4'd1: mdv_trace_byte = 8'h54; // T
+                4'd2: mdv_trace_byte = {3'd0, mdv_cpu_trace_count};
+                4'd3: mdv_trace_byte = mdv_cpu_trace[127:120];
+                4'd4: mdv_trace_byte = mdv_cpu_trace[119:112];
+                4'd5: mdv_trace_byte = mdv_cpu_trace[111:104];
+                4'd6: mdv_trace_byte = mdv_cpu_trace[103:96];
+                4'd7: mdv_trace_byte = mdv_cpu_trace[95:88];
+                4'd8: mdv_trace_byte = mdv_cpu_trace[87:80];
+                4'd9: mdv_trace_byte = mdv_cpu_trace[79:72];
+                4'd10: mdv_trace_byte = mdv_cpu_trace[71:64];
+                4'd11: mdv_trace_byte = mdv_cpu_trace[63:56];
+                4'd12: mdv_trace_byte = mdv_cpu_trace[55:48];
+                4'd13: mdv_trace_byte = mdv_cpu_trace[47:40];
+                4'd14: mdv_trace_byte = mdv_cpu_trace[39:32];
+                4'd15: mdv_trace_byte = mdv_cpu_trace[31:24];
+                default: mdv_trace_byte = 8'h00;
+            endcase
+        end
+    endfunction
+
+    function [7:0] mdv_data_trace_byte;
+        input [3:0] index;
+        begin
+            case (index)
+                4'd0: mdv_data_trace_byte = 8'h4d; // M
+                4'd1: mdv_data_trace_byte = 8'h42; // B
+                4'd2: mdv_data_trace_byte = {6'd0, mdv_data_trace_count[9:8]};
+                4'd3: mdv_data_trace_byte = mdv_data_trace_count[7:0];
+                4'd4: mdv_data_trace_byte = mdv_data_trace[127:120];
+                4'd5: mdv_data_trace_byte = mdv_data_trace[119:112];
+                4'd6: mdv_data_trace_byte = mdv_data_trace[111:104];
+                4'd7: mdv_data_trace_byte = mdv_data_trace[103:96];
+                4'd8: mdv_data_trace_byte = mdv_data_trace[95:88];
+                4'd9: mdv_data_trace_byte = mdv_data_trace[87:80];
+                4'd10: mdv_data_trace_byte = mdv_data_trace[79:72];
+                4'd11: mdv_data_trace_byte = mdv_data_trace[71:64];
+                4'd12: mdv_data_trace_byte = mdv_data_trace[63:56];
+                4'd13: mdv_data_trace_byte = mdv_data_trace[55:48];
+                4'd14: mdv_data_trace_byte = mdv_data_trace[47:40];
+                4'd15: mdv_data_trace_byte = mdv_data_trace[39:32];
+                default: mdv_data_trace_byte = 8'h00;
             endcase
         end
     endfunction
@@ -274,6 +370,18 @@ module ql_host_link (
                             status_index <= 4'd1;
                             data_out <= cpu_diag_byte(4'd0);
                         end
+                        CMD_MDV: begin
+                            status_index <= 4'd1;
+                            data_out <= mdv_diag_byte(4'd0);
+                        end
+                        CMD_MDV_TRACE: begin
+                            status_index <= 4'd1;
+                            data_out <= mdv_trace_byte(4'd0);
+                        end
+                        CMD_MDV_DATA_TRACE: begin
+                            status_index <= 4'd1;
+                            data_out <= mdv_data_trace_byte(4'd0);
+                        end
                         CMD_RESULT: begin
                             result_index <= 4'd1;
                             data_out <= read_payload[0];
@@ -293,6 +401,18 @@ module ql_host_link (
                             status_index <= status_index + 4'd1;
                     end else if (command == CMD_CPU) begin
                         data_out <= cpu_diag_byte(status_index);
+                        if (status_index != 4'd15)
+                            status_index <= status_index + 4'd1;
+                    end else if (command == CMD_MDV) begin
+                        data_out <= mdv_diag_byte(status_index);
+                        if (status_index != 4'd15)
+                            status_index <= status_index + 4'd1;
+                    end else if (command == CMD_MDV_TRACE) begin
+                        data_out <= mdv_trace_byte(status_index);
+                        if (status_index != 4'd15)
+                            status_index <= status_index + 4'd1;
+                    end else if (command == CMD_MDV_DATA_TRACE) begin
+                        data_out <= mdv_data_trace_byte(status_index);
                         if (status_index != 4'd15)
                             status_index <= status_index + 4'd1;
                     end else if (command == CMD_RESULT) begin

@@ -16,6 +16,8 @@ import time
 import zlib
 from pathlib import Path
 
+from nanoql_drive import build_qlay_image, collect_drive_files
+
 try:
     import serial
     from serial.tools import list_ports
@@ -40,6 +42,38 @@ FIRMWARE_ERRORS = {
     7: "direct FPGA transfer failed",
     8: "invalid FPGA bitstream size or CRC",
     9: "FPGA JTAG programming failed",
+    20: "microSD filesystem is not ready",
+    21: "invalid Drive1 path",
+    22: "another microSD file operation is active",
+    23: "microSD I/O error",
+    24: "uploaded file failed size or CRC verification",
+    25: "file or directory not found in Drive1",
+    26: "file or directory already exists",
+    27: "Drive1 filename is too long",
+    28: "microSD is write-protected",
+    29: "microSD operation was denied",
+}
+
+FATFS_ERRORS = {
+    1: "FR_DISK_ERR",
+    2: "FR_INT_ERR",
+    3: "FR_NOT_READY",
+    4: "FR_NO_FILE",
+    5: "FR_NO_PATH",
+    6: "FR_INVALID_NAME",
+    7: "FR_DENIED",
+    8: "FR_EXIST",
+    9: "FR_INVALID_OBJECT",
+    10: "FR_WRITE_PROTECTED",
+    11: "FR_INVALID_DRIVE",
+    12: "FR_NOT_ENABLED",
+    13: "FR_NO_FILESYSTEM",
+    14: "FR_MKFS_ABORTED",
+    15: "FR_TIMEOUT",
+    16: "FR_LOCKED",
+    17: "FR_NOT_ENOUGH_CORE",
+    18: "FR_TOO_MANY_OPEN_FILES",
+    19: "FR_INVALID_PARAMETER",
 }
 
 CMD_STATUS = 0x00
@@ -52,6 +86,22 @@ CMD_READ = 0x06
 CMD_READ_RESULT = 0x07
 CMD_QLSD_DIAG = 0x08
 CMD_CPU_DIAG = 0x09
+CMD_MDV_DIAG = 0x0A
+CMD_MDV_TRACE = 0x0B
+CMD_MDV_DATA_TRACE = 0x0C
+CMD_FS_INFO = 0xE0
+CMD_FS_LIST_BEGIN = 0xE1
+CMD_FS_LIST_NEXT = 0xE2
+CMD_FS_PUT_BEGIN = 0xE3
+CMD_FS_PUT_DATA = 0xE4
+CMD_FS_PUT_COMMIT = 0xE5
+CMD_FS_GET_BEGIN = 0xE6
+CMD_FS_GET_DATA = 0xE7
+CMD_FS_GET_END = 0xE8
+CMD_FS_DELETE = 0xE9
+CMD_FS_MKDIR = 0xEA
+CMD_FS_CANCEL = 0xEB
+CMD_FS_MDV_CONTROL = 0xEC
 CMD_FPGA_BEGIN = 0xF0
 CMD_FPGA_DATA = 0xF1
 CMD_FPGA_PROGRAM = 0xF2
@@ -88,10 +138,15 @@ ASCII_KEYS = {
     "*": (0x25, True), "(": (0x26, True), ")": (0x27, True),
 }
 
-# Windows has already converted AZERTY scan codes to logical characters by
-# the time msvcrt returns them. Only characters absent from the UK QL matrix
-# need a French-profile override; ordinary ASCII must not be remapped twice.
+# Fallbacks used when the host OS cannot translate a French character back to
+# its physical scan position. Windows normally uses windows_character_key().
 QL_FRENCH_KEYS = {
+    "a": (0x14, ()), "A": (0x14, (MOD_LEFT_SHIFT,)),
+    "q": (0x04, ()), "Q": (0x04, (MOD_LEFT_SHIFT,)),
+    "z": (0x1A, ()), "Z": (0x1A, (MOD_LEFT_SHIFT,)),
+    "w": (0x1D, ()), "W": (0x1D, (MOD_LEFT_SHIFT,)),
+    "m": (0x33, ()), "M": (0x33, (MOD_LEFT_SHIFT,)),
+    "_": (0x2D, (MOD_LEFT_SHIFT,)),
     "é": (0x2F, ()), "\\": (0x2F, (MOD_LEFT_SHIFT,)),
     "è": (0x30, ()), "ù": (0x31, ()), "`": (0x31, (MOD_LEFT_SHIFT,)),
     "à": (0x34, ()), "/": (0x34, (MOD_LEFT_SHIFT,)),
@@ -159,6 +214,112 @@ def windows_character_key(character: str) -> tuple[int, tuple[int, ...]] | None:
     return usage, modifiers
 
 
+def windows_realtime_keymap() -> dict[int, int]:
+    """Map Windows logical keys back to physical USB HID positions."""
+    if os.name != "nt":
+        return {}
+
+    user32 = ctypes.windll.user32
+    user32.GetKeyboardLayout.restype = ctypes.c_void_p
+    user32.MapVirtualKeyExW.argtypes = [ctypes.c_uint, ctypes.c_uint,
+                                        ctypes.c_void_p]
+    user32.MapVirtualKeyExW.restype = ctypes.c_uint
+    layout = user32.GetKeyboardLayout(0)
+
+    # Modifiers are first so a simultaneous modifier/key press reaches the QL
+    # matrix in the same order as a physical keyboard.
+    keymap = {
+        0xA2: 0x68, 0xA0: 0x69, 0xA4: 0x6A,
+        0xA3: 0x6C, 0xA1: 0x6D, 0xA5: 0x6E,
+    }
+    printable_vks = (
+        list(range(0x30, 0x3A)) + list(range(0x41, 0x5B)) +
+        [0x08, 0x09, 0x0D, 0x1B, 0x20, 0x14] +
+        [0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF, 0xC0,
+         0xDB, 0xDC, 0xDD, 0xDE, 0xE2]
+    )
+    for virtual_key in printable_vks:
+        scan_code = user32.MapVirtualKeyExW(
+            virtual_key, 0, layout
+        ) & 0xFF
+        usage = SCAN_TO_HID.get(scan_code)
+        if usage is not None:
+            keymap[virtual_key] = usage
+
+    keymap.update({
+        0x24: 0x4A,  # Home
+        0x21: 0x4B,  # Page Up
+        0x2E: 0x4C,  # Delete
+        0x23: 0x4D,  # End
+        0x22: 0x4E,  # Page Down
+        0x27: 0x4F,  # Right
+        0x25: 0x50,  # Left
+        0x28: 0x51,  # Down
+        0x26: 0x52,  # Up
+    })
+    for virtual_key in range(0x70, 0x7C):
+        if virtual_key != 0x75:  # F6 releases the terminal keyboard.
+            keymap[virtual_key] = 0x3A + virtual_key - 0x70
+    return keymap
+
+
+def windows_virtual_key_character(virtual_key: int) -> str | None:
+    """Translate one currently pressed Windows key without consuming it."""
+    if os.name != "nt":
+        return None
+
+    user32 = ctypes.windll.user32
+    user32.GetKeyboardLayout.restype = ctypes.c_void_p
+    user32.MapVirtualKeyExW.argtypes = [ctypes.c_uint, ctypes.c_uint,
+                                        ctypes.c_void_p]
+    user32.MapVirtualKeyExW.restype = ctypes.c_uint
+    user32.ToUnicodeEx.argtypes = [
+        ctypes.c_uint, ctypes.c_uint,
+        ctypes.POINTER(ctypes.c_ubyte), ctypes.c_wchar_p,
+        ctypes.c_int, ctypes.c_uint, ctypes.c_void_p,
+    ]
+    user32.ToUnicodeEx.restype = ctypes.c_int
+
+    get_async_key_state = user32.GetAsyncKeyState
+    keyboard_state = (ctypes.c_ubyte * 256)()
+
+    def down(key: int) -> bool:
+        return bool(get_async_key_state(key) & 0x8000)
+
+    left_shift, right_shift = down(0xA0), down(0xA1)
+    left_ctrl, right_ctrl = down(0xA2), down(0xA3)
+    left_alt, right_alt = down(0xA4), down(0xA5)
+    if left_shift or right_shift:
+        keyboard_state[0x10] = 0x80
+    keyboard_state[0xA0] = 0x80 if left_shift else 0
+    keyboard_state[0xA1] = 0x80 if right_shift else 0
+
+    # Ordinary Ctrl is passed directly to the QL matrix and must not turn the
+    # translated character into an ASCII control code. AltGr, however, needs
+    # the Windows Ctrl+Alt state to identify its printable character.
+    if right_alt:
+        keyboard_state[0x11] = 0x80
+        keyboard_state[0x12] = 0x80
+        keyboard_state[0xA2] = 0x80 if left_ctrl else 0
+        keyboard_state[0xA3] = 0x80 if right_ctrl else 0
+        keyboard_state[0xA5] = 0x80
+    elif left_alt:
+        keyboard_state[0x12] = 0x80
+        keyboard_state[0xA4] = 0x80
+
+    keyboard_state[0x14] = user32.GetKeyState(0x14) & 1
+    layout = user32.GetKeyboardLayout(0)
+    scan_code = user32.MapVirtualKeyExW(virtual_key, 0, layout)
+    output = ctypes.create_unicode_buffer(8)
+    count = user32.ToUnicodeEx(
+        virtual_key, scan_code, keyboard_state, output, len(output),
+        0x04, layout,
+    )
+    if count <= 0:
+        return None
+    return output[0]
+
+
 def default_ql_layout() -> str:
     if os.name != "nt":
         return "uk"
@@ -178,6 +339,61 @@ def crc8(data: bytes) -> int:
 
 def parse_number(value: str) -> int:
     return int(value, 0)
+
+
+def remote_path_bytes(value: str, *, allow_empty: bool = False) -> bytes:
+    normalized = value.replace("\\", "/").strip("/")
+    if not normalized:
+        if allow_empty:
+            return b""
+        raise ValueError("A path inside NanoQL/Drive1 is required.")
+    components = normalized.split("/")
+    if any(component in ("", ".", "..") for component in components):
+        raise ValueError("Drive1 paths cannot contain empty, '.' or '..' components.")
+    try:
+        encoded = normalized.encode("ascii")
+    except UnicodeEncodeError as error:
+        raise ValueError(
+            "Drive1 paths currently support printable ASCII characters only."
+        ) from error
+    forbidden = set(b'\\:*?"<>|')
+    if any(byte < 0x20 or byte > 0x7E or byte in forbidden for byte in encoded):
+        raise ValueError("The Drive1 path contains a character unsupported by FAT.")
+    if len(encoded) > 200:
+        raise ValueError("The Drive1 path cannot exceed 200 characters.")
+    return encoded
+
+
+def file_crc32(path: Path) -> int:
+    checksum = 0
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            checksum = zlib.crc32(block, checksum)
+    return checksum & 0xFFFFFFFF
+
+
+def download_drive1_tree(
+    link: "NanoQLLink",
+    local_root: Path,
+    remote_path: str = "",
+    excluded_path: str = "MDV1.mdv",
+) -> int:
+    count = 0
+    for name, _size, is_directory in link.filesystem_list(remote_path):
+        child_remote = f"{remote_path}/{name}" if remote_path else name
+        if child_remote.casefold() == excluded_path.casefold():
+            continue
+        child_local = local_root.joinpath(*child_remote.split("/"))
+        if is_directory:
+            child_local.mkdir(parents=True, exist_ok=True)
+            count += download_drive1_tree(
+                link, local_root, child_remote, excluded_path
+            )
+        else:
+            print(f"Reading /NanoQL/Drive1/{child_remote}...")
+            link.filesystem_get(child_remote, child_local)
+            count += 1
+    return count
 
 
 def find_port(explicit: str | None) -> str:
@@ -280,7 +496,14 @@ class NanoQLLink:
                         time.sleep(0.05)
                         self.serial.reset_input_buffer()
                         continue
-                    detail = FIRMWARE_ERRORS.get(error_code, f"error {error_code}")
+                    if 0x40 <= error_code <= 0x5F:
+                        fatfs_code = error_code & 0x1F
+                        fatfs_name = FATFS_ERRORS.get(
+                            fatfs_code, f"unknown error {fatfs_code}"
+                        )
+                        detail = f"FatFs {fatfs_name}"
+                    else:
+                        detail = FIRMWARE_ERRORS.get(error_code, f"error {error_code}")
                     raise RuntimeError(
                         f"The BL616 firmware rejected the request: {detail}."
                     )
@@ -336,6 +559,44 @@ class NanoQLLink:
         detail = rx[detail_at:detail_at + 9]
         return detail[4] & 0x03, int.from_bytes(detail[5:9], "big")
 
+    def mdv_diagnostic(
+        self,
+    ) -> tuple[int, int, int, int, int, int, int]:
+        rx = self.transact(bytes((CMD_MDV_DIAG,)) + bytes(16))
+        detail_at = rx.find(b"MDV3")
+        if detail_at < 0 or detail_at + 16 > len(rx):
+            raise RuntimeError("This bitstream does not expose Microdrive diagnostics.")
+        detail = rx[detail_at:detail_at + 16]
+        flags = detail[4]
+        byte_position = int.from_bytes(detail[5:8], "big")
+        rx_count = int.from_bytes(detail[8:10], "big")
+        read_count = int.from_bytes(detail[10:12], "big")
+        missed_count = int.from_bytes(detail[12:14], "big")
+        return (flags, byte_position, rx_count, read_count,
+                missed_count, detail[14], detail[15])
+
+    def mdv_header_trace(self) -> tuple[int, bytes]:
+        rx = self.transact(bytes((CMD_MDV_TRACE,)) + bytes(16))
+        detail_at = rx.find(b"MT")
+        if detail_at < 0 or detail_at + 16 > len(rx):
+            raise RuntimeError(
+                "This bitstream does not expose the Microdrive CPU trace."
+            )
+        detail = rx[detail_at:detail_at + 16]
+        count = min(detail[2], 16)
+        return count, bytes(detail[3:3 + min(count, 13)])
+
+    def mdv_data_trace(self) -> tuple[int, bytes]:
+        rx = self.transact(bytes((CMD_MDV_DATA_TRACE,)) + bytes(16))
+        detail_at = rx.find(b"MB")
+        if detail_at < 0 or detail_at + 16 > len(rx):
+            raise RuntimeError(
+                "This bitstream does not expose the Microdrive data trace."
+            )
+        detail = rx[detail_at:detail_at + 16]
+        count = ((detail[2] & 0x03) << 8) | detail[3]
+        return count, bytes(detail[4:16])
+
     def measure_cpu_rate(self, interval: float = 0.25) -> tuple[int, float]:
         speed, first_count = self.cpu_diagnostic()
         started = time.monotonic()
@@ -346,6 +607,167 @@ class NanoQLLink:
             raise RuntimeError("The FPGA CPU mode changed while it was being measured.")
         pulses = (second_count - first_count) & 0xFFFFFFFF
         return speed, pulses / elapsed
+
+    def filesystem_info(self) -> tuple[int, int]:
+        response = self.transact(bytes((CMD_FS_INFO,)))
+        if len(response) != 7 or response[:4] != b"NFS1":
+            raise RuntimeError(
+                "The installed BL616 firmware does not support NanoQL Drive1."
+            )
+        version, capabilities, max_path = response[4], response[5], response[6]
+        if version != 1:
+            raise RuntimeError(f"Unsupported NanoQL Drive1 protocol {version}.")
+        return capabilities, max_path
+
+    def filesystem_cancel(self) -> None:
+        self.transact(bytes((CMD_FS_CANCEL,)))
+
+    def microdrive_sync_control(self, mount: bool) -> None:
+        capabilities, _ = self.filesystem_info()
+        if not capabilities & 0x20:
+            raise RuntimeError(
+                "The installed BL616 firmware does not support automatic MDV1 mounting."
+            )
+        previous_timeout = self.serial.timeout
+        self.serial.timeout = 30.0
+        try:
+            self.transact(bytes((CMD_FS_MDV_CONTROL, 1 if mount else 0)))
+        finally:
+            self.serial.timeout = previous_timeout
+
+    def filesystem_list(self, remote_path: str = "") -> list[tuple[str, int, bool]]:
+        path = remote_path_bytes(remote_path, allow_empty=True)
+        self.filesystem_info()
+        self.transact(bytes((CMD_FS_LIST_BEGIN,)) + path)
+        entries: list[tuple[str, int, bool]] = []
+        try:
+            while True:
+                response = self.transact(bytes((CMD_FS_LIST_NEXT,)))
+                if response == b"\x00":
+                    break
+                if len(response) < 6 or response[0] not in (1, 2):
+                    raise RuntimeError("Invalid NanoQL Drive1 directory response.")
+                name_length = response[5]
+                if len(response) != 6 + name_length:
+                    raise RuntimeError("Truncated NanoQL Drive1 directory entry.")
+                name = response[6:].decode("ascii")
+                size = int.from_bytes(response[1:5], "big")
+                entries.append((name, size, response[0] == 2))
+        except Exception:
+            try:
+                self.filesystem_cancel()
+            except Exception:
+                pass
+            raise
+        return entries
+
+    def filesystem_mkdir(self, remote_path: str) -> None:
+        path = remote_path_bytes(remote_path)
+        self.filesystem_info()
+        self.transact(bytes((CMD_FS_MKDIR,)) + path)
+
+    def filesystem_delete(self, remote_path: str) -> None:
+        path = remote_path_bytes(remote_path)
+        self.filesystem_info()
+        self.transact(bytes((CMD_FS_DELETE,)) + path)
+
+    def filesystem_put(self, source: Path, remote_path: str) -> None:
+        source = source.expanduser().resolve()
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        path = remote_path_bytes(remote_path)
+        size = source.stat().st_size
+        if size > 0xFFFFFFFF:
+            raise ValueError("NanoQL Drive1 currently supports files up to 4 GiB.")
+        checksum = file_crc32(source)
+        self.filesystem_info()
+        begin = (
+            bytes((CMD_FS_PUT_BEGIN,))
+            + size.to_bytes(4, "big")
+            + checksum.to_bytes(4, "big")
+            + path
+        )
+        self.transact(begin)
+        sent = 0
+        try:
+            with source.open("rb") as stream:
+                while True:
+                    block = stream.read(240)
+                    if not block:
+                        break
+                    response = self.transact(
+                        bytes((CMD_FS_PUT_DATA,))
+                        + sent.to_bytes(4, "big")
+                        + block
+                    )
+                    acknowledged = int.from_bytes(response, "big")
+                    sent += len(block)
+                    if len(response) != 4 or acknowledged != sent:
+                        raise RuntimeError("NanoQL Drive1 acknowledged an invalid offset.")
+                    percent = 100 if size == 0 else sent * 100 // size
+                    print(f"\rDrive1 upload: {percent:3d}%", end="", flush=True)
+            response = self.transact(bytes((CMD_FS_PUT_COMMIT,)))
+            if len(response) != 8:
+                raise RuntimeError("Invalid NanoQL Drive1 upload verification response.")
+            remote_size = int.from_bytes(response[:4], "big")
+            remote_crc = int.from_bytes(response[4:8], "big")
+            if remote_size != size or remote_crc != checksum:
+                raise RuntimeError("NanoQL Drive1 returned a different size or CRC32.")
+            if size == 0:
+                print("\rDrive1 upload: 100%", end="", flush=True)
+            print()
+        except Exception:
+            try:
+                self.filesystem_cancel()
+            except Exception:
+                pass
+            raise
+
+    def filesystem_get(self, remote_path: str, destination: Path) -> None:
+        path = remote_path_bytes(remote_path)
+        destination = destination.expanduser().resolve()
+        temporary = destination.with_name(destination.name + ".nanoql-part")
+        self.filesystem_info()
+        response = self.transact(bytes((CMD_FS_GET_BEGIN,)) + path)
+        if len(response) != 4:
+            raise RuntimeError("Invalid NanoQL Drive1 download response.")
+        size = int.from_bytes(response, "big")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        received = 0
+        try:
+            with temporary.open("wb") as stream:
+                while received < size:
+                    requested = min(240, size - received)
+                    response = self.transact(
+                        bytes((CMD_FS_GET_DATA,))
+                        + received.to_bytes(4, "big")
+                        + bytes((requested,))
+                    )
+                    if not response or response[0] != len(response) - 1:
+                        raise RuntimeError("Invalid NanoQL Drive1 data block.")
+                    block = response[1:]
+                    if not block or len(block) > requested:
+                        raise RuntimeError("NanoQL Drive1 returned an invalid data length.")
+                    stream.write(block)
+                    received += len(block)
+                    print(
+                        f"\rDrive1 download: {received * 100 // max(size, 1):3d}%",
+                        end="", flush=True,
+                    )
+            self.transact(bytes((CMD_FS_GET_END,)))
+            if temporary.stat().st_size != size:
+                raise RuntimeError("Downloaded NanoQL Drive1 file has the wrong size.")
+            os.replace(temporary, destination)
+            if size == 0:
+                print("\rDrive1 download: 100%", end="", flush=True)
+            print()
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            try:
+                self.filesystem_cancel()
+            except Exception:
+                pass
+            raise
 
     def hold(self) -> None:
         self.transact(bytes((CMD_HOLD,)))
@@ -528,70 +950,130 @@ def interactive_keyboard(link: NanoQLLink) -> None:
     import msvcrt
 
     print(f"NanoQL keyboard active (QL {link.ql_layout.upper()} profile). "
-          "Press F6 to return the keyboard to the terminal.")
-    remote_shift = False
+          "Keys are held in real time; press F6 to return to the terminal.")
     get_async_key_state = ctypes.windll.user32.GetAsyncKeyState
+    keymap = windows_realtime_keymap()
+    modifier_vks = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5}
+    ordinary_keymap = {
+        virtual_key: usage for virtual_key, usage in keymap.items()
+        if virtual_key not in modifier_vks
+    }
+
+    def host_modifiers() -> tuple[bool, bool, bool, bool, bool, bool]:
+        return tuple(
+            bool(get_async_key_state(virtual_key) & 0x8000)
+            for virtual_key in (0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5)
+        )
+
+    previous_keys = {
+        virtual_key for virtual_key in ordinary_keymap
+        if get_async_key_state(virtual_key) & 0x8000
+    }
+    previous_modifiers = host_modifiers()
+    active_bindings: dict[int, tuple[set[int], bool]] = {}
+    remote_pressed: set[int] = set()
+    f6_previous = bool(get_async_key_state(0x75) & 0x8000)
+
     try:
         while True:
-            host_shift = bool(get_async_key_state(0x10) & 0x8000)
-            if remote_shift and not host_shift:
-                link.key_event(MOD_LEFT_SHIFT, False)
-                remote_shift = False
-
-            if not msvcrt.kbhit():
-                time.sleep(0.005)
-                continue
-
-            character = msvcrt.getwch()
-            if character == "\x1d":
+            f6_pressed = bool(get_async_key_state(0x75) & 0x8000)
+            if f6_pressed and not f6_previous:
                 break
-            if character in ("\x00", "\xe0"):
-                extended = msvcrt.getwch()
-                if extended == "@":  # F6
-                    break
-                usage = WINDOWS_EXTENDED_KEYS.get(extended)
-                if usage is not None:
-                    link.tap_key(usage)
-                continue
-            if character == "\x03":
-                raise KeyboardInterrupt
-            if character in ("\r", "\n", "\b", "\t", "\x1b"):
-                link.type_character(character)
-                continue
-            if "\x01" <= character <= "\x1a":
-                letter = chr(ord("a") + ord(character) - 1)
-                usage, _ = link.character_key(letter)
-                link.key_event(MOD_LEFT_CTRL, True)
-                link.tap_key(usage)
-                link.key_event(MOD_LEFT_CTRL, False)
-                continue
+            f6_previous = f6_pressed
 
-            try:
-                usage, modifiers = link.character_key(character)
-            except ValueError:
-                usage, modifiers = 0, ()
-            if host_shift and usage:
-                if MOD_LEFT_SHIFT in modifiers:
-                    if not remote_shift:
-                        link.key_event(MOD_LEFT_SHIFT, True)
-                        time.sleep(0.008)
-                        remote_shift = True
-                    for modifier in modifiers:
-                        if modifier != MOD_LEFT_SHIFT:
-                            link.key_event(modifier, True)
-                    link.tap_key(usage)
-                    for modifier in reversed(modifiers):
-                        if modifier != MOD_LEFT_SHIFT:
-                            link.key_event(modifier, False)
-                    continue
+            current_keys = {
+                virtual_key for virtual_key in ordinary_keymap
+                if get_async_key_state(virtual_key) & 0x8000
+            }
+            current_modifiers = host_modifiers()
+            if (current_keys != previous_keys or
+                    current_modifiers != previous_modifiers):
+                previous_keys = current_keys
+                previous_modifiers = current_modifiers
+                active_bindings.clear()
+                for virtual_key in current_keys:
+                    fallback_usage = ordinary_keymap[virtual_key]
+                    character = windows_virtual_key_character(virtual_key)
+                    translated = False
+                    usages = {fallback_usage}
+                    if character is not None and character >= " ":
+                        try:
+                            usage, target_modifiers = link.character_key(character)
+                            usages = {usage, *target_modifiers}
+                            translated = True
+                        except ValueError:
+                            pass
+                    active_bindings[virtual_key] = (usages, translated)
 
-            if remote_shift:
-                link.key_event(MOD_LEFT_SHIFT, False)
-                remote_shift = False
-            link.type_character(character)
+                desired: set[int] = set()
+                translated_active = False
+                for usages, translated in active_bindings.values():
+                    desired.update(usages)
+                    translated_active |= translated
+
+                left_shift, right_shift, left_ctrl, right_ctrl, \
+                    left_alt, right_alt = current_modifiers
+                if left_ctrl and not right_alt:
+                    desired.add(0x68)
+                if right_ctrl and not right_alt:
+                    desired.add(0x6C)
+                if not translated_active:
+                    if left_shift:
+                        desired.add(0x69)
+                    if right_shift:
+                        desired.add(0x6D)
+                    if left_alt:
+                        desired.add(0x6A)
+                    if right_alt:
+                        desired.add(0x6E)
+
+                modifier_usages = {0x68, 0x69, 0x6A, 0x6C, 0x6D, 0x6E}
+                releases = sorted(
+                    remote_pressed - desired,
+                    key=lambda usage: usage in modifier_usages,
+                )
+                presses = sorted(
+                    desired - remote_pressed,
+                    key=lambda usage: usage not in modifier_usages,
+                )
+                ordinary_releases = [
+                    usage for usage in releases if usage not in modifier_usages
+                ]
+                modifier_releases = [
+                    usage for usage in releases if usage in modifier_usages
+                ]
+                modifier_presses = [
+                    usage for usage in presses if usage in modifier_usages
+                ]
+                ordinary_presses = [
+                    usage for usage in presses if usage not in modifier_usages
+                ]
+
+                for usage in ordinary_releases:
+                    link.key_event(usage, False)
+                if ordinary_releases and modifier_releases:
+                    time.sleep(0.005)
+                for usage in modifier_releases:
+                    link.key_event(usage, False)
+                for usage in modifier_presses:
+                    link.key_event(usage, True)
+                # The original QL keyboard requires the modifier contact to
+                # settle before the main key. This also prevents short host
+                # taps from turning shifted punctuation into number keys.
+                if modifier_presses and ordinary_presses:
+                    time.sleep(0.010)
+                for usage in ordinary_presses:
+                    link.key_event(usage, True)
+                remote_pressed = desired
+
+            # Drain console events so they are not replayed by PowerShell
+            # after F6. Key state itself comes from GetAsyncKeyState above.
+            while msvcrt.kbhit():
+                msvcrt.getwch()
+            time.sleep(0.002)
     finally:
-        if remote_shift:
-            link.key_event(MOD_LEFT_SHIFT, False)
+        for usage in tuple(remote_pressed):
+            link.key_event(usage, False)
 
 
 DEMO_CODE = bytes.fromhex(
@@ -873,12 +1355,73 @@ def main() -> int:
     subparsers.add_parser("status", help="read the link status")
     subparsers.add_parser("cpu-status", help="measure the active FPGA CPU rate")
     subparsers.add_parser("qlsd-status", help="read the last QL-SD sector diagnostic")
+    subparsers.add_parser("mdv-status", help="read the live Microdrive diagnostic")
     subparsers.add_parser("qdos", help="leave the injected program and restart QDOS")
     subparsers.add_parser("demo", help="inject a bare-metal 68000 test pattern")
     subparsers.add_parser(
         "benchmark", help="load and run the included Sinclair QL Basic benchmark"
     )
     subparsers.add_parser("keyboard", help="use the Windows terminal keyboard")
+
+    subparsers.add_parser(
+        "sd-info", help="check USB access to the NanoQL/Drive1 microSD folder"
+    )
+    sd_list_parser = subparsers.add_parser(
+        "sd-list", help="list files in the NanoQL/Drive1 microSD folder"
+    )
+    sd_list_parser.add_argument("path", nargs="?", default="")
+
+    sd_put_parser = subparsers.add_parser(
+        "sd-put", help="upload a PC file to NanoQL/Drive1"
+    )
+    sd_put_parser.add_argument("source", type=Path)
+    sd_put_parser.add_argument(
+        "destination", nargs="?",
+        help="relative Drive1 path (default: source filename)",
+    )
+
+    sd_get_parser = subparsers.add_parser(
+        "sd-get", help="download a file from NanoQL/Drive1"
+    )
+    sd_get_parser.add_argument("source")
+    sd_get_parser.add_argument(
+        "destination", nargs="?", type=Path,
+        help="local path (default: remote filename)",
+    )
+
+    sd_delete_parser = subparsers.add_parser(
+        "sd-delete", help="delete a file or empty directory from NanoQL/Drive1"
+    )
+    sd_delete_parser.add_argument("path")
+    sd_delete_parser.add_argument(
+        "--yes", action="store_true", help="confirm permanent deletion"
+    )
+
+    sd_mkdir_parser = subparsers.add_parser(
+        "sd-mkdir", help="create a directory in NanoQL/Drive1"
+    )
+    sd_mkdir_parser.add_argument("path")
+
+    sd_build_mdv_parser = subparsers.add_parser(
+        "sd-build-mdv",
+        help="build MDV1.mdv from the loose files in NanoQL/Drive1",
+    )
+    sd_build_mdv_parser.add_argument(
+        "--destination", default="MDV1.mdv",
+        help="relative Drive1 image path (default: MDV1.mdv)",
+    )
+    sd_build_mdv_parser.add_argument(
+        "--name", default="NANOQL", help="QL Microdrive medium name"
+    )
+
+    mdv_sync_parser = subparsers.add_parser(
+        "mdv-sync",
+        help="synchronize a PC folder with MDV1 and restart the QL",
+    )
+    mdv_sync_parser.add_argument("source", type=Path, help="PC folder exposed as MDV1")
+    mdv_sync_parser.add_argument(
+        "--name", default="NANOQL", help="QL Microdrive medium name"
+    )
 
     stress_parser = subparsers.add_parser(
         "link-stress", help="run a non-destructive NanoQL Link USB stress test"
@@ -967,6 +1510,33 @@ def main() -> int:
             print(f"Bytes received: {byte_count}")
             print(f"Sector 0 CRC32: 0x{crc32:08x}")
             print(f"Bytes 4-11: {sample.hex(' ')}")
+        elif args.command == "mdv-status":
+            flags, position, rx_count, read_count, missed_count, \
+                stream_last, read_last = link.mdv_diagnostic()
+            print(f"Microdrive flags: 0x{flags:02x}")
+            print(
+                "Image valid/ready, selected, running, available, GAP, RX, SD read: "
+                + " ".join(
+                    "yes" if flags & (1 << bit) else "no"
+                    for bit in (0, 1, 2, 3, 4, 5, 6, 7)
+                )
+            )
+            print(f"Tape byte position: {position}; RX windows={rx_count}")
+            print(f"68000 data reads: {read_count}")
+            print(
+                f"RX pulses not sampled: {missed_count}; "
+                f"last stream/read byte: {stream_last:02x}/{read_last:02x}"
+            )
+            trace_count, trace = link.mdv_header_trace()
+            print(
+                f"Last header CPU reads: {trace_count}; "
+                f"first bytes: {trace.hex(' ') if trace else '(none)'}"
+            )
+            data_count, data_trace = link.mdv_data_trace()
+            print(
+                f"Last data block CPU reads: {data_count}; "
+                f"first bytes: {data_trace.hex(' ') if data_trace else '(none)'}"
+            )
         elif args.command == "qdos":
             link.qdos()
             print("QDOS restart requested.")
@@ -982,6 +1552,95 @@ def main() -> int:
             interactive_keyboard(link)
         elif args.command == "link-stress":
             run_link_stress(link, args.seconds)
+        elif args.command == "sd-info":
+            capabilities, max_path = link.filesystem_info()
+            print("NanoQL Drive1 is ready.")
+            print(f"Capabilities: 0x{capabilities:02x}; maximum path: {max_path}")
+            print("microSD folder: /NanoQL/Drive1")
+        elif args.command == "sd-list":
+            entries = link.filesystem_list(args.path)
+            location = "/NanoQL/Drive1"
+            if args.path:
+                location += "/" + args.path.replace("\\", "/").strip("/")
+            print(location)
+            for name, size, is_directory in entries:
+                print(f"{'<DIR>' if is_directory else f'{size:10d}'}  {name}")
+            if not entries:
+                print("(empty)")
+        elif args.command == "sd-put":
+            destination = args.destination or args.source.name
+            print(
+                f"Uploading {args.source} to /NanoQL/Drive1/{destination}..."
+            )
+            link.filesystem_put(args.source, destination)
+            print("Upload verified by size and CRC32.")
+        elif args.command == "sd-get":
+            destination = args.destination or Path(
+                args.source.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+            )
+            print(
+                f"Downloading /NanoQL/Drive1/{args.source} to {destination}..."
+            )
+            link.filesystem_get(args.source, destination)
+            print("Download completed.")
+        elif args.command == "sd-delete":
+            if not args.yes:
+                raise RuntimeError("Add --yes to confirm permanent deletion.")
+            link.filesystem_delete(args.path)
+            print(f"Deleted /NanoQL/Drive1/{args.path}.")
+        elif args.command == "sd-mkdir":
+            link.filesystem_mkdir(args.path)
+            print(f"Created /NanoQL/Drive1/{args.path}.")
+        elif args.command == "sd-build-mdv":
+            destination = args.destination.replace("\\", "/").strip("/")
+            remote_path_bytes(destination)
+            with tempfile.TemporaryDirectory(prefix="nanoql-drive1-") as directory:
+                source = Path(directory) / "Drive1"
+                source.mkdir()
+                print("Reading the loose Drive1 files from the microSD...")
+                count = download_drive1_tree(
+                    link, source, excluded_path=destination
+                )
+                files = collect_drive_files(source)
+                image = build_qlay_image(files, args.name)
+                output = Path(directory) / "MDV1.mdv"
+                output.write_bytes(image)
+                print(
+                    f"Built a {len(image)}-byte QLAY image from {count} file(s)."
+                )
+                print(
+                    f"Uploading the cartridge to /NanoQL/Drive1/{destination}..."
+                )
+                link.filesystem_put(output, destination)
+            print("MDV1.mdv is ready; mount it from the Microdrive 1 menu entry.")
+        elif args.command == "mdv-sync":
+            source = args.source.expanduser().resolve()
+            if not source.is_dir():
+                raise NotADirectoryError(source)
+            files = collect_drive_files(source, source / "MDV1.mdv")
+            image = build_qlay_image(files, args.name)
+            with tempfile.TemporaryDirectory(prefix="nanoql-mdv1-") as directory:
+                output = Path(directory) / "MDV1.mdv"
+                output.write_bytes(image)
+                print(
+                    f"Built a {len(image)}-byte MDV1 image from "
+                    f"{len(files)} file(s) in {source}."
+                )
+                link.microdrive_sync_control(False)
+                try:
+                    print("Uploading and verifying MDV1.mdv...")
+                    link.filesystem_put(output, "MDV1.mdv")
+                except Exception:
+                    try:
+                        link.microdrive_sync_control(True)
+                    except Exception:
+                        pass
+                    raise
+                link.microdrive_sync_control(True)
+            print(
+                "MDV1 synchronized, mounted, and saved for future boots. "
+                "The QL has been restarted."
+            )
         elif args.command == "type":
             link.type_text(args.text)
             if args.enter:

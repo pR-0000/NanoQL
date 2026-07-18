@@ -34,6 +34,7 @@ module ql_memory_map(
     output reg  [7:0]  mc_stat_data,
 
     output reg         zx8302_wr,
+    output wire        zx8302_rd,
     output wire [1:0]  zx8302_addr,
     output wire [1:0]  zx8302_ds,
     output wire [15:0] zx8302_wdata,
@@ -138,6 +139,8 @@ module ql_memory_map(
     assign ram_ds = bus_ds;
     assign ram_wdata = bus_wdata;
     assign zx8302_addr = {bus_addr[4], bus_addr[0]};
+    assign zx8302_rd = bus_req && !bus_we && zx8302_selected &&
+                       !io_read_pending;
     assign zx8302_ds = bus_ds;
     assign zx8302_wdata = bus_wdata;
     assign qlsd_access = qlsd_read_pending || (bus_req && qlsd_selected);

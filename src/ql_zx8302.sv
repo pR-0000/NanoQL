@@ -10,7 +10,13 @@ module ql_zx8302 (
     input  wire        ce_bus_n,
     input  wire        vs,
     input  wire [63:0] keyboard_matrix,
+    input  wire        microdrive_gap,
+    input  wire        microdrive_rx_ready,
+    input  wire        microdrive_tx_empty,
+    input  wire [7:0]  microdrive_data,
+    output wire        microdrive_selected,
 
+    input  wire        cpu_read,
     input  wire        cpu_write,
     input  wire [1:0]  cpu_addr,
     input  wire [1:0]  cpu_ds_n,
@@ -36,6 +42,7 @@ module ql_zx8302 (
     reg [1:0] pending_addr;
     reg [1:0] pending_ds_n;
     reg [15:0] pending_din;
+    reg [7:0] microdrive_receive_data;
 
     wire ipc_comdata_in = comdata_reg[0];
     wire ipc_comctrl;
@@ -56,13 +63,7 @@ module ql_zx8302 (
         .ipl(ipc_ipl)
     );
 
-    // The Microdrive datapath is the next peripheral block to integrate.
-    // With no cartridge selected, these are the electrical idle values used
-    // by the reference core's ZX8302 status and interrupt logic.
-    wire microdrive_gap = 1'b1;
-    wire microdrive_rx_ready = 1'b0;
-    wire microdrive_tx_empty = 1'b0;
-    wire [7:0] microdrive_data = 8'h00;
+    assign microdrive_selected = microdrive_select[0];
 
     reg [5:0] rtc_frame_divider;
     reg [31:0] rtc;
@@ -106,7 +107,9 @@ module ql_zx8302 (
             2'b00: cpu_dout = rtc[31:16];
             2'b01: cpu_dout = rtc[15:0];
             2'b10: cpu_dout = {io_status, irq_pending};
-            2'b11: cpu_dout = {microdrive_data, microdrive_data};
+            2'b11: cpu_dout = {
+                microdrive_receive_data, microdrive_receive_data
+            };
             default: cpu_dout = 16'h0000;
         endcase
     end
@@ -129,6 +132,7 @@ module ql_zx8302 (
             pending_addr <= 2'd0;
             pending_ds_n <= 2'b11;
             pending_din <= 16'd0;
+            microdrive_receive_data <= 8'd0;
             cpu_write_done <= 1'b0;
         end else begin
             irq_ack <= 5'd0;
@@ -140,6 +144,14 @@ module ql_zx8302 (
                 pending_ds_n <= cpu_ds_n;
                 pending_din <= cpu_din;
             end
+
+            // Capture the receive byte at the same edge on which the status
+            // register exposes RX ready. NanoQL's synchronous memory bridge
+            // can then complete the later 0x18022 read without observing a
+            // newer tape bit position.
+            if (cpu_read && (cpu_addr == 2'b10) && !cpu_ds_n[1] &&
+                microdrive_rx_ready)
+                microdrive_receive_data <= microdrive_data;
 
             if (ce_bus_n && write_pending && !ipc_comctrl_falling) begin
                 // Preserve a newly arriving write when the previous one is

@@ -26,8 +26,10 @@
     </action>
   </actions>
   <menu label="NanoQL">
-    <fileselector label="QL ROM:" ext="rom;bin" index="0" default="QL.rom"/>
-    <fileselector label="QL-SD image:" ext="win;qxl" index="1"/>
+    <fileselector label="QL ROM:" ext="rom;bin" index="0" default="QL.rom" action="save"/>
+    <fileselector label="QL-SD image:" ext="win;qxl" index="1" action="save"/>
+    <fileselector label="Microdrive 1:" ext="mdv" index="2" action="save"/>
+    <fileselector label="Build MDV1 from:" ext="nqlfolder" index="7" default="/sd/NanoQL/Microdrives"/>
     <list label="Video:" id="A" default="0" action="save">
       <listentry label="Monitor" value="0"/>
       <listentry label="TV" value="1"/>

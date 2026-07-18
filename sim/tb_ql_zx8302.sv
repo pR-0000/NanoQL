@@ -6,20 +6,27 @@ module tb_ql_zx8302;
     always #5 clk = ~clk;
 
     reg ce_bus_n = 1'b0;
+    reg cpu_read = 1'b0;
     reg cpu_write = 1'b0;
     reg [1:0] cpu_addr = 2'd0;
     reg [1:0] cpu_ds_n = 2'b11;
     reg [15:0] cpu_din = 16'd0;
     wire cpu_write_done;
+    wire [15:0] cpu_dout;
     wire audio;
+    reg microdrive_rx_ready = 1'b0;
+    reg [7:0] microdrive_data = 8'd0;
 
     ql_zx8302 dut (
         .clk(clk), .reset(reset), .ce_11m(1'b0),
         .ce_bus_n(ce_bus_n), .vs(1'b0), .keyboard_matrix(64'd0),
-        .cpu_write(cpu_write), .cpu_addr(cpu_addr),
+        .microdrive_gap(1'b1), .microdrive_rx_ready(microdrive_rx_ready),
+        .microdrive_tx_empty(1'b0), .microdrive_data(microdrive_data),
+        .microdrive_selected(),
+        .cpu_read(cpu_read), .cpu_write(cpu_write), .cpu_addr(cpu_addr),
         .cpu_ds_n(cpu_ds_n), .cpu_din(cpu_din),
         .cpu_write_done(cpu_write_done),
-        .cpu_dout(),
+        .cpu_dout(cpu_dout),
         .ipl_n(), .ipc_ready(), .audio(audio)
     );
 
@@ -50,6 +57,23 @@ module tb_ql_zx8302;
     initial begin
         repeat (4) @(posedge clk);
         reset = 1'b0;
+
+        // A status read that observes RX ready must latch its corresponding
+        // byte for the later Microdrive data-register read.
+        @(negedge clk);
+        cpu_addr = 2'b10;
+        cpu_ds_n = 2'b01;
+        microdrive_data = 8'ha5;
+        microdrive_rx_ready = 1'b1;
+        cpu_read = 1'b1;
+        @(negedge clk);
+        cpu_read = 1'b0;
+        microdrive_rx_ready = 1'b0;
+        microdrive_data = 8'h5a;
+        cpu_addr = 2'b11;
+        #1;
+        if (cpu_dout !== 16'ha5a5)
+            $fatal(1, "ZX8302 did not retain the observed Microdrive byte");
 
         // Queue one IPC frame, then make its commit phase coincide with a
         // COMCTRL falling edge. The frame must remain pending.

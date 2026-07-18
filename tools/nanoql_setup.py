@@ -56,6 +56,9 @@ class NanoQLSetup(tk.Tk):
         self.rom_path = tk.StringVar()
         self.sd_path = tk.StringVar()
         self.ipc_path = tk.StringVar()
+        self.mdv_folder = tk.StringVar()
+        self.mdv_name = tk.StringVar(value="NANOQL")
+        self.link_port = tk.StringVar()
         self.gowin_path = tk.StringVar(value=find_gowin())
         self.loader_path = tk.StringVar(value=shutil.which("openFPGALoader") or "")
         self.bitstream_path = tk.StringVar(
@@ -83,13 +86,16 @@ class NanoQLSetup(tk.Tk):
         firmware_tab = ttk.Frame(notebook, padding=16)
         storage_tab = ttk.Frame(notebook, padding=16)
         fpga_tab = ttk.Frame(notebook, padding=16)
+        microdrive_tab = ttk.Frame(notebook, padding=16)
         notebook.add(firmware_tab, text="1. BL616 Companion")
         notebook.add(storage_tab, text="2. ROM and microSD")
         notebook.add(fpga_tab, text="3. FPGA")
+        notebook.add(microdrive_tab, text="4. Developer MDV sync")
 
         self._build_firmware_tab(firmware_tab)
         self._build_storage_tab(storage_tab)
         self._build_fpga_tab(fpga_tab)
+        self._build_microdrive_tab(microdrive_tab)
 
         log_frame = ttk.LabelFrame(self, text="Log", padding=8)
         log_frame.pack(fill="both", expand=False, padx=12, pady=12)
@@ -169,7 +175,7 @@ class NanoQLSetup(tk.Tk):
             parent,
             text=(
                 "The ROM remains private: it is validated and copied as QL.rom. "
-                "nanoql.ini is also created to request automatic mounting."
+                "nanoql.ini and the NanoQL/Drive1 user-file folder are also created."
             ),
             wraplength=760,
         ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
@@ -206,6 +212,38 @@ class NanoQLSetup(tk.Tk):
             text=(
                 "SRAM is temporary and is lost at power-off. Flash is persistent and lets "
                 "the normal BL616 firmware start Companion without a computer."
+            ),
+            wraplength=760,
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
+
+    def _build_microdrive_tab(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(1, weight=1)
+        self._path_row(
+            parent, 0, "PC folder synchronized as MDV1", self.mdv_folder,
+            self._browse_mdv_folder,
+        )
+        ttk.Label(parent, text="Medium name", style="Section.TLabel").grid(
+            row=1, column=0, sticky="w", pady=8
+        )
+        ttk.Entry(parent, textvariable=self.mdv_name, width=16).grid(
+            row=1, column=1, sticky="w", padx=8, pady=8
+        )
+        ttk.Label(parent, text="NanoQL Link port", style="Section.TLabel").grid(
+            row=2, column=0, sticky="w", pady=8
+        )
+        ttk.Entry(parent, textvariable=self.link_port, width=16).grid(
+            row=2, column=1, sticky="w", padx=8, pady=8
+        )
+        self._button(parent, "Synchronize and restart QL", self.sync_microdrive).grid(
+            row=3, column=0, columnspan=3, sticky="w", pady=(18, 8)
+        )
+        ttk.Label(
+            parent,
+            text=(
+                "Optional developer workflow: start NanoQL, briefly press S1 to expose "
+                "NanoQL Link, then synchronize. Normal users can instead copy folders to "
+                "NanoQL/Microdrives on the microSD and select Build MDV1 from: in the F12 "
+                "overlay."
             ),
             wraplength=760,
         ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
@@ -250,6 +288,11 @@ class NanoQLSetup(tk.Tk):
         )
         if path:
             self.ipc_path.set(path)
+
+    def _browse_mdv_folder(self) -> None:
+        path = filedialog.askdirectory(title="Select the folder exposed as MDV1")
+        if path:
+            self.mdv_folder.set(path)
 
     def _browse_gowin(self) -> None:
         path = filedialog.askopenfilename(title="Select gw_sh")
@@ -308,10 +351,28 @@ class NanoQLSetup(tk.Tk):
         if not self.rom_path.get() or not self.sd_path.get():
             messagebox.showerror("Missing fields", "Select the ROM and microSD root.")
             return
-        self._run(
-            [sys.executable, str(TOOLS / "prepare_sd_card.py"), self.rom_path.get(), self.sd_path.get()],
-            "Preparing microSD",
-        )
+        command = [
+            sys.executable, str(TOOLS / "prepare_sd_card.py"),
+            self.rom_path.get(), self.sd_path.get(),
+        ]
+        if self.mdv_folder.get():
+            command.extend([
+                "--mdv-folder", self.mdv_folder.get(),
+                "--mdv-name", self.mdv_name.get(),
+            ])
+        self._run(command, "Preparing microSD")
+
+    def sync_microdrive(self) -> None:
+        if not self.mdv_folder.get():
+            messagebox.showerror("Missing folder", "Select the PC folder exposed as MDV1.")
+            return
+        command = [sys.executable, str(TOOLS / "nanoql_link.py")]
+        if self.link_port.get().strip():
+            command.extend(["--port", self.link_port.get().strip()])
+        command.extend([
+            "mdv-sync", self.mdv_folder.get(), "--name", self.mdv_name.get()
+        ])
+        self._run(command, "Synchronizing MDV1")
 
     def prepare_ipc(self) -> None:
         if not self.ipc_path.get():
@@ -357,14 +418,18 @@ class NanoQLSetup(tk.Tk):
             commands.append(
                 [sys.executable, str(TOOLS / "prepare_ql_ipc_rom.py"), self.ipc_path.get()]
             )
-        commands.append(
-            [
-                sys.executable,
-                str(TOOLS / "prepare_sd_card.py"),
-                self.rom_path.get(),
-                self.sd_path.get(),
-            ]
-        )
+        prepare_sd_command = [
+            sys.executable,
+            str(TOOLS / "prepare_sd_card.py"),
+            self.rom_path.get(),
+            self.sd_path.get(),
+        ]
+        if self.mdv_folder.get():
+            prepare_sd_command.extend([
+                "--mdv-folder", self.mdv_folder.get(),
+                "--mdv-name", self.mdv_name.get(),
+            ])
+        commands.append(prepare_sd_command)
         commands.append([gowin, "build_sd_rom.tcl"])
         self._run_commands(commands, "Preparing microSD and building")
 

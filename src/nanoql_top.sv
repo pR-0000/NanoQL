@@ -91,6 +91,7 @@ module nanoql_top(
     wire zx8301_mc_stat_wr;
     wire [7:0] zx8301_mc_stat_data;
     wire zx8302_wr;
+    wire zx8302_rd;
     wire [1:0] zx8302_addr;
     wire [1:0] zx8302_ds;
     wire [15:0] zx8302_wdata;
@@ -196,11 +197,19 @@ module nanoql_top(
     reg companion_raw_spi_seen;
     wire [63:0] companion_image_size;
     wire [7:0] companion_image_mounted;
+    reg [7:0] companion_image_mounted_delay = 8'd0;
+    reg [7:0] companion_image_mounted_stable = 8'd0;
+    reg [63:0] rom_image_size = 64'd0;
+    reg [63:0] qlsd_image_size = 64'd0;
+    reg [63:0] mdv_image_size = 64'd0;
     wire companion_sd_busy;
     wire companion_sd_done;
     wire companion_sd_byte_valid;
     wire [8:0] companion_sd_byte_addr;
     wire [7:0] companion_sd_byte;
+    wire [7:0] companion_arb_read_start;
+    wire [7:0] companion_arb_write_start;
+    wire [31:0] companion_arb_sector;
     wire rom_sd_read_start;
     wire [31:0] rom_sd_sector;
     wire rom_loader_req;
@@ -233,7 +242,6 @@ module nanoql_top(
     reg [2:0] qlsd_ack_count;
     wire [2:0] companion_sd_source;
     wire [7:0] qlsd_buffer_data;
-    reg qlsd_mount_delay;
     reg qlsd_image_present;
     reg qlsd_read_previous;
     reg qlsd_write_previous;
@@ -250,6 +258,41 @@ module nanoql_top(
     reg [63:0] qlsd_sample;
     reg [8:0] qlsd_last_byte_addr;
     reg qlsd_byte_addr_valid;
+    wire mdv_selected;
+    wire mdv_gap;
+    wire mdv_tx_empty;
+    wire mdv_rx_ready;
+    wire [7:0] mdv_data;
+    wire mdv_image_ready;
+    wire mdv_sd_read_start;
+    wire [31:0] mdv_sd_sector;
+    wire [7:0] mdv_debug_flags;
+    wire [17:0] mdv_debug_byte_position;
+    wire [8:0] mdv_debug_current_sector;
+    wire [1:0] mdv_debug_buffer_valid;
+    wire [8:0] mdv_debug_buffer_sector_0;
+    wire [8:0] mdv_debug_buffer_sector_1;
+    wire [3:0] mdv_debug_bit_counter;
+    wire mdv_debug_header_phase;
+    wire mdv_debug_data_phase;
+    wire [15:0] mdv_debug_rx_count;
+    wire [15:0] mdv_debug_rx_missed_count;
+    wire [7:0] mdv_debug_rx_xor;
+    wire [7:0] mdv_debug_rx_last;
+    wire mdv_cpu_data_read;
+    reg [15:0] mdv_cpu_read_count;
+    reg [7:0] mdv_cpu_read_xor;
+    reg [7:0] mdv_cpu_read_last;
+    reg mdv_header_phase_previous;
+    reg [4:0] mdv_header_work_count;
+    reg [127:0] mdv_header_work_trace;
+    reg [4:0] mdv_header_trace_count;
+    reg [127:0] mdv_header_trace;
+    reg mdv_data_phase_previous;
+    reg [9:0] mdv_data_work_count;
+    reg [127:0] mdv_data_work_trace;
+    reg [9:0] mdv_data_trace_count;
+    reg [127:0] mdv_data_trace;
     wire [7:0] qlsd_status_flags = {
         4'd0,
         qlsd_header == 32'h514c5741,
@@ -393,6 +436,24 @@ module nanoql_top(
         .qlsd_byte_count(qlsd_byte_count),
         .qlsd_crc32(qlsd_crc32),
         .qlsd_sample(qlsd_sample),
+        .mdv_status_flags(mdv_debug_flags),
+        .mdv_byte_position(mdv_debug_byte_position),
+        .mdv_current_sector(mdv_debug_current_sector),
+        .mdv_buffer_valid(mdv_debug_buffer_valid),
+        .mdv_buffer_sector_0(mdv_debug_buffer_sector_0),
+        .mdv_buffer_sector_1(mdv_debug_buffer_sector_1),
+        .mdv_bit_counter(mdv_debug_bit_counter),
+        .mdv_rx_count(mdv_debug_rx_count),
+        .mdv_rx_missed_count(mdv_debug_rx_missed_count),
+        .mdv_rx_xor(mdv_debug_rx_xor),
+        .mdv_rx_last(mdv_debug_rx_last),
+        .mdv_cpu_read_count(mdv_cpu_read_count),
+        .mdv_cpu_read_xor(mdv_cpu_read_xor),
+        .mdv_cpu_read_last(mdv_cpu_read_last),
+        .mdv_cpu_trace_count(mdv_header_trace_count),
+        .mdv_cpu_trace(mdv_header_trace),
+        .mdv_data_trace_count(mdv_data_trace_count),
+        .mdv_data_trace(mdv_data_trace),
         .cpu_speed(companion_cpu_speed),
         .cpu_phase_count(cpu_phase_count),
         .cpu_hold(host_cpu_hold),
@@ -471,6 +532,23 @@ module nanoql_top(
         end
     end
 
+    ql_sd_request_arbiter sd_request_arbiter (
+        .clk(clk_pixel),
+        .reset(video_reset),
+        .rom_read_start(rom_sd_read_start),
+        .rom_sector(rom_sd_sector),
+        .qlsd_read_start(qlsd_bridge_read_pending),
+        .qlsd_write_start(qlsd_bridge_write_pending),
+        .qlsd_sector(qlsd_bridge_lba),
+        .mdv_read_start(mdv_sd_read_start),
+        .mdv_sector(mdv_sd_sector),
+        .sd_busy(companion_sd_busy),
+        .sd_done(companion_sd_done),
+        .sd_read_start(companion_arb_read_start),
+        .sd_write_start(companion_arb_write_start),
+        .sd_sector(companion_arb_sector)
+    );
+
     sd_card #(
         .CLK_DIV(3'd0)
     ) companion_sd_card (
@@ -487,11 +565,9 @@ module nanoql_top(
         .iack(companion_sd_iack),
         .image_size(companion_image_size),
         .image_mounted(companion_image_mounted),
-        .rstart({6'd0, qlsd_bridge_read_pending, rom_sd_read_start}),
-        .wstart({6'd0, qlsd_bridge_write_pending, 1'b0}),
-        .rsector((qlsd_bridge_read_pending || qlsd_bridge_write_pending ||
-                  companion_sd_source == 3'd1) ?
-                 qlsd_bridge_lba : rom_sd_sector),
+        .rstart(companion_arb_read_start),
+        .wstart(companion_arb_write_start),
+        .rsector(companion_arb_sector),
         .rsrc(companion_sd_source),
         .rbusy(companion_sd_busy),
         .rdone(companion_sd_done),
@@ -501,12 +577,28 @@ module nanoql_top(
         .outbyte(companion_sd_byte)
     );
 
+    // sd_card exposes one shared image_size register. Its image_mounted pulse
+    // is raised on the same edge that completes that register, so consumers
+    // must sample the size one cycle later and receive a further delayed
+    // mount pulse. Keep one size per slot so a subsequent mount cannot change
+    // metadata already delivered to another client.
+    always @(posedge clk_pixel) begin
+        companion_image_mounted_delay <= companion_image_mounted;
+        companion_image_mounted_stable <= companion_image_mounted_delay;
+
+        if (companion_image_mounted_delay[0])
+            rom_image_size <= companion_image_size;
+        if (companion_image_mounted_delay[1])
+            qlsd_image_size <= companion_image_size;
+        if (companion_image_mounted_delay[2])
+            mdv_image_size <= companion_image_size;
+    end
+
     always @(posedge clk_pixel) begin
         if (video_reset) begin
             qlsd_ce <= 1'b0;
             qlsd_sd_ack <= 1'b0;
             qlsd_ack_count <= 3'd0;
-            qlsd_mount_delay <= 1'b0;
             qlsd_image_present <= 1'b0;
             qlsd_read_previous <= 1'b0;
             qlsd_write_previous <= 1'b0;
@@ -528,11 +620,10 @@ module nanoql_top(
             // other system cycle provides four samples per fast SPI period,
             // matching the timing margin used by the MiSTer implementation.
             qlsd_ce <= !qlsd_ce;
-            qlsd_mount_delay <= companion_image_mounted[1];
             qlsd_read_previous <= qlsd_sd_read;
             qlsd_write_previous <= qlsd_sd_write;
-            if (companion_image_mounted[1])
-                qlsd_image_present <= companion_image_size != 0;
+            if (companion_image_mounted_stable[1])
+                qlsd_image_present <= qlsd_image_size != 0;
 
             // The Companion protocol expects a request level until the
             // physical transfer starts. Drop only this bridge-level request
@@ -599,6 +690,45 @@ module nanoql_top(
         end
     end
 
+    ql_microdrive_stream microdrive_stream (
+        .clk(clk_pixel),
+        // Rewind and invalidate the two sector buffers on every QL reset.
+        // ql_microdrive_stream deliberately retains the mounted-image
+        // metadata in its reset branch, so the cartridge itself stays in.
+        .reset(ql_system_reset),
+        .selected(mdv_selected),
+        .status_read_ack(zx8302_rd && (zx8302_addr == 2'b10) &&
+                         !zx8302_ds[1]),
+        .image_mounted(companion_image_mounted_stable[2]),
+        .image_size(mdv_image_size),
+        .sd_read_start(mdv_sd_read_start),
+        .sd_sector(mdv_sd_sector),
+        .sd_busy(companion_sd_busy),
+        .sd_done(companion_sd_done),
+        .sd_source(companion_sd_source),
+        .sd_byte_valid(companion_sd_byte_valid),
+        .sd_byte_addr(companion_sd_byte_addr),
+        .sd_byte(companion_sd_byte),
+        .image_ready(mdv_image_ready),
+        .gap(mdv_gap),
+        .tx_empty(mdv_tx_empty),
+        .rx_ready(mdv_rx_ready),
+        .data(mdv_data),
+        .debug_flags(mdv_debug_flags),
+        .debug_byte_position(mdv_debug_byte_position),
+        .debug_current_sector(mdv_debug_current_sector),
+        .debug_buffer_valid(mdv_debug_buffer_valid),
+        .debug_buffer_sector_0(mdv_debug_buffer_sector_0),
+        .debug_buffer_sector_1(mdv_debug_buffer_sector_1),
+        .debug_bit_counter(mdv_debug_bit_counter),
+        .debug_header_phase(mdv_debug_header_phase),
+        .debug_data_phase(mdv_debug_data_phase),
+        .debug_rx_count(mdv_debug_rx_count),
+        .debug_rx_missed_count(mdv_debug_rx_missed_count),
+        .debug_rx_xor(mdv_debug_rx_xor),
+        .debug_rx_last(mdv_debug_rx_last)
+    );
+
     ql_sd_qlromext qlromext (
         .clk(clk_pixel),
         .reset(ql_system_reset),
@@ -618,8 +748,8 @@ module nanoql_top(
         .clk_sys(clk_pixel),
         .reset(video_reset),
         .sdhc(1'b1),
-        .img_mounted(qlsd_mount_delay),
-        .img_size(companion_image_size),
+        .img_mounted(companion_image_mounted_stable[1]),
+        .img_size(qlsd_image_size),
         .sd_lba(qlsd_lba),
         .sd_rd(qlsd_sd_read),
         .sd_wr(qlsd_sd_write),
@@ -639,13 +769,14 @@ module nanoql_top(
         .clk(clk_pixel),
         .reset(video_reset),
         .enable(rom_is_dynamic && sdram_init_done && !sdram_init_fail),
-        .image_mounted(companion_image_mounted[0]),
-        .image_size(companion_image_size),
+        .image_mounted(companion_image_mounted_stable[0]),
+        .image_size(rom_image_size),
         .sd_read_start(rom_sd_read_start),
         .sd_sector(rom_sd_sector),
-        .sd_busy(companion_sd_busy),
-        .sd_done(companion_sd_done),
-        .sd_byte_valid(companion_sd_byte_valid),
+        .sd_busy(companion_sd_busy && companion_sd_source == 3'd0),
+        .sd_done(companion_sd_done && companion_sd_source == 3'd0),
+        .sd_byte_valid(companion_sd_byte_valid &&
+                       companion_sd_source == 3'd0),
         .sd_byte_addr(companion_sd_byte_addr),
         .sd_byte(companion_sd_byte),
         .mem_req(rom_loader_req),
@@ -762,7 +893,10 @@ module nanoql_top(
     ql_timing ql_bus_timing (
         .clk_sys(clk_pixel),
         .reset(ql_system_reset),
-        .enable(cpu_run_enable && (companion_cpu_speed == 2'd0)),
+        // The MiST QL timing model explicitly removes RAM contention while
+        // a Microdrive is selected; retaining it can stall QDOS polling.
+        .enable(cpu_run_enable && (companion_cpu_speed == 2'd0) &&
+                !mdv_selected),
         .ce_bus_p(cpu_ce_bus_p),
         .vblank(ql_native_vblank),
         .cpu_uds(!cpu_uds_n),
@@ -827,6 +961,7 @@ module nanoql_top(
         .mc_stat_wr(zx8301_mc_stat_wr),
         .mc_stat_data(zx8301_mc_stat_data),
         .zx8302_wr(zx8302_wr),
+        .zx8302_rd(zx8302_rd),
         .zx8302_addr(zx8302_addr),
         .zx8302_ds(zx8302_ds),
         .zx8302_wdata(zx8302_wdata),
@@ -843,6 +978,70 @@ module nanoql_top(
         .ram_write_done(mapped_sdram_write_done)
     );
 
+    // Compare the byte windows generated by the cartridge with reads that
+    // have completed at the 68000 data register (0x18022).
+    assign mdv_cpu_data_read = bus_mem_data_valid && !bus_mem_we &&
+                               (bus_mem_addr == 22'h00c011);
+    always @(posedge clk_pixel) begin
+        if (ql_system_reset) begin
+            mdv_cpu_read_count <= 16'd0;
+            mdv_cpu_read_xor <= 8'd0;
+            mdv_cpu_read_last <= 8'd0;
+            mdv_header_phase_previous <= 1'b0;
+            mdv_header_work_count <= 5'd0;
+            mdv_header_work_trace <= 128'd0;
+            mdv_header_trace_count <= 5'd0;
+            mdv_header_trace <= 128'd0;
+            mdv_data_phase_previous <= 1'b0;
+            mdv_data_work_count <= 10'd0;
+            mdv_data_work_trace <= 128'd0;
+            mdv_data_trace_count <= 10'd0;
+            mdv_data_trace <= 128'd0;
+        end else begin
+            mdv_header_phase_previous <= mdv_debug_header_phase;
+            mdv_data_phase_previous <= mdv_debug_data_phase;
+
+            if (!mdv_header_phase_previous && mdv_debug_header_phase) begin
+                mdv_header_work_count <= 5'd0;
+                mdv_header_work_trace <= 128'd0;
+            end else if (mdv_debug_header_phase && mdv_cpu_data_read &&
+                         mdv_header_work_count < 5'd16) begin
+                mdv_header_work_trace[
+                    127 - (mdv_header_work_count * 8) -: 8
+                ] <= bus_mem_data[7:0];
+                mdv_header_work_count <= mdv_header_work_count + 5'd1;
+            end
+
+            if (mdv_header_phase_previous && !mdv_debug_header_phase) begin
+                mdv_header_trace_count <= mdv_header_work_count;
+                mdv_header_trace <= mdv_header_work_trace;
+            end
+
+            if (!mdv_data_phase_previous && mdv_debug_data_phase) begin
+                mdv_data_work_count <= 10'd0;
+                mdv_data_work_trace <= 128'd0;
+            end else if (mdv_debug_data_phase && mdv_cpu_data_read) begin
+                if (mdv_data_work_count < 10'd16)
+                    mdv_data_work_trace[
+                        127 - (mdv_data_work_count[3:0] * 8) -: 8
+                    ] <= bus_mem_data[7:0];
+                if (mdv_data_work_count != 10'h3ff)
+                    mdv_data_work_count <= mdv_data_work_count + 10'd1;
+            end
+
+            if (mdv_data_phase_previous && !mdv_debug_data_phase) begin
+                mdv_data_trace_count <= mdv_data_work_count;
+                mdv_data_trace <= mdv_data_work_trace;
+            end
+
+            if (mdv_cpu_data_read) begin
+                mdv_cpu_read_count <= mdv_cpu_read_count + 16'd1;
+                mdv_cpu_read_xor <= mdv_cpu_read_xor ^ bus_mem_data[7:0];
+                mdv_cpu_read_last <= bus_mem_data[7:0];
+            end
+        end
+    end
+
     ql_zx8302 zx8302 (
         .clk(clk_pixel),
         .reset(ql_system_reset),
@@ -850,6 +1049,12 @@ module nanoql_top(
         .ce_bus_n(cpu_ce_bus_n),
         .vs(ql_native_vs),
         .keyboard_matrix(companion_keyboard_matrix),
+        .microdrive_gap(mdv_gap),
+        .microdrive_rx_ready(mdv_rx_ready),
+        .microdrive_tx_empty(mdv_tx_empty),
+        .microdrive_data(mdv_data),
+        .microdrive_selected(mdv_selected),
+        .cpu_read(zx8302_rd),
         .cpu_write(zx8302_wr),
         .cpu_addr(zx8302_addr),
         .cpu_ds_n(zx8302_ds),

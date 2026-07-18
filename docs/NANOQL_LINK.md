@@ -37,11 +37,43 @@ Le script PC est `tools/nanoql_link.py`. Le firmware unifié est construit à pa
 2. Démarrez normalement NanoQL et attendez QDOS.
 3. Reliez l'USB-C de la carte au PC avec un câble de données, attendez le démarrage du FPGA, puis appuyez brièvement sur S1.
 4. Attendez l'apparition du port série `NanoQL Link`, puis exécutez `python tools/nanoql_link.py --port COMx status`.
-5. Utilisez `python tools/nanoql_link.py --port COMx keyboard` pour le clavier distant ou `python tools/nanoql_link.py --port COMx demo` pour la mire bare-metal. Le profil QL est choisi automatiquement d'après la disposition Windows ; `--ql-layout fr` et `--ql-layout uk` permettent de le forcer.
+5. Utilisez `python tools/nanoql_link.py --port COMx keyboard` pour le clavier distant ou `python tools/nanoql_link.py --port COMx demo` pour la mire bare-metal. Le profil QL est choisi automatiquement d'après la disposition Windows ; `--ql-layout fr` et `--ql-layout uk` permettent de le forcer. Le clavier distant traduit les caractères vers la disposition de la ROM choisie et maintient les touches dans la matrice QL jusqu'à leur relâchement, ce qui permet les jeux et les appuis simultanés.
 
 La démo arrête QDOS, charge un court programme 68000 à `0x030000`, écrit une seule fois une bande verte de 32 lignes au centre de la VRAM, puis s'arrête sur une boucle locale. Elle évite ainsi de saturer l'arbitre SDRAM pendant le balayage HDMI. Utilisez `python tools/nanoql_link.py --port COMx qdos` pour quitter le programme injecté et redémarrer QDOS. Un redémarrage électrique restaure le mode USB hôte normal.
 
 La commande `python tools/nanoql_link.py --port COMx cpu-status` affiche le mode CPU actif et mesure sa fréquence effective. Pour vérifier la stabilité USB sans modifier l'état du QL, exécutez `python tools/nanoql_link.py --port COMx link-stress` ; le test dure 30 secondes par défaut.
+
+### Utiliser un dossier comme Microdrive
+
+Le chemin recommandé ne nécessite ni NanoQL Link ni connexion au PC. Sur la microSD, créez un sous-dossier par cartouche dans `NanoQL/Microdrives`, par exemple `NanoQL/Microdrives/Benchmark`, puis placez-y les fichiers QL. Dans l'overlay `F12`, choisissez **Build MDV1 from:** puis `Benchmark`. Le BL616 convertit récursivement ce dossier en image QLAY, monte celle-ci comme `mdv1_` pour la session en cours et redémarre uniquement le QL.
+
+Les sous-dossiers sont aplatis avec `_` ; `tests/README.md` devient `tests_README_md`. Les noms résultants doivent utiliser des caractères ASCII et tenir sur 36 caractères. La conversion accepte au plus 126 fichiers et huit niveaux de sous-dossiers. Une image QLAY mesure toujours 174 930 octets, mais 253 secteurs de 512 octets seulement sont allouables aux en-têtes et aux données. La condition exacte est `ceil((nombre_fichiers + 1) × 64 / 512) + somme(ceil((taille_fichier + 64) / 512)) <= 253` ; un fichier unique peut donc contenir au plus 128 960 octets. À l'invite QDOS, utilisez `DIR mdv1_`, puis par exemple `LRUN mdv1_programme_bas`.
+
+Cette première implémentation Microdrive est en lecture seule. `DIR`, `LOAD`, `LRUN` et la lecture de fichiers fonctionnent, mais les créations et modifications faites par QDOS ne sont pas encore enregistrées dans le dossier source.
+
+### Gérer les fichiers de la microSD en mode développeur
+
+Le dossier utilisateur est `NanoQL/Drive1` sur la microSD. Il est créé automatiquement par l'outil de préparation et peut être rempli directement depuis Windows, Linux ou macOS. En mode NanoQL Link, les mêmes fichiers sont accessibles sans retirer la carte :
+
+```text
+python tools/nanoql_link.py --port COMx sd-list
+python tools/nanoql_link.py --port COMx sd-put programme_bin
+python tools/nanoql_link.py --port COMx sd-get programme_bin
+python tools/nanoql_link.py --port COMx sd-mkdir demos
+python tools/nanoql_link.py --port COMx sd-delete ancien_bin --yes
+```
+
+`sd-put` accepte un second argument pour choisir un chemin relatif, par exemple `sd-put programme_bin demos/programme_bin`. Le firmware limite toutes les opérations à `NanoQL/Drive1`. Un upload est d'abord écrit dans un fichier temporaire, vérifié par sa taille et son CRC32, puis renommé.
+
+Pour synchroniser directement un dossier du PC sans retirer la carte, utilisez la commande développeur :
+
+```text
+python tools/nanoql_link.py --port COMx mdv-sync chemin/vers/dossier --name NANOQL
+```
+
+La commande convertit récursivement le dossier en cartouche QLAY, démonte proprement l'ancienne image, envoie et vérifie `MDV1.mdv`, la remonte pour la session en cours, puis redémarre uniquement le QL. L'onglet **4. Microdrive** de `python tools/nanoql_setup.py` réalise la même opération sans ligne de commande.
+
+Le dossier du PC n'est pas un partage en temps réel : relancez `mdv-sync` après chaque modification. La commande avancée `sd-build-mdv` reste disponible pour reconstruire une image à partir des fichiers déjà présents dans `NanoQL/Drive1`.
 
 ### Charger un programme SuperBASIC
 
@@ -89,9 +121,41 @@ This CDC device is not the official FPGA Partner firmware's dual-channel `SIPEED
 
 The PC utility is `tools/nanoql_link.py`. Unified firmware sources are in `firmware/bl616/nanoql_companion` and support board revisions 3921 and 3923.
 
-Flash the matching unified BL616 firmware once, boot NanoQL normally, connect the board to the PC with a USB data cable, wait for FPGA startup, and briefly press S1. Once the `NanoQL Link` serial port appears, run `python tools/nanoql_link.py --port COMx status`, followed by either `keyboard` or `demo`. Keyboard mode automatically selects the QL layout from the active Windows layout; `--ql-layout fr` and `--ql-layout uk` override it. The demo writes one central 32-line green band and then stops writing SDRAM. Use the `qdos` command to leave injected code and restart QDOS. A power cycle restores normal USB-host mode.
+Flash the matching unified BL616 firmware once, boot NanoQL normally, connect the board to the PC with a USB data cable, wait for FPGA startup, and briefly press S1. Once the `NanoQL Link` serial port appears, run `python tools/nanoql_link.py --port COMx status`, followed by either `keyboard` or `demo`. Keyboard mode automatically selects the QL layout from the active Windows layout; `--ql-layout fr` and `--ql-layout uk` override it. It translates printable characters for the selected ROM layout and holds every key in the QL matrix until release, allowing games and simultaneous inputs. The demo writes one central 32-line green band and then stops writing SDRAM. Use the `qdos` command to leave injected code and restart QDOS. A power cycle restores normal USB-host mode.
 
 Run `python tools/nanoql_link.py --port COMx cpu-status` to display the selected CPU mode and measure its effective clock rate. The non-destructive `python tools/nanoql_link.py --port COMx link-stress` command checks USB stability for 30 seconds by default.
+
+### Using a folder as a Microdrive
+
+The recommended path requires neither NanoQL Link nor a PC connection. Create one cartridge subfolder under `NanoQL/Microdrives` on the microSD, for example `NanoQL/Microdrives/Benchmark`, and place the QL files inside it. In the `F12` overlay, select **Build MDV1 from:** and then `Benchmark`. The BL616 recursively converts that folder to a QLAY image, mounts it as `mdv1_` for the current session, and resets only the QL.
+
+Subdirectories are flattened with `_`; for example, `tests/README.md` becomes `tests_README_md`. Resulting names must be ASCII and no longer than 36 characters. Conversion accepts up to 126 files and eight nested directory levels. A QLAY image is always 174,930 bytes, but only 253 512-byte sectors are allocatable to headers and data. The exact condition is `ceil((file_count + 1) × 64 / 512) + sum(ceil((file_size + 64) / 512)) <= 253`; a single file can therefore contain at most 128,960 bytes. At the QDOS prompt, enter `DIR mdv1_`, followed by a command such as `LRUN mdv1_program_bas`.
+
+This initial Microdrive implementation is read-only. `DIR`, `LOAD`, `LRUN`, and file reads work, but files created or modified by QDOS are not yet written back to the source folder.
+
+### Managing microSD files in development mode
+
+The user folder is `NanoQL/Drive1` on the microSD. The preparation tool creates it automatically, and users can populate it directly from Windows, Linux, or macOS. NanoQL Link provides access without removing the card:
+
+```text
+python tools/nanoql_link.py --port COMx sd-list
+python tools/nanoql_link.py --port COMx sd-put program_bin
+python tools/nanoql_link.py --port COMx sd-get program_bin
+python tools/nanoql_link.py --port COMx sd-mkdir demos
+python tools/nanoql_link.py --port COMx sd-delete old_bin --yes
+```
+
+Pass a second argument to `sd-put` to select a relative destination such as `sd-put program_bin demos/program_bin`. The firmware confines every operation to `NanoQL/Drive1`. Uploads use a temporary file and are verified by size and CRC32 before the final rename.
+
+To synchronize a PC folder directly without removing the card, use the developer command:
+
+```text
+python tools/nanoql_link.py --port COMx mdv-sync path/to/folder --name NANOQL
+```
+
+The command recursively converts the folder to a QLAY cartridge, safely unmounts the previous image, uploads and verifies `MDV1.mdv`, mounts it for the current session, and resets only the QL. The **4. Microdrive** tab in `python tools/nanoql_setup.py` provides the same operation without a command line.
+
+This is a synchronization operation rather than a live PC share, so rerun `mdv-sync` after changing the source folder. The advanced `sd-build-mdv` command remains available to rebuild an image from files already stored under `NanoQL/Drive1`.
 
 To load a numbered SuperBASIC text file, leave the QL at its SuperBASIC prompt and run `python tools/nanoql_link.py --port COMx basic path/to/program_bas`. NanoQL Link enters `NEW`, sends every source line through the remote keyboard so QDOS performs its own ROM-compatible tokenization, and then enters `RUN`. Add `--no-run` to load only. The included MIT-licensed benchmark has the experimental shortcut `python tools/nanoql_link.py --port COMx benchmark`. Remote typing is a development convenience; prefer QL-SD for reliable program transfer and execution.
 

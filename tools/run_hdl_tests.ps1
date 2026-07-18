@@ -32,6 +32,34 @@ $memoryMapOutput = Join-Path $env:TEMP "nanoql_memory_map_ram.vvp"
 $cpuPhaseOutput = Join-Path $env:TEMP "nanoql_cpu_phase.vvp"
 $qlromextOutput = Join-Path $env:TEMP "nanoql_qlromext.vvp"
 $qlsdBufferOutput = Join-Path $env:TEMP "nanoql_qlsd_buffer.vvp"
+$microdriveOutput = Join-Path $env:TEMP "nanoql_microdrive_stream.vvp"
+$sdArbiterOutput = Join-Path $env:TEMP "nanoql_sd_request_arbiter.vvp"
+
+& $iverilog -g2012 -s tb_ql_sd_request_arbiter -o $sdArbiterOutput `
+    (Join-Path $projectRoot "sim\tb_ql_sd_request_arbiter.sv") `
+    (Join-Path $projectRoot "src\ql_sd_request_arbiter.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "SD request arbiter simulation compilation failed."
+}
+
+& $vvp $sdArbiterOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "SD request arbiter simulation failed."
+}
+
+& $iverilog -g2012 -s tb_ql_microdrive_stream -o $microdriveOutput `
+    (Join-Path $projectRoot "sim\tb_ql_microdrive_stream.sv") `
+    (Join-Path $projectRoot "src\ql_microdrive_stream.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Microdrive stream simulation compilation failed."
+}
+
+& $vvp $microdriveOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "Microdrive stream simulation failed."
+}
 
 & $iverilog -g2012 -s tb_ql_sd_card_buffer -o $qlsdBufferOutput `
     (Join-Path $projectRoot "sim\tb_ql_sd_card_buffer.sv") `

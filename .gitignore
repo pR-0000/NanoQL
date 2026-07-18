@@ -38,6 +38,10 @@ ipc*.hex
 *_rom.hex
 
 # Logs and temporary files
+tmp/
+temp/
+*.swp
+*.swo
 *.log
 *.jou
 *.bak

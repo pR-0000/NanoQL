@@ -1,5 +1,5 @@
 diff --git a/src/bl616/CMakeLists.txt b/src/bl616/CMakeLists.txt
-index e659f09..6165f9d 100644
+index e659f09..56a0b1d 100644
 --- a/src/bl616/CMakeLists.txt
 +++ b/src/bl616/CMakeLists.txt
 @@ -17,7 +17,7 @@ set(CONFIG_CHERRYUSB_HOST_MSC 1)
@@ -11,21 +11,23 @@ index e659f09..6165f9d 100644
  set(CONFIG_BSP_SDH_SD 1)
  set(CONFIG_BSP_SDH_SDCARD 1)
  set(CONFIG_BSP_SDH_OSAL_POLLING_MODE 0)
-@@ -32,6 +32,10 @@ set(CONFIG_VSNPRINTF_FLOAT_EX   1)
+@@ -32,6 +32,11 @@ set(CONFIG_VSNPRINTF_FLOAT_EX   1)
  set(CONFIG_VSNPRINTF_LONG_LONG  1)
  set(CONFIG_CLI_CMD_ENABLE 1)
  
 +if(NANOQL_LINK_ONLY)
 +    add_definitions(-DNANOQL_LINK_ONLY)
 +endif()
++add_definitions(-DNANOQL_COMPANION)
 +
  # wifi support
  set(CONFIG_LWIP 1)
  set(CONFIG_WIFI6 1)
-@@ -128,6 +132,7 @@ sdk_add_include_directories(. ../u8g2/csrc)
+@@ -128,6 +133,8 @@ sdk_add_include_directories(. ../u8g2/csrc)
  
  target_sources(app PRIVATE
     	mcu_hw.c
++    nanoql_drive.c
 +    nanoql_usb.c
     	../hidparser.c
     	../hid.c
@@ -222,6 +224,24 @@ index bf062aa..21409f7 100644
  void gowin_fpgaReset(void);
  
  #endif // GOWIN_H
+diff --git a/src/inifile.c b/src/inifile.c
+index 5f5fb8e..efbe294 100644
+--- a/src/inifile.c
++++ b/src/inifile.c
+@@ -214,6 +214,13 @@ void inifile_write(char *name) {
+       char *cwd = sdc_get_cwd(drive);
+       char *image = sdc_get_image_name(drive);
+ 
++#ifdef NANOQL_COMPANION
++      // Folder-built MDV1 is a runtime cartridge. Persisting it as drive2
++      // makes the generic INI loader mount it too early on the next boot.
++      if(drive == 2 && image && strcasecmp(image, "MDV1.mdv") == 0)
++        continue;
++#endif
++
+       if(cwd && image) {
+ 	char str[strlen(cwd) + strlen(image) + 12];
+ #ifdef INIFILE_PREFIX
 diff --git a/src/jtag.c b/src/jtag.c
 index ff136f6..6ee5216 100644
 --- a/src/jtag.c
@@ -321,10 +341,10 @@ index 7880ac8..9ed8b21 100644
    mcu_hw_main_loop();
  
 diff --git a/src/mcu_hw.h b/src/mcu_hw.h
-index a53cf9f..777a0de 100644
+index ce608d5..c5648fe 100644
 --- a/src/mcu_hw.h
 +++ b/src/mcu_hw.h
-@@ -50,7 +50,7 @@ char mcu_hw_wifi_scan_start(mcu_hw_wifi_scan_cb_func);
+@@ -41,7 +41,7 @@ bool mcu_hw_tcp_data(unsigned char byte);
  #define PIN_TF_SDIO_SEL GPIO_PIN_16
  #define DIRECT_SDC_SUPPORTED
  #endif
@@ -334,10 +354,21 @@ index a53cf9f..777a0de 100644
  uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len);
  void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
 diff --git a/src/menu.c b/src/menu.c
-index 5b8883d..f33d576 100644
+index 5b8883d..281c9d1 100644
 --- a/src/menu.c
 +++ b/src/menu.c
-@@ -448,9 +448,9 @@ static void menu_draw_title(const char *s, bool arrow, bool selected) {
+@@ -33,6 +33,10 @@
+ #include "debug.h"
+ #include "mcu_hw.h"
+ 
++#ifdef NANOQL_COMPANION
++#include "nanoql_drive.h"
++#endif
++
+ #ifdef ENABLE_BLUETOOTH
+ #include "bluetooth.h"
+ #endif
+@@ -448,9 +452,9 @@ static void menu_draw_title(const char *s, bool arrow, bool selected) {
      // "single button" mode
    
      // no arrow? Then this is the root menu. In that case
@@ -350,6 +381,189 @@ index 5b8883d..f33d576 100644
    }
    
    // draw title in bold and seperator line
+@@ -742,6 +746,16 @@ static void menu_file_selector_open(config_menu_entry_t *entry) {
+     fsel_state.none_icn = NULL;
+     fsel_state.action = entry->fsel->action;
+   }
++
++#ifdef NANOQL_COMPANION
++  if(fsel_state.index == NANOQL_MDV_FOLDER_INDEX) {
++    if(nanoql_drive_prepare_root() != NANOQL_DRIVE_OK) {
++      menu_draw_dialog("Microdrive Error", "microSD folder unavailable.");
++      return;
++    }
++    sdc_set_cwd(fsel_state.index, NANOQL_MDV_SOURCE_ROOT);
++  }
++#endif
+     
+   // The file selector usually works on the sd card as that is what
+   // the cores are reading data from. But cores may be loaded from
+@@ -824,6 +838,38 @@ static void menu_fileselector_select(sdc_dir_entry_t *entry) {
+     
+   // stop any scroll timer that might be running
+   menu_timer_enable(false);
++
++#ifdef NANOQL_COMPANION
++  if(drive == NANOQL_MDV_FOLDER_INDEX && entry->is_dir) {
++    if(entry->name[0] == '/' || strcmp(entry->name, "..") == 0) {
++      menu_pop();
++      return;
++    }
++
++    char source[FF_LFN_BUF + 1];
++    int length = snprintf(source, sizeof(source), "%s/%s",
++                          sdc_get_cwd(drive), entry->name);
++    if(length < 0 || length >= (int)sizeof(source)) {
++      menu_draw_dialog("Microdrive Error", "Folder path is too long.");
++      return;
++    }
++
++    menu_draw_dialog("Building MDV1", "Reading the selected folder ...");
++    // Stop QDOS before the converter atomically replaces the old cartridge.
++    // sdc_image_open() ejects and drains the mounted image before closing it.
++    sys_set_val('R', 1);
++    int result = nanoql_drive_build_folder(source);
++    if(result != NANOQL_DRIVE_OK) {
++      sys_set_val('R', 0);
++      menu_draw_dialog("Microdrive Error", nanoql_drive_result_text(result));
++      return;
++    }
++
++    menu_pop();
++    sys_run_action_by_name("reset");
++    return;
++  }
++#endif
+     
+   if(entry->is_dir) {
+     if(entry->name[0] == '/') {
+diff --git a/src/sdc.c b/src/sdc.c
+index 1964d93..b103b89 100644
+--- a/src/sdc.c
++++ b/src/sdc.c
+@@ -31,6 +31,7 @@
+ #include "mcu_hw.h"
+ 
+ static SemaphoreHandle_t sdc_sem;
++static bool sdc_initialized;
+ 
+ static FATFS fs;
+ 
+@@ -163,10 +164,14 @@ static SDC_RESULT sdc_ioctl(BYTE cmd, void *buff) {
+   sdc_debugf("sdc_ioctl(%d,%p)", cmd, buff);
+ 
+   switch(cmd) {
++  case CTRL_SYNC:
++    // Sector writes complete before sdc_write() returns, so there is no
++    // deferred device cache to flush.
++    return RES_OK;
++
+   case GET_SECTOR_SIZE:
+     *((WORD*) buff) = 512;
+     return RES_OK;
+-    break;
+   }
+   
+   return RES_ERROR;
+@@ -608,6 +613,39 @@ static int sdc_image_inserted(char drive, FSIZE_t size) {
+   return 0;
+ }
+ 
++#ifdef NANOQL_COMPANION
++static unsigned char sdc_pending_drive_requests(void) {
++  sdc_spi_begin();
++  mcu_hw_spi_tx_u08(SPI_SDC_STATUS);
++  mcu_hw_spi_tx_u08(0);
++  unsigned char request = mcu_hw_spi_tx_u08(0);
++  for(int i=0;i<4;i++) (void)mcu_hw_spi_tx_u08(0);
++  mcu_hw_spi_end();
++  return request;
++}
++
++static int sdc_quiesce_nanoql_microdrive(int drive) {
++  // Keep the old FIL alive while the FPGA observes the ejection and any
++  // translated request raised just before reset is completed.
++  sdc_image_inserted(drive, 0);
++  vTaskDelay(pdMS_TO_TICKS(20));
++
++  int quiet = 0;
++  for(int attempt=0; attempt<32 && quiet<4; attempt++) {
++    unsigned char request = sdc_pending_drive_requests();
++    if(request & (1u << drive)) {
++      (void)sdc_handle_event();
++      quiet = 0;
++    } else {
++      quiet++;
++    }
++    vTaskDelay(pdMS_TO_TICKS(2));
++  }
++
++  return quiet == 4 ? 0 : -1;
++}
++#endif
++
+ static void sdc_rom_image_selected(char image, FSIZE_t size) {
+   // ignore de-selection of a deselected image
+   if(!fil[MAX_DRIVES+image].flag && !size) return;  
+@@ -668,6 +706,12 @@ int sdc_image_open(int drive, char *name) {
+ 
+   // close any file that may be open for this drive
+   if(fil[drive].flag) {
++#ifdef NANOQL_COMPANION
++    // NanoQL uses drive 2 for MDV1.mdv. It may already be mounted from
++    // nanoql.ini when a folder is rebuilt, so drain it before closing.
++    if(drive == 2 && sdc_quiesce_nanoql_microdrive(drive) != 0)
++      return -1;
++#endif
+     sdc_debugf("%s %d: closing file '%s'", (drive < MAX_DRIVES)?"DRV":"IMG",
+ 	       (drive < MAX_DRIVES)?drive:(drive-MAX_DRIVES),
+ 	       image_name[drive]?image_name[drive]:"<unknown>");
+@@ -978,6 +1022,7 @@ sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *ext) {
+ 
+ int sdc_init(void) {
+   sdc_sem = xSemaphoreCreateMutex();
++  sdc_initialized = sdc_sem != NULL;
+ 
+   sdc_debugf("---- SDC init ----");
+ 
+@@ -1001,6 +1046,10 @@ int sdc_init(void) {
+  return 0;
+ }
+ 
++bool sdc_is_initialized(void) {
++  return sdc_initialized;
++}
++
+ void sdc_set_cwd(int drive, char *path) {
+   sdc_debugf("Setting cwd[%d] to %s", drive, path);
+   
+@@ -1014,6 +1063,14 @@ void sdc_mount_defaults(void) {
+   // try to mount (default) images
+   for(int drive=0;drive<MAX_DRIVES+MAX_IMAGES;drive++) {
+     char *name = sdc_get_image_name(drive);
++#ifdef NANOQL_COMPANION
++    // Older NanoQL INI files may contain the generated cartridge as drive2.
++    // Clear that legacy default; the folder builder mounts it at runtime.
++    if(drive == 2 && name && strcasecmp(name, "MDV1.mdv") == 0) {
++      (void)sdc_image_open(drive, NULL);
++      name = NULL;
++    }
++#endif
+     sdc_debugf("Processing %s %d: %s",
+ 	       (drive<MAX_DRIVES)?"drive":"image",
+ 	       (drive<MAX_DRIVES)?drive:(drive-MAX_DRIVES),
+diff --git a/src/sdc.h b/src/sdc.h
+index 3e1ba7f..b87d955 100644
+--- a/src/sdc.h
++++ b/src/sdc.h
+@@ -16,6 +16,7 @@ typedef struct sdc_dir {
+ } sdc_dir_entry_t;
+ 
+ int sdc_init(void);
++bool sdc_is_initialized(void);
+ int sdc_image_open(int drive, char *name);
+ sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *exts);
+ int sdc_handle_event(void);
 diff --git a/src/sysctrl.c b/src/sysctrl.c
 index 8a1d83e..2d57e93 100644
 --- a/src/sysctrl.c

@@ -26,9 +26,11 @@
 
 #include "../debug.h"
 #include "../gowin.h"
+#include "../inifile.h"
 #include "../mcu_hw.h"
 #include "../menu.h"
 #include "../osd.h"
+#include "../sdc.h"
 #include "../spi.h"
 #include "../sysctrl.h"
 #include "nanoql_usb.h"
@@ -54,12 +56,33 @@
 #define NANOQL_SPI_TARGET 4
 #define NANOQL_S1_MASK 0x01
 #define NANOQL_CMD_KEY 0x05
+#define NANOQL_CMD_FS_INFO 0xe0
+#define NANOQL_CMD_FS_LIST_BEGIN 0xe1
+#define NANOQL_CMD_FS_LIST_NEXT 0xe2
+#define NANOQL_CMD_FS_PUT_BEGIN 0xe3
+#define NANOQL_CMD_FS_PUT_DATA 0xe4
+#define NANOQL_CMD_FS_PUT_COMMIT 0xe5
+#define NANOQL_CMD_FS_GET_BEGIN 0xe6
+#define NANOQL_CMD_FS_GET_DATA 0xe7
+#define NANOQL_CMD_FS_GET_END 0xe8
+#define NANOQL_CMD_FS_DELETE 0xe9
+#define NANOQL_CMD_FS_MKDIR 0xea
+#define NANOQL_CMD_FS_CANCEL 0xeb
+#define NANOQL_CMD_FS_MDV_CONTROL 0xec
 #define NANOQL_CMD_FPGA_BEGIN 0xf0
 #define NANOQL_CMD_FPGA_DATA 0xf1
 #define NANOQL_CMD_FPGA_PROGRAM 0xf2
 #define NANOQL_CMD_FPGA_FLASH_BEGIN 0xf3
 #define NANOQL_CMD_FPGA_FLASH_PROGRAM 0xf4
 #define NANOQL_FPGA_MAX_SIZE (2u * 1024u * 1024u)
+
+#define NANOQL_FS_ROOT CARD_MOUNTPOINT "/NanoQL/Drive1"
+#define NANOQL_FS_TEMP CARD_MOUNTPOINT "/NQLTMP.BIN"
+#define NANOQL_FS_BACKUP CARD_MOUNTPOINT "/NQLBAK.BIN"
+#define NANOQL_FS_MAX_REMOTE_PATH 200
+#define NANOQL_FS_FULL_PATH_SIZE \
+    (sizeof(NANOQL_FS_ROOT) + NANOQL_FS_MAX_REMOTE_PATH + 1)
+#define NANOQL_FS_CHUNK_SIZE 240
 
 #define RX_RING_SIZE 2048
 #define USB_CONFIG_SIZE (9 + CDC_ACM_DESCRIPTOR_LEN)
@@ -79,11 +102,32 @@ static volatile bool usb_ready;
 static volatile bool usb_tx_busy;
 static volatile bool usb_rx_reset_requested;
 static bool fpga_upload_open;
+static bool companion_suspended_for_upload;
 static uint32_t fpga_upload_size;
 static uint32_t fpga_upload_received;
 static uint32_t fpga_upload_crc;
 static uint32_t fpga_upload_expected_crc;
 static bool return_to_companion_pending;
+static bool microdrive_reset_pending;
+static bool microdrive_ql_held;
+
+enum nanoql_fs_session {
+    NANOQL_FS_IDLE,
+    NANOQL_FS_LISTING,
+    NANOQL_FS_PUTTING,
+    NANOQL_FS_GETTING
+};
+
+static enum nanoql_fs_session fs_session;
+static FIL fs_file;
+static DIR fs_directory;
+static char fs_target_path[NANOQL_FS_FULL_PATH_SIZE];
+static uint32_t fs_expected_size;
+static uint32_t fs_expected_crc;
+static uint8_t fs_verify_buffer[512];
+
+static void fpga_upload_suspend_companion(void);
+static void fpga_upload_resume_companion(void);
 
 static const uint8_t device_descriptor[] = {
     USB_DEVICE_DESCRIPTOR_INIT(
@@ -290,12 +334,549 @@ static uint32_t crc32_update(
     return value;
 }
 
+static void write_be32(uint8_t *data, uint32_t value)
+{
+    data[0] = (uint8_t)(value >> 24);
+    data[1] = (uint8_t)(value >> 16);
+    data[2] = (uint8_t)(value >> 8);
+    data[3] = (uint8_t)value;
+}
+
+static uint8_t fs_error_from_result(FRESULT result)
+{
+    switch (result) {
+    case FR_OK:
+        return 0;
+    case FR_NOT_READY:
+    case FR_NO_FILESYSTEM:
+    case FR_INVALID_DRIVE:
+        return 20;
+    case FR_INVALID_NAME:
+        return 21;
+    case FR_NO_FILE:
+    case FR_NO_PATH:
+        return 25;
+    case FR_EXIST:
+        return 26;
+    case FR_WRITE_PROTECTED:
+        return 28;
+    case FR_DENIED:
+        return 29;
+    default:
+        return (uint8_t)(0x40 | ((uint8_t)result & 0x1f));
+    }
+}
+
+static bool fs_result_is_transient(FRESULT result)
+{
+    return result == FR_DISK_ERR || result == FR_INT_ERR;
+}
+
+static FRESULT fs_mkdir_retry_locked(const char *path)
+{
+    FRESULT result = FR_DISK_ERR;
+    for (unsigned attempt = 0; attempt < 3; ++attempt) {
+        result = f_mkdir(path);
+        if (!fs_result_is_transient(result))
+            break;
+        bflb_mtimer_delay_ms(20);
+    }
+    return result;
+}
+
+static FRESULT fs_open_retry_locked(FIL *file, const char *path, BYTE mode)
+{
+    FRESULT result = FR_DISK_ERR;
+    for (unsigned attempt = 0; attempt < 3; ++attempt) {
+        result = f_open(file, path, mode);
+        if (!fs_result_is_transient(result))
+            break;
+        bflb_mtimer_delay_ms(20);
+    }
+    return result;
+}
+
+static bool fs_make_path(
+    const uint8_t *remote, uint8_t remote_length, char *full_path)
+{
+    if (remote_length > NANOQL_FS_MAX_REMOTE_PATH)
+        return false;
+
+    size_t root_length = strlen(NANOQL_FS_ROOT);
+    memcpy(full_path, NANOQL_FS_ROOT, root_length);
+    if (remote_length == 0) {
+        full_path[root_length] = '\0';
+        return true;
+    }
+
+    if (remote[0] == '/' || remote[remote_length - 1] == '/')
+        return false;
+
+    size_t component_start = 0;
+    for (size_t index = 0; index <= remote_length; ++index) {
+        if (index != remote_length && remote[index] != '/') {
+            uint8_t character = remote[index];
+            if (character < 0x20 || character > 0x7e ||
+                character == '\\' || character == ':' || character == '*' ||
+                character == '?' || character == '"' || character == '<' ||
+                character == '>' || character == '|')
+                return false;
+            continue;
+        }
+
+        size_t component_length = index - component_start;
+        if (component_length == 0 ||
+            (component_length == 1 && remote[component_start] == '.') ||
+            (component_length == 2 && remote[component_start] == '.' &&
+             remote[component_start + 1] == '.'))
+            return false;
+        component_start = index + 1;
+    }
+
+    full_path[root_length] = '/';
+    memcpy(&full_path[root_length + 1], remote, remote_length);
+    full_path[root_length + 1 + remote_length] = '\0';
+    return true;
+}
+
+static FRESULT fs_ensure_root_locked(void)
+{
+    FRESULT result = fs_mkdir_retry_locked(CARD_MOUNTPOINT "/NanoQL");
+    if (result != FR_OK && result != FR_EXIST)
+        return result;
+    result = fs_mkdir_retry_locked(NANOQL_FS_ROOT);
+    return result == FR_EXIST ? FR_OK : result;
+}
+
+static FRESULT fs_mkdir_tree_locked(char *path)
+{
+    FRESULT result = fs_ensure_root_locked();
+    if (result != FR_OK || strcmp(path, NANOQL_FS_ROOT) == 0)
+        return result;
+
+    size_t root_length = strlen(NANOQL_FS_ROOT);
+    for (char *separator = path + root_length + 1; ; ++separator) {
+        if (*separator != '/' && *separator != '\0')
+            continue;
+        char saved = *separator;
+        *separator = '\0';
+        result = fs_mkdir_retry_locked(path);
+        *separator = saved;
+        if (result != FR_OK && result != FR_EXIST)
+            return result;
+        if (saved == '\0')
+            return FR_OK;
+    }
+}
+
+static FRESULT fs_ensure_parent_locked(const char *path)
+{
+    char parent[NANOQL_FS_FULL_PATH_SIZE];
+    size_t length = strlen(path);
+    if (length >= sizeof(parent))
+        return FR_INVALID_NAME;
+    memcpy(parent, path, length + 1);
+    char *separator = strrchr(parent, '/');
+    if (separator == NULL || separator <= parent + strlen(NANOQL_FS_ROOT))
+        return fs_ensure_root_locked();
+    *separator = '\0';
+    return fs_mkdir_tree_locked(parent);
+}
+
+static void fs_close_locked(bool remove_partial_upload)
+{
+    if (fs_session == NANOQL_FS_LISTING)
+        (void)f_closedir(&fs_directory);
+    else if (fs_session == NANOQL_FS_PUTTING ||
+             fs_session == NANOQL_FS_GETTING)
+        (void)f_close(&fs_file);
+
+    if (remove_partial_upload && fs_session == NANOQL_FS_PUTTING)
+        (void)f_unlink(NANOQL_FS_TEMP);
+    fs_session = NANOQL_FS_IDLE;
+}
+
+static void fs_abort_session(void)
+{
+    if (fs_session == NANOQL_FS_IDLE)
+        return;
+    if (!sdc_is_initialized()) {
+        fs_session = NANOQL_FS_IDLE;
+        return;
+    }
+    sdc_lock();
+    fs_close_locked(true);
+    sdc_unlock();
+}
+
+static uint8_t fs_command(
+    const uint8_t *payload, uint8_t length,
+    uint8_t *response, uint8_t *response_length)
+{
+    if (!sdc_is_initialized())
+        return 20;
+
+    char path[NANOQL_FS_FULL_PATH_SIZE];
+    FRESULT result = FR_OK;
+    *response_length = 0;
+
+    switch (payload[0]) {
+    case NANOQL_CMD_FS_INFO:
+        if (length != 1)
+            return 3;
+        sdc_lock();
+        result = fs_ensure_root_locked();
+        sdc_unlock();
+        if (result != FR_OK)
+            return fs_error_from_result(result);
+        memcpy(response, "NFS1", 4);
+        response[4] = 1;    /* protocol version */
+        response[5] = 0x3f; /* files plus automatic MDV1 synchronization */
+        response[6] = NANOQL_FS_MAX_REMOTE_PATH;
+        *response_length = 7;
+        return 0;
+
+    case NANOQL_CMD_FS_LIST_BEGIN:
+        if (fs_session != NANOQL_FS_IDLE)
+            return 22;
+        if (!fs_make_path(&payload[1], (uint8_t)(length - 1), path))
+            return 21;
+        sdc_lock();
+        result = fs_ensure_root_locked();
+        if (result == FR_OK)
+            result = f_opendir(&fs_directory, path);
+        if (result == FR_OK)
+            fs_session = NANOQL_FS_LISTING;
+        sdc_unlock();
+        if (result != FR_OK)
+            return fs_error_from_result(result);
+        response[0] = 0;
+        *response_length = 1;
+        return 0;
+
+    case NANOQL_CMD_FS_LIST_NEXT: {
+        if (length != 1 || fs_session != NANOQL_FS_LISTING)
+            return 22;
+        FILINFO information;
+        sdc_lock();
+        do {
+            result = f_readdir(&fs_directory, &information);
+        } while (result == FR_OK && information.fname[0] != '\0' &&
+                 (information.fattrib & (AM_HID | AM_SYS)) != 0);
+        if (result != FR_OK || information.fname[0] == '\0') {
+            fs_close_locked(false);
+            sdc_unlock();
+            if (result != FR_OK)
+                return fs_error_from_result(result);
+            response[0] = 0;
+            *response_length = 1;
+            return 0;
+        }
+        size_t name_length = strlen(information.fname);
+        if (name_length > NANOQL_FS_MAX_REMOTE_PATH) {
+            sdc_unlock();
+            return 27;
+        }
+        response[0] = (information.fattrib & AM_DIR) ? 2 : 1;
+        uint32_t size = information.fsize > UINT32_MAX ?
+                            UINT32_MAX : (uint32_t)information.fsize;
+        write_be32(&response[1], size);
+        response[5] = (uint8_t)name_length;
+        memcpy(&response[6], information.fname, name_length);
+        *response_length = (uint8_t)(6 + name_length);
+        sdc_unlock();
+        return 0;
+    }
+
+    case NANOQL_CMD_FS_PUT_BEGIN:
+        if (length < 10 || fs_session != NANOQL_FS_IDLE)
+            return length < 10 ? 3 : 22;
+        if (!fs_make_path(&payload[9], (uint8_t)(length - 9), path))
+            return 21;
+        sdc_lock();
+        result = fs_ensure_parent_locked(path);
+        if (result == FR_OK) {
+            FRESULT remove_result = f_unlink(NANOQL_FS_TEMP);
+            if (remove_result != FR_OK && remove_result != FR_NO_FILE &&
+                remove_result != FR_NO_PATH)
+                result = remove_result;
+        }
+        if (result == FR_OK)
+            result = fs_open_retry_locked(
+                &fs_file, NANOQL_FS_TEMP,
+                FA_CREATE_ALWAYS | FA_READ | FA_WRITE);
+        if (result == FR_OK) {
+            fs_session = NANOQL_FS_PUTTING;
+            fs_expected_size = read_be32(&payload[1]);
+            fs_expected_crc = read_be32(&payload[5]);
+            memcpy(fs_target_path, path, strlen(path) + 1);
+        }
+        sdc_unlock();
+        if (result != FR_OK)
+            return fs_error_from_result(result);
+        response[0] = 0;
+        *response_length = 1;
+        return 0;
+
+    case NANOQL_CMD_FS_PUT_DATA: {
+        if (length < 6 || fs_session != NANOQL_FS_PUTTING)
+            return length < 6 ? 3 : 22;
+        uint32_t offset = read_be32(&payload[1]);
+        uint32_t data_length = (uint32_t)length - 5;
+        if (data_length > NANOQL_FS_CHUNK_SIZE ||
+            offset > fs_expected_size ||
+            data_length > fs_expected_size - offset)
+            return 3;
+        UINT written = 0;
+        sdc_lock();
+        result = f_lseek(&fs_file, offset);
+        if (result == FR_OK)
+            result = f_write(&fs_file, &payload[5], data_length, &written);
+        sdc_unlock();
+        if (result != FR_OK || written != data_length) {
+            fs_abort_session();
+            return result == FR_OK ? 23 : fs_error_from_result(result);
+        }
+        write_be32(response, offset + data_length);
+        *response_length = 4;
+        return 0;
+    }
+
+    case NANOQL_CMD_FS_PUT_COMMIT: {
+        if (length != 1 || fs_session != NANOQL_FS_PUTTING)
+            return length != 1 ? 3 : 22;
+        uint32_t actual_crc = UINT32_C(0xffffffff);
+        uint32_t actual_size = 0;
+        sdc_lock();
+        result = f_sync(&fs_file);
+        if (result == FR_OK && f_size(&fs_file) <= UINT32_MAX)
+            actual_size = (uint32_t)f_size(&fs_file);
+        else if (result == FR_OK)
+            result = FR_INVALID_OBJECT;
+        (void)f_close(&fs_file);
+        if (result == FR_OK)
+            result = fs_open_retry_locked(&fs_file, NANOQL_FS_TEMP, FA_READ);
+        if (result == FR_OK) {
+            for (;;) {
+                UINT read = 0;
+                result = f_read(
+                    &fs_file, fs_verify_buffer,
+                    sizeof(fs_verify_buffer), &read);
+                if (result != FR_OK || read == 0)
+                    break;
+                actual_crc = crc32_update(actual_crc, fs_verify_buffer, read);
+            }
+            (void)f_close(&fs_file);
+        }
+        actual_crc ^= UINT32_C(0xffffffff);
+
+        if (result == FR_OK &&
+            (actual_size != fs_expected_size ||
+             actual_crc != fs_expected_crc)) {
+            (void)f_unlink(NANOQL_FS_TEMP);
+            fs_session = NANOQL_FS_IDLE;
+            sdc_unlock();
+            return 24;
+        }
+
+        bool backup_created = false;
+        if (result == FR_OK) {
+            FILINFO existing;
+            FRESULT exists = f_stat(fs_target_path, &existing);
+            if (exists == FR_OK) {
+                if (existing.fattrib & AM_DIR)
+                    result = FR_DENIED;
+                else {
+                    (void)f_unlink(NANOQL_FS_BACKUP);
+                    result = f_rename(fs_target_path, NANOQL_FS_BACKUP);
+                    backup_created = result == FR_OK;
+                }
+            } else if (exists != FR_NO_FILE && exists != FR_NO_PATH) {
+                result = exists;
+            }
+        }
+        if (result == FR_OK)
+            result = f_rename(NANOQL_FS_TEMP, fs_target_path);
+        if (result != FR_OK && backup_created)
+            (void)f_rename(NANOQL_FS_BACKUP, fs_target_path);
+        else if (result == FR_OK && backup_created)
+            (void)f_unlink(NANOQL_FS_BACKUP);
+        fs_session = NANOQL_FS_IDLE;
+        sdc_unlock();
+        if (result != FR_OK)
+            return fs_error_from_result(result);
+        write_be32(response, actual_size);
+        write_be32(&response[4], actual_crc);
+        *response_length = 8;
+        return 0;
+    }
+
+    case NANOQL_CMD_FS_GET_BEGIN:
+        if (length < 2 || fs_session != NANOQL_FS_IDLE)
+            return length < 2 ? 3 : 22;
+        if (!fs_make_path(&payload[1], (uint8_t)(length - 1), path))
+            return 21;
+        sdc_lock();
+        result = fs_open_retry_locked(&fs_file, path, FA_READ);
+        if (result == FR_OK && f_size(&fs_file) > UINT32_MAX) {
+            (void)f_close(&fs_file);
+            result = FR_INVALID_OBJECT;
+        }
+        if (result == FR_OK) {
+            fs_session = NANOQL_FS_GETTING;
+            write_be32(response, (uint32_t)f_size(&fs_file));
+            *response_length = 4;
+        }
+        sdc_unlock();
+        return result == FR_OK ? 0 : fs_error_from_result(result);
+
+    case NANOQL_CMD_FS_GET_DATA: {
+        if (length != 6 || fs_session != NANOQL_FS_GETTING)
+            return length != 6 ? 3 : 22;
+        uint32_t offset = read_be32(&payload[1]);
+        uint8_t requested = payload[5];
+        if (requested == 0 || requested > NANOQL_FS_CHUNK_SIZE)
+            return 3;
+        UINT read = 0;
+        sdc_lock();
+        result = f_lseek(&fs_file, offset);
+        if (result == FR_OK)
+            result = f_read(&fs_file, &response[1], requested, &read);
+        sdc_unlock();
+        if (result != FR_OK) {
+            fs_abort_session();
+            return fs_error_from_result(result);
+        }
+        response[0] = (uint8_t)read;
+        *response_length = (uint8_t)(read + 1);
+        return 0;
+    }
+
+    case NANOQL_CMD_FS_GET_END:
+        if (length != 1 || fs_session != NANOQL_FS_GETTING)
+            return length != 1 ? 3 : 22;
+        sdc_lock();
+        fs_close_locked(false);
+        sdc_unlock();
+        response[0] = 0;
+        *response_length = 1;
+        return 0;
+
+    case NANOQL_CMD_FS_DELETE:
+        if (length < 2 || fs_session != NANOQL_FS_IDLE)
+            return length < 2 ? 3 : 22;
+        if (!fs_make_path(&payload[1], (uint8_t)(length - 1), path))
+            return 21;
+        sdc_lock();
+        result = f_unlink(path);
+        sdc_unlock();
+        if (result != FR_OK)
+            return fs_error_from_result(result);
+        response[0] = 0;
+        *response_length = 1;
+        return 0;
+
+    case NANOQL_CMD_FS_MKDIR:
+        if (fs_session != NANOQL_FS_IDLE ||
+            !fs_make_path(&payload[1], (uint8_t)(length - 1), path))
+            return fs_session != NANOQL_FS_IDLE ? 22 : 21;
+        sdc_lock();
+        result = fs_mkdir_tree_locked(path);
+        sdc_unlock();
+        if (result != FR_OK)
+            return fs_error_from_result(result);
+        response[0] = 0;
+        *response_length = 1;
+        return 0;
+
+    case NANOQL_CMD_FS_CANCEL:
+        if (length != 1)
+            return 3;
+        fs_abort_session();
+        response[0] = 0;
+        *response_length = 1;
+        return 0;
+
+    case NANOQL_CMD_FS_MDV_CONTROL: {
+        if (length != 2 || fs_session != NANOQL_FS_IDLE)
+            return length != 2 ? 3 : 22;
+        if (payload[1] == 0) {
+            /* Release the old file before the atomic upload replaces it. Do
+               not save this temporary ejection in nanoql.ini. */
+            fpga_upload_suspend_companion();
+            sys_set_val('R', 1);
+            microdrive_ql_held = true;
+            /* sdc_image_open() ejects and drains the old mounted image while
+               its FIL is still valid, including a mount restored by INI. */
+            if (sdc_image_open(2, NULL) != 0) {
+                sys_set_val('R', 0);
+                microdrive_ql_held = false;
+                fpga_upload_resume_companion();
+                return 25;
+            }
+        } else if (payload[1] == 1) {
+            char image_name[] = "MDV1.mdv";
+            sdc_set_cwd(2, NANOQL_FS_ROOT);
+            if (sdc_image_open(2, image_name) != 0) {
+                sys_set_val('R', 0);
+                microdrive_ql_held = false;
+                fpga_upload_resume_companion();
+                return 25;
+            }
+            inifile_write("nanoql.ini");
+            /* Reset only after process_frame() has returned the acknowledgement
+               to the PC. Mounting fragmented FAT/exFAT files may take longer
+               than the normal CDC transaction timeout. */
+            microdrive_reset_pending = true;
+        } else {
+            return 3;
+        }
+        response[0] = 0;
+        *response_length = 1;
+        return 0;
+    }
+
+    default:
+        return 3;
+    }
+}
+
 static void fpga_upload_abort(void)
 {
     if (!fpga_upload_open)
         return;
     gowin_stream_abort();
     fpga_upload_open = false;
+    if (companion_suspended_for_upload) {
+        vTaskResume(com_task_handle);
+        companion_suspended_for_upload = false;
+    }
+}
+
+static void fpga_upload_suspend_companion(void)
+{
+    TaskHandle_t task = com_task_handle;
+    if (task == NULL || task == xTaskGetCurrentTaskHandle() ||
+        companion_suspended_for_upload)
+        return;
+
+    /* Wait until the Companion owns neither shared resource before stopping
+       it. During JTAG configuration the FPGA SPI endpoint disappears, and a
+       concurrent Companion transaction can otherwise starve USB CDC. */
+    sdc_lock();
+    mcu_hw_spi_begin();
+    vTaskSuspend(task);
+    companion_suspended_for_upload = true;
+    mcu_hw_spi_end();
+    sdc_unlock();
+}
+
+static void fpga_upload_resume_companion(void)
+{
+    if (!companion_suspended_for_upload)
+        return;
+    vTaskResume(com_task_handle);
+    companion_suspended_for_upload = false;
 }
 
 static uint8_t fpga_upload_command(
@@ -314,7 +895,9 @@ static uint8_t fpga_upload_command(
         fpga_upload_expected_crc = read_be32(&payload[5]);
         if (!fpga_upload_size || fpga_upload_size > NANOQL_FPGA_MAX_SIZE)
             return 4;
+        fpga_upload_suspend_companion();
         if (!gowin_stream_begin()) {
+            fpga_upload_resume_companion();
             return 5;
         }
         fpga_upload_open = true;
@@ -354,8 +937,10 @@ static uint8_t fpga_upload_command(
                (unsigned long)fpga_upload_size);
         bool programmed = gowin_stream_end();
         fpga_upload_open = false;
-        if (!programmed)
+        if (!programmed) {
+            fpga_upload_resume_companion();
             return 9;
+        }
         return_to_companion_pending = true;
         response[0] = 0;
         return 0;
@@ -469,6 +1054,13 @@ static void process_frame(
             return;
         }
         response_length = 1;
+    } else if (payload[0] >= NANOQL_CMD_FS_INFO) {
+        uint8_t error = fs_command(
+            payload, length, spi_response, &response_length);
+        if (error) {
+            send_error(sequence, error);
+            return;
+        }
     } else {
         if (length > NANOQL_SPI_MAX_PAYLOAD) {
             send_error(sequence, 3);
@@ -508,6 +1100,13 @@ static void link_task(void *argument)
 
     for (;;) {
         if (usb_rx_reset_requested) {
+            fs_abort_session();
+            fpga_upload_abort();
+            if (microdrive_ql_held) {
+                sys_set_val('R', 0);
+                microdrive_ql_held = false;
+            }
+            fpga_upload_resume_companion();
             uintptr_t flags = bflb_irq_save();
             rx_tail = rx_head;
             usb_rx_reset_requested = false;
@@ -564,6 +1163,14 @@ static void link_task(void *argument)
                 vTaskDelay(pdMS_TO_TICKS(50));
                 debugf("NanoQL: FPGA programmed, returning to Companion");
                 mcu_hw_reset();
+            }
+            if (microdrive_reset_pending) {
+                microdrive_reset_pending = false;
+                while (usb_ready && usb_tx_busy)
+                    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
+                sys_run_action_by_name("reset");
+                microdrive_ql_held = false;
+                fpga_upload_resume_companion();
             }
             break;
         }
