@@ -16,6 +16,8 @@ module ql_boot_status (
     localparam [3:0] STATUS_ROM_FAILED  = 4'd5;
     localparam [3:0] STATUS_RESET_HELD  = 4'd6;
     localparam [3:0] STATUS_SDRAM_FAIL  = 4'd7;
+    localparam [3:0] STATUS_QSOUND_FAIL = 4'd8;
+    localparam [3:0] STATUS_QSOUND_LOAD = 4'd9;
 
     function automatic [7:0] message_char;
         input [3:0] message_status;
@@ -71,6 +73,16 @@ module ql_boot_status (
                             text = {"BL616 IS HOLDING RESET", {10{8'h20}}};
                         else if (line == 3'd2)
                             text = {"SELECT NORMAL MODE", {14{8'h20}}};
+                    end
+                    STATUS_QSOUND_FAIL: begin
+                        if (line == 3'd1)
+                            text = {"QSOUND ROM LOAD FAILED", {10{8'h20}}};
+                        else if (line == 3'd2)
+                            text = {"USE AN 8 KIB ROM", {16{8'h20}}};
+                    end
+                    STATUS_QSOUND_LOAD: begin
+                        if (line == 3'd1)
+                            text = {"LOADING QSOUND ROM", {14{8'h20}}};
                     end
                     default: begin
                         if (line == 3'd1)
@@ -189,8 +201,10 @@ module ql_boot_status (
                 (x_d < 11'd388 + {progress_d[6:0], 2'b00}) &&
                 (y_d >= 10'd348) && (y_d < 10'd364);
             text_color_d <= ((status_d == STATUS_ROM_FAILED) ||
+                             (status_d == STATUS_QSOUND_FAIL) ||
                              (status_d == STATUS_SDRAM_FAIL)) ? 24'hff6058 :
-                            (status_d == STATUS_LOADING) ? 24'h40d8d0 :
+                            ((status_d == STATUS_LOADING) ||
+                             (status_d == STATUS_QSOUND_LOAD)) ? 24'h40d8d0 :
                                                           24'hffffff;
         end
     end

@@ -6,6 +6,7 @@ module ql_hdmi_audio #(
     input  wire        clk_pixel,
     input  wire        reset,
     input  wire        ql_audio,
+    input  wire [9:0]  qsound_audio,
     output reg         clk_audio,
     output wire [15:0] sample_left,
     output wire [15:0] sample_right
@@ -46,5 +47,6 @@ module ql_hdmi_audio #(
     assign sample_right = mono_sample;
 
     wire unused_ql_audio = ql_audio;
+    wire unused_qsound_audio = ^qsound_audio;
 
 endmodule

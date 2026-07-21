@@ -10,10 +10,10 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 13 153 / 20 736 cellules logiques utilisées (64 %), dont 12 359 LUT.
-- BSRAM : 17 / 46 blocs utilisés (37 %), dont les tampons sectoriels QL-SD et Microdrive.
+- FPGA : 14 160 / 20 736 cellules logiques utilisées (69 %), dont 13 231 LUT.
+- BSRAM : 21 / 46 blocs utilisés (46 %), dont les tampons sectoriels QL-SD et Microdrive et la ROM QSound optionnelle.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
-- Domaine système : 31,8 MHz, avec une Fmax mesurée de 61,388 MHz.
+- Domaine système : 31,8 MHz, avec une Fmax mesurée de 63,562 MHz.
 - HDMI : 720p50 avec audio PCM 48 kHz fonctionnel.
 
 Le pourcentage de LUT restant ne suffit pas à garantir toutes les extensions. La migration de la ROM QL dynamique vers une zone réservée de la SDRAM a toutefois libéré 32 blocs BSRAM pour les ROM et tampons des fonctions suivantes. La fréquence du domaine système devient maintenant la contrainte principale pour les modes CPU rapides.
@@ -47,7 +47,7 @@ La Tang Nano 20K ne possédant pas de pile RTC, une heure absolue correcte aprè
 - Conserver la contention vidéo originale uniquement en mode `QL`.
 - Valider QDOS, les interruptions, le clavier, le son et la SDRAM à chaque vitesse.
 
-Le mode 16 MHz fonctionne à 15,9 MHz avec le domaine actuel. Le mode 24 MHz nécessite un domaine système plus rapide mais reste réaliste. Le mode 42 MHz requiert environ 84 MHz pour l'architecture MiSTer actuelle ; il est donc expérimental tant que les chemins critiques n'ont pas été optimisés au-delà de la Fmax actuelle de 61,388 MHz.
+Le mode 16 MHz fonctionne à 15,9 MHz avec le domaine actuel. Le mode 24 MHz nécessite un domaine système plus rapide mais reste réaliste. Le mode 42 MHz requiert environ 84 MHz pour l'architecture MiSTer actuelle ; il est donc expérimental tant que les chemins critiques n'ont pas été optimisés au-delà de la Fmax actuelle de 63,562 MHz.
 
 #### 4. Gold Card et SMSQ/E
 
@@ -100,7 +100,8 @@ La capture d'écran est réaliste. La vidéo est un objectif expérimental : ell
 - Exposer les ports série QL par USB CDC lorsque cela peut être fait fidèlement.
 - Ajouter un écran de diagnostic OSD pour RAM, ROM, IPC, SDRAM, QL-SD et firmware Companion.
 - Ajouter des profils de configuration exportables afin de partager facilement une combinaison ROM, RAM, CPU, vidéo et disque.
-- Étudier une extension QSound optionnelle fidèle à l'AY-3-8910 à 0,75 MHz, avec mixage sur HDMI et compatibilité avec les logiciels existants.
+- L'extension QSound optionnelle est intégrée et validée physiquement : ROM de 8 Kio depuis la microSD, décodage `$C0000-$C3FFF`, MC6821, AY-3-8910 à 0,75 MHz, mixage HDMI et sélection persistante depuis l'overlay.
+- Le téléchargeur reproductible de QSoundZ vérifie l'archive freeware, extrait son image Microdrive et peut la copier directement sur la microSD sans publier de logiciel tiers dans NanoQL.
 - Étudier un mode vidéo Q60 optionnel en SDRAM, sans modifier le mode QL fidèle par défaut ; valider d'abord la carte mémoire, les registres et la bande passante du framebuffer 16 bits.
 
 ### Parité matérielle étendue
@@ -108,13 +109,13 @@ La capture d'écran est réaliste. La vidéo est un objectif expérimental : ell
 Les fonctions de Q-emuLator constituent une cible de compatibilité utile, mais NanoQL doit conserver comme priorité un chemin QL déterministe et mesurable. Les extensions seront optionnelles et ne remplaceront jamais le profil matériel original.
 
 - Priorité haute : QIMI/souris USB, joysticks, resynchronisation Microdrive, accès aux fichiers hôte via le BL616, RAM disk, débogueur 68000 matériel et ports série USB CDC.
-- Priorité moyenne : QSound, QL Sampled Sound System, imprimante parallèle virtuelle et extraction contrôlée des paquets ZIP/QLPAK vers une image QDOS.
+- Priorité moyenne : QL Sampled Sound System, imprimante parallèle virtuelle et extraction contrôlée des paquets ZIP/QLPAK vers une image QDOS.
 - Priorité avancée : Gold Card/SMSQ/E, Aurora et modes vidéo Q40/Q60. Les framebuffers tiennent dans 8 Mio, mais les modes 1024 pixels 16 bits exigent une hausse importante de la bande passante SDRAM.
 - Priorité expérimentale : TCP/IP par le BL616, de préférence derrière une interface QL documentée ou un lien série/SLIP afin de ne pas contourner QDOS de manière opaque.
 
 ### Prochaine étape retenue
 
-Valider l'écriture QL-SD, puis poursuivre la fidélité des puces personnalisées avec des mesures matérielles comparatives du ZX8301 et du ZX8302.
+Valider l'écriture QL-SD, puis poursuivre les mesures matérielles comparatives du ZX8301 et du ZX8302.
 
 ## English
 
@@ -126,10 +127,10 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 13,153 / 20,736 logic cells used (64%), including 12,359 LUTs.
-- BSRAM: 17 / 46 blocks used (37%), including QL-SD and Microdrive sector buffers.
+- FPGA: 14,160 / 20,736 logic cells used (69%), including 13,231 LUTs.
+- BSRAM: 21 / 46 blocks used (46%), including QL-SD and Microdrive sector buffers and the optional QSound ROM.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
-- System domain: 31.8 MHz, with a measured Fmax of 61.388 MHz.
+- System domain: 31.8 MHz, with a measured Fmax of 63.562 MHz.
 - HDMI: working 720p50 output with 48 kHz PCM audio.
 
 The remaining LUT percentage alone does not guarantee that every extension will fit. Moving the dynamic QL ROM to a reserved SDRAM area has nevertheless freed 32 BSRAM blocks for future ROMs and buffers. System-domain timing is now the main constraint for faster CPU modes.
@@ -163,7 +164,7 @@ The Tang Nano 20K has no battery-backed RTC. Correct absolute time after complet
 - Keep original video contention only in `QL` mode.
 - Validate QDOS, interrupts, keyboard, audio, and SDRAM at every speed.
 
-The 16 MHz mode runs at 15.9 MHz with the current domain. 24 MHz requires a faster system domain but remains realistic. 42 MHz needs about 84 MHz with the current MiSTer architecture and is therefore experimental until critical paths improve beyond the current 61.388 MHz Fmax.
+The 16 MHz mode runs at 15.9 MHz with the current domain. 24 MHz requires a faster system domain but remains realistic. 42 MHz needs about 84 MHz with the current MiSTer architecture and is therefore experimental until critical paths improve beyond the current 63.562 MHz Fmax.
 
 #### 4. Gold Card and SMSQ/E
 
@@ -216,7 +217,8 @@ Screenshots are realistic. Video recording is experimental because it depends on
 - Expose QL serial ports over USB CDC where this can be implemented faithfully.
 - Add an OSD diagnostics page for RAM, ROM, IPC, SDRAM, QL-SD, and Companion firmware.
 - Add exportable profiles combining ROM, RAM, CPU, video, and disk settings.
-- Investigate a faithful optional QSound expansion using the 0.75 MHz AY-3-8910, mixed into HDMI audio and compatible with existing software.
+- The optional QSound expansion is implemented and physically validated: microSD-loaded 8 KiB ROM, `$C0000-$C3FFF` decode, MC6821, 0.75 MHz AY-3-8910, HDMI mixing, and persistent overlay selection.
+- The reproducible QSoundZ downloader verifies the freeware archive, extracts its Microdrive image, and can copy it directly to microSD without publishing third-party software in NanoQL.
 - Investigate an optional SDRAM-backed Q60 video mode without changing the faithful default QL mode; validate its memory map, registers, and 16-bit framebuffer bandwidth first.
 
 ### Extended hardware parity
@@ -224,10 +226,10 @@ Screenshots are realistic. Video recording is experimental because it depends on
 Q-emuLator's feature set is a useful compatibility target, but NanoQL must prioritize a deterministic, measurable QL hardware path. Every extension remains optional and never replaces the original-machine profile.
 
 - High priority: QIMI/USB mouse, joysticks, Microdrive resynchronization, BL616 host-file access, RAM disk, hardware 68000 debugger, and USB CDC serial ports.
-- Medium priority: QSound, QL Sampled Sound System, virtual parallel printer, and controlled ZIP/QLPAK extraction into a QDOS image.
+- Medium priority: QL Sampled Sound System, virtual parallel printer, and controlled ZIP/QLPAK extraction into a QDOS image.
 - Advanced priority: Gold Card/SMSQ/E, Aurora, and Q40/Q60 video modes. Their framebuffers fit in 8 MiB, but 1024-pixel 16-bit modes require substantially more SDRAM bandwidth.
 - Experimental priority: TCP/IP through the BL616, preferably behind a documented QL device or serial/SLIP link rather than an opaque QDOS bypass.
 
 ### Selected next step
 
-Validate QL-SD writes, then continue custom-chip fidelity with comparative hardware measurements of the ZX8301 and ZX8302.
+Validate QL-SD writes, then continue comparative hardware measurements of the ZX8301 and ZX8302.

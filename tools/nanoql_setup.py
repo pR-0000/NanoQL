@@ -54,6 +54,7 @@ class NanoQLSetup(tk.Tk):
         self.revision = tk.StringVar(value="3923")
         self.firmware_mode = tk.StringVar(value="nanoql")
         self.rom_path = tk.StringVar()
+        self.qsound_rom_path = tk.StringVar()
         self.sd_path = tk.StringVar()
         self.ipc_path = tk.StringVar()
         self.mdv_folder = tk.StringVar()
@@ -161,11 +162,12 @@ class NanoQLSetup(tk.Tk):
     def _build_storage_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
         self._path_row(parent, 0, "48/64 KiB QL ROM", self.rom_path, self._browse_rom)
-        self._path_row(parent, 1, "microSD root", self.sd_path, self._browse_sd)
-        self._path_row(parent, 2, "Sinclair IPC firmware (Intel HEX)", self.ipc_path, self._browse_ipc)
+        self._path_row(parent, 1, "Optional 8 KiB QSound ROM", self.qsound_rom_path, self._browse_qsound_rom)
+        self._path_row(parent, 2, "microSD root", self.sd_path, self._browse_sd)
+        self._path_row(parent, 3, "Sinclair IPC firmware (Intel HEX)", self.ipc_path, self._browse_ipc)
 
         actions = ttk.Frame(parent)
-        actions.grid(row=3, column=0, columnspan=3, sticky="w", pady=(18, 8))
+        actions.grid(row=4, column=0, columnspan=3, sticky="w", pady=(18, 8))
         self._button(actions, "Prepare microSD", self.prepare_sd).pack(
             side="left", padx=(0, 8)
         )
@@ -178,7 +180,7 @@ class NanoQLSetup(tk.Tk):
                 "nanoql.ini and the NanoQL/Drive1 user-file folder are also created."
             ),
             wraplength=760,
-        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
     def _build_fpga_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -281,6 +283,14 @@ class NanoQLSetup(tk.Tk):
         if path:
             self.sd_path.set(path)
 
+    def _browse_qsound_rom(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Select an 8 KiB QSound ROM",
+            filetypes=(("ROM images", "*.rom *.bin"), ("All files", "*")),
+        )
+        if path:
+            self.qsound_rom_path.set(path)
+
     def _browse_ipc(self) -> None:
         path = filedialog.askopenfilename(
             title="Select ipc8049.hex",
@@ -355,6 +365,8 @@ class NanoQLSetup(tk.Tk):
             sys.executable, str(TOOLS / "prepare_sd_card.py"),
             self.rom_path.get(), self.sd_path.get(),
         ]
+        if self.qsound_rom_path.get():
+            command.extend(["--qsound-rom", self.qsound_rom_path.get()])
         if self.mdv_folder.get():
             command.extend([
                 "--mdv-folder", self.mdv_folder.get(),
@@ -424,6 +436,10 @@ class NanoQLSetup(tk.Tk):
             self.rom_path.get(),
             self.sd_path.get(),
         ]
+        if self.qsound_rom_path.get():
+            prepare_sd_command.extend([
+                "--qsound-rom", self.qsound_rom_path.get()
+            ])
         if self.mdv_folder.get():
             prepare_sd_command.extend([
                 "--mdv-folder", self.mdv_folder.get(),

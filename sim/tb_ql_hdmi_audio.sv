@@ -4,6 +4,7 @@ module tb_ql_hdmi_audio;
     reg clk_pixel = 1'b0;
     reg reset = 1'b1;
     reg ql_audio = 1'b0;
+    reg [9:0] qsound_audio = 10'd0;
     wire clk_audio;
     wire [15:0] sample_left;
     wire [15:0] sample_right;
@@ -23,6 +24,7 @@ module tb_ql_hdmi_audio;
         .clk_pixel(clk_pixel),
         .reset(reset),
         .ql_audio(ql_audio),
+        .qsound_audio(qsound_audio),
         .clk_audio(clk_audio),
         .sample_left(sample_left),
         .sample_right(sample_right)

@@ -35,6 +35,28 @@ $qlsdBufferOutput = Join-Path $env:TEMP "nanoql_qlsd_buffer.vvp"
 $microdriveOutput = Join-Path $env:TEMP "nanoql_microdrive_stream.vvp"
 $sdArbiterOutput = Join-Path $env:TEMP "nanoql_sd_request_arbiter.vvp"
 $zx8301Output = Join-Path $env:TEMP "nanoql_zx8301.vvp"
+$qsoundOutput = Join-Path $env:TEMP "nanoql_qsound.vvp"
+
+& $iverilog -g2012 -s tb_ql_qsound_card -o $qsoundOutput `
+    (Join-Path $projectRoot "sim\tb_ql_qsound_card.sv") `
+    (Join-Path $projectRoot "src\ql_qsound_card.sv") `
+    (Join-Path $projectRoot "src\ql_mc6821_pia.sv") `
+    (Join-Path $projectRoot "src\third_party\jt49\jt49_bus.v") `
+    (Join-Path $projectRoot "src\third_party\jt49\jt49.v") `
+    (Join-Path $projectRoot "src\third_party\jt49\jt49_cen.v") `
+    (Join-Path $projectRoot "src\third_party\jt49\jt49_div.v") `
+    (Join-Path $projectRoot "src\third_party\jt49\jt49_eg.v") `
+    (Join-Path $projectRoot "src\third_party\jt49\jt49_exp.v") `
+    (Join-Path $projectRoot "src\third_party\jt49\jt49_noise.v")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "QSound simulation compilation failed."
+}
+
+& $vvp $qsoundOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "QSound simulation failed."
+}
 
 & $iverilog -g2012 -s tb_ql_zx8301 -o $zx8301Output `
     (Join-Path $projectRoot "sim\tb_ql_zx8301.sv") `

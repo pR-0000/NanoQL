@@ -12,6 +12,8 @@ module ql_sd_request_arbiter (
     input  wire        mdv_read_start,
     input  wire        mdv_write_start,
     input  wire [31:0] mdv_sector,
+    input  wire        qsound_read_start,
+    input  wire [31:0] qsound_sector,
 
     input  wire        sd_busy,
     input  wire        sd_done,
@@ -58,6 +60,11 @@ module ql_sd_request_arbiter (
                         owner <= 3'd2;
                         owner_write <= mdv_write_start;
                         sd_sector <= mdv_sector;
+                        state <= ST_ASSERT;
+                    end else if (qsound_read_start) begin
+                        owner <= 3'd3;
+                        owner_write <= 1'b0;
+                        sd_sector <= qsound_sector;
                         state <= ST_ASSERT;
                     end
                 end

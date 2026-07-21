@@ -151,6 +151,9 @@ QL_FRENCH_KEYS = {
     "w": (0x1D, ()), "W": (0x1D, (MOD_LEFT_SHIFT,)),
     "m": (0x33, ()), "M": (0x33, (MOD_LEFT_SHIFT,)),
     "_": (0x2D, (MOD_LEFT_SHIFT,)),
+    # French QDOS labels these two QL matrix contacts in the opposite order
+    # from the PC/USB punctuation usages.
+    ",": (0x37, ()), ".": (0x36, ()),
     # The French QDOS keymap expects this HID contact for double quote.
     '"': (0x1F, (MOD_LEFT_SHIFT,)),
     "é": (0x2F, ()), "\\": (0x2F, (MOD_LEFT_SHIFT,)),

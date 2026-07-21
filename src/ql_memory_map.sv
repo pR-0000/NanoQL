@@ -30,6 +30,13 @@ module ql_memory_map(
     input  wire        qlsd_dtack,
     input  wire [7:0]  qlsd_data,
 
+    input  wire        qsound_present,
+    output wire        qsound_access,
+    input  wire        qsound_ready,
+    input  wire        qsound_data_valid,
+    input  wire [15:0] qsound_data,
+    input  wire        qsound_write_done,
+
     output reg         mc_stat_wr,
     output reg  [7:0]  mc_stat_data,
 
@@ -74,6 +81,11 @@ module ql_memory_map(
                          ((byte_address[15:4] == 12'hfee) ||
                           (byte_address[15:4] == 12'hfef) ||
                           (byte_address[15:8] == 8'hff));
+    // The QSound expansion occupies slot zero at 0xc0000. Its 8 KiB ROM is
+    // followed by the mirrored 6821 PIA window up to 0xc3fff.
+    wire qsound_selected = qsound_present &&
+                           (bus_addr >= 22'h060000) &&
+                           (bus_addr <= 22'h061fff);
     // These ranges are the word-address equivalents of QL_MiSTer's original
     // RAM decode. Mode 3 is kept internal until Gold Card support is complete.
     wire base_ram_selected = (bus_addr >= RAM_FIRST_WORD) &&
@@ -94,7 +106,7 @@ module ql_memory_map(
     wire mc_stat_selected = bus_addr == MC_STAT_WORD;
     wire zx8302_selected = (bus_addr >= 22'h00c000) &&
                            (bus_addr <= 22'h00c01f);
-    wire local_selected = !rom_selected && !ram_selected;
+    wire local_selected = !rom_selected && !ram_selected && !qsound_selected;
     reg rom_read_pending;
     reg [14:0] rom_addr;
     reg rom_data_valid;
@@ -117,24 +129,30 @@ module ql_memory_map(
     );
 
     // ROM writes are acknowledged and ignored, like writes to physical ROM.
-    assign bus_ready = qlsd_selected ? !qlsd_read_pending : rom_selected ?
+    assign bus_ready = qsound_selected ? qsound_ready :
+                       qlsd_selected ? !qlsd_read_pending : rom_selected ?
                          ((rom_is_dynamic && !boot_vector_read) ?
                            (bus_we ? 1'b1 : dynamic_rom_ready) :
                            !rom_read_pending) :
                        ram_selected ? ram_ready : !io_read_pending;
-    assign bus_data_valid = qlsd_data_valid || rom_data_valid || dynamic_rom_data_valid ||
+    assign bus_data_valid = qsound_data_valid || qlsd_data_valid ||
+                            rom_data_valid || dynamic_rom_data_valid ||
                             io_data_valid || ram_data_valid;
     assign bus_write_done = local_write_done || zx8302_write_done ||
-                            ram_write_done;
-    assign bus_data = qlsd_data_valid ? qlsd_data_latched :
+                            qsound_write_done || ram_write_done;
+    assign bus_data = qsound_data_valid ? qsound_data :
+                      qlsd_data_valid ? qlsd_data_latched :
                       rom_data_valid ? rom_data_latched :
                       dynamic_rom_data_valid ? dynamic_rom_data :
                       io_data_valid ? io_data_latched : ram_data;
 
     assign dynamic_rom_req = bus_req && dynamic_rom_read && !qlsd_selected;
     assign dynamic_rom_addr = bus_addr[14:0];
-    assign ram_req = bus_req && ram_selected;
-    assign ram_we = ram_selected && bus_we;
+    // Expansion cards decode their own slot before the optional QL RAM
+    // expansion. This prevents the 896 KiB/4 MiB mappings from issuing a
+    // second SDRAM transaction for QSound accesses at $C0000-$C3FFF.
+    assign ram_req = bus_req && ram_selected && !qsound_selected;
+    assign ram_we = ram_selected && !qsound_selected && bus_we;
     assign ram_addr = bus_addr;
     assign ram_ds = bus_ds;
     assign ram_wdata = bus_wdata;
@@ -145,6 +163,7 @@ module ql_memory_map(
     assign zx8302_wdata = bus_wdata;
     assign qlsd_access = qlsd_read_pending || (bus_req && qlsd_selected);
     assign qlsd_address = qlsd_read_pending ? qlsd_address_latched : byte_address;
+    assign qsound_access = bus_req && qsound_selected;
 
     always @(posedge clk) begin
         if (reset) begin
@@ -181,7 +200,8 @@ module ql_memory_map(
                 qlsd_read_pending <= 1'b0;
             end
 
-            if (bus_req && bus_we && !ram_selected && !zx8302_selected)
+            if (bus_req && bus_we && !ram_selected && !zx8302_selected &&
+                !qsound_selected)
                 local_write_done <= 1'b1;
 
             if (rom_read_pending) begin

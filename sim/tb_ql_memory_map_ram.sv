@@ -4,6 +4,7 @@ module tb_ql_memory_map_ram;
     reg clk = 1'b0;
     reg reset = 1'b0;
     reg [1:0] ram_config = 2'd0;
+    reg qsound_present = 1'b0;
     reg bus_req = 1'b1;
     reg [21:0] bus_addr = 22'd0;
     reg [1:0] bus_ds = 2'b00;
@@ -25,6 +26,9 @@ module tb_ql_memory_map_ram;
         .dynamic_rom_data(16'd0), .mc_stat_wr(), .mc_stat_data(),
         .qlsd_access(qlsd_access), .qlsd_address(qlsd_address),
         .qlsd_dtack(1'b0), .qlsd_data(8'hff),
+        .qsound_present(qsound_present), .qsound_access(),
+        .qsound_ready(1'b1), .qsound_data_valid(1'b0),
+        .qsound_data(16'hffff), .qsound_write_done(1'b0),
         .zx8302_wr(), .zx8302_addr(), .zx8302_ds(), .zx8302_wdata(),
         .zx8302_rdata(16'hffff), .zx8302_write_done(1'b0),
         .ram_req(ram_req), .ram_we(), .ram_addr(), .ram_ds(),
@@ -61,6 +65,14 @@ module tb_ql_memory_map_ram;
         expect_ram(2'd2, 24'h0c0000, 1'b1);
         expect_ram(2'd2, 24'h0ffffe, 1'b1);
         expect_ram(2'd2, 24'h100000, 1'b0);
+
+        // A physical expansion card takes priority over overlapping expanded
+        // RAM. No SDRAM request may leak through while QSound owns slot zero.
+        qsound_present = 1'b1;
+        expect_ram(2'd2, 24'h0c0000, 1'b0);
+        expect_ram(2'd2, 24'h0c3ffe, 1'b0);
+        expect_ram(2'd2, 24'h0c4000, 1'b1);
+        qsound_present = 1'b0;
 
         // QLROMEXT uses byte-wide reads, including adjacent even/odd
         // control registers in the QL expansion-ROM window.

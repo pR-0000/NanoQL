@@ -35,6 +35,15 @@ add_file src/ql_cpu_phase.sv
 add_file src/ql_sd_qlromext.sv
 add_file src/ql_sd_request_arbiter.sv
 add_file src/ql_microdrive_stream.sv
+add_file src/ql_mc6821_pia.sv
+add_file src/ql_qsound_card.sv
+add_file src/third_party/jt49/jt49_bus.v
+add_file src/third_party/jt49/jt49.v
+add_file src/third_party/jt49/jt49_cen.v
+add_file src/third_party/jt49/jt49_div.v
+add_file src/third_party/jt49/jt49_eg.v
+add_file src/third_party/jt49/jt49_exp.v
+add_file src/third_party/jt49/jt49_noise.v
 add_file src/ql_cpu_fx68k.sv
 add_file src/ql_cpu_boot_monitor.sv
 add_file src/companion/ql_companion_sysctrl.sv

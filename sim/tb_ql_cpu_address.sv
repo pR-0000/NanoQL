@@ -39,6 +39,7 @@ module tb_ql_cpu_address;
         expect_addr(24'h060100, 1'b0, 1'b1, 2'd0, 24'h020100);
         expect_addr(24'hfe0100, 1'b1, 1'b0, 2'd0, 24'h020101);
         expect_addr(24'h040000, 1'b0, 1'b0, 2'd0, 24'h000000);
+        expect_addr(24'h0c0100, 1'b0, 1'b1, 2'd0, 24'h0c0100);
         expect_addr(24'h0e0100, 1'b0, 1'b1, 2'd1, 24'h0e0100);
         expect_addr(24'h1e0100, 1'b0, 1'b1, 2'd2, 24'h0e0100);
         expect_addr(24'h8e0100, 1'b0, 1'b1, 2'd3, 24'h0e0100);

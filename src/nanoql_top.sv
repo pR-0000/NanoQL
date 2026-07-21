@@ -201,6 +201,8 @@ module nanoql_top(
     reg [63:0] rom_image_size = 64'd0;
     reg [63:0] qlsd_image_size = 64'd0;
     reg [63:0] mdv_image_size = 64'd0;
+    reg [63:0] qsound_image_size = 64'd0;
+    reg qsound_mount_seen = 1'b0;
     wire companion_sd_busy;
     wire companion_sd_done;
     wire companion_sd_byte_valid;
@@ -284,6 +286,17 @@ module nanoql_top(
     wire [15:0] mdv_debug_rx_missed_count;
     wire [7:0] mdv_debug_rx_xor;
     wire [7:0] mdv_debug_rx_last;
+    wire qsound_sd_read_start;
+    wire [31:0] qsound_sd_sector;
+    wire qsound_access;
+    wire qsound_bus_ready;
+    wire qsound_bus_data_valid;
+    wire [15:0] qsound_bus_data;
+    wire qsound_bus_write_done;
+    wire [9:0] qsound_audio;
+    wire qsound_loading;
+    wire qsound_loaded;
+    wire qsound_load_fail;
     wire mdv_cpu_data_read;
     reg [15:0] mdv_cpu_read_count;
     reg [7:0] mdv_cpu_read_xor;
@@ -548,6 +561,8 @@ module nanoql_top(
         .mdv_read_start(mdv_sd_read_start),
         .mdv_write_start(mdv_sd_write_start),
         .mdv_sector(mdv_sd_sector),
+        .qsound_read_start(qsound_sd_read_start),
+        .qsound_sector(qsound_sd_sector),
         .sd_busy(companion_sd_busy),
         .sd_done(companion_sd_done),
         .sd_read_start(companion_arb_read_start),
@@ -599,6 +614,10 @@ module nanoql_top(
             qlsd_image_size <= companion_image_size;
         if (companion_image_mounted_delay[2])
             mdv_image_size <= companion_image_size;
+        if (companion_image_mounted_delay[3]) begin
+            qsound_image_size <= companion_image_size;
+            qsound_mount_seen <= companion_image_size != 64'd0;
+        end
     end
 
     always @(posedge clk_pixel) begin
@@ -810,6 +829,36 @@ module nanoql_top(
         .sector_progress(rom_sector_progress)
     );
 
+    ql_qsound_card qsound_card (
+        .clk(clk_pixel),
+        .reset(video_reset),
+        .core_reset(ql_system_reset),
+        .ql_ce_10m5(ql_native_ce),
+        .image_mounted(companion_image_mounted_stable[3]),
+        .image_size(qsound_image_size),
+        .sd_read_start(qsound_sd_read_start),
+        .sd_sector(qsound_sd_sector),
+        .sd_busy(companion_sd_busy && companion_sd_source == 3'd3),
+        .sd_done(companion_sd_done && companion_sd_source == 3'd3),
+        .sd_byte_valid(companion_sd_byte_valid &&
+                       companion_sd_source == 3'd3),
+        .sd_byte_addr(companion_sd_byte_addr),
+        .sd_byte(companion_sd_byte),
+        .bus_req(qsound_access),
+        .bus_we(bus_mem_we),
+        .bus_addr(bus_mem_addr),
+        .bus_ds(bus_mem_ds),
+        .bus_wdata(bus_mem_wdata),
+        .bus_ready(qsound_bus_ready),
+        .bus_data_valid(qsound_bus_data_valid),
+        .bus_data(qsound_bus_data),
+        .bus_write_done(qsound_bus_write_done),
+        .audio(qsound_audio),
+        .loading(qsound_loading),
+        .loaded(qsound_loaded),
+        .failed(qsound_load_fail)
+    );
+
     ql_sdram_memory sdram_memory (
         .clk(clk_pixel),
         .reset(video_reset),
@@ -871,6 +920,7 @@ module nanoql_top(
     );
 
     wire ql_core_ready = sdram_init_done && !sdram_init_fail &&
+                         (!qsound_mount_seen || qsound_loaded) &&
                          (!rom_is_dynamic ||
                           (rom_load_done &&
                            (companion_system_reset == 2'd0)));
@@ -925,7 +975,9 @@ module nanoql_top(
         .cpu_uds(!cpu_uds_n),
         .cpu_lds(!cpu_lds_n),
         .cpu_rw(cpu_rw),
-        .cpu_rom(cpu_addr[23:16] == 8'h00),
+        .cpu_rom((cpu_addr[23:16] == 8'h00) ||
+                 ((cpu_addr >= 24'h0c0000) &&
+                  (cpu_addr <= 24'h0c3fff))),
         .ram_delay_dtack(ram_delay_dtack)
     );
 
@@ -981,6 +1033,12 @@ module nanoql_top(
         .qlsd_address(qlsd_address),
         .qlsd_dtack(qlsd_dtack),
         .qlsd_data(qlsd_data),
+        .qsound_present(qsound_loaded),
+        .qsound_access(qsound_access),
+        .qsound_ready(qsound_bus_ready),
+        .qsound_data_valid(qsound_bus_data_valid),
+        .qsound_data(qsound_bus_data),
+        .qsound_write_done(qsound_bus_write_done),
         .mc_stat_wr(zx8301_mc_stat_wr),
         .mc_stat_data(zx8301_mc_stat_data),
         .zx8302_wr(zx8302_wr),
@@ -1142,7 +1200,7 @@ module nanoql_top(
         end
     end
     wire memory_status_area = (x < 11'd16) && (y < 10'd16);
-    wire memory_failure = sdram_init_fail ||
+    wire memory_failure = sdram_init_fail || qsound_load_fail ||
                           (rom_is_diagnostic && cpu_boot_fail) ||
                           (rom_is_dynamic && rom_load_fail);
     wire [23:0] memory_status_rgb = memory_failure ? 24'hff2020 :
@@ -1183,6 +1241,8 @@ module nanoql_top(
     localparam [3:0] BOOT_ROM_FAILED  = 4'd5;
     localparam [3:0] BOOT_RESET_HELD  = 4'd6;
     localparam [3:0] BOOT_SDRAM_FAIL  = 4'd7;
+    localparam [3:0] BOOT_QSOUND_FAIL = 4'd8;
+    localparam [3:0] BOOT_QSOUND_LOAD = 4'd9;
     reg [3:0] boot_status;
     always @(*) begin
         if (sdram_init_fail)
@@ -1193,6 +1253,10 @@ module nanoql_top(
             boot_status = BOOT_ROM_FAILED;
         else if (rom_loading)
             boot_status = BOOT_LOADING;
+        else if (qsound_load_fail)
+            boot_status = BOOT_QSOUND_FAIL;
+        else if (qsound_loading)
+            boot_status = BOOT_QSOUND_LOAD;
         else if (rom_load_done && companion_system_reset != 2'd0)
             boot_status = BOOT_RESET_HELD;
         else if (!companion_wait_timer[26])
@@ -1527,6 +1591,7 @@ module nanoql_top(
         .reset(video_reset),
         .rgb(osd_rgb),
         .ql_audio(ql_audio),
+        .qsound_audio(qsound_audio),
         .tmds_clk_n(tmds_clk_n),
         .tmds_clk_p(tmds_clk_p),
         .tmds_d_n(tmds_d_n),

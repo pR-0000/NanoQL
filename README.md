@@ -15,6 +15,7 @@ NanoQL démarre une ROM Sinclair QL depuis la carte microSD et fournit :
 - 128, 640 ou 896 Kio de RAM QL sélectionnables dans la SDRAM de la Tang Nano 20K ;
 - les modes vidéo QL 4 et 8 sur HDMI 720p50 ;
 - le son mono du QL sur les deux canaux HDMI en PCM 48 kHz ;
+- une extension QSound optionnelle MC6821 + AY-3-8910, chargée depuis la microSD, mixée sur HDMI et validée physiquement ;
 - une image 512 x 256 centrée avec quatre largeurs sélectionnables ;
 - le contrôleur IPC 8049 et la matrice clavier QL ;
 - un clavier USB raccordé par hub au BL616 intégré ;
@@ -85,6 +86,8 @@ Vous devez fournir légalement :
 - une ROM QL standard de 48 ou 64 Kio ;
 - le firmware IPC Sinclair standard `ipc8049.hex` au format Intel HEX, disponible dans le [core QL MiSTer](https://github.com/MiSTer-devel/QL_MiSTer/tree/master/rtl). NanoQL utilise ce firmware d’origine afin de reproduire le comportement du contrôleur 8049 du QL.
 
+Une ROM QSound de 8 Kio est facultative. Le dépôt du [clone QSound/QPrint](https://github.com/alvaroalea/QL_QsoundQprint_clone/tree/main/ROM) propose les versions utilisées pour tester le matériel ; la version 1.40 est le choix classique recommandé et la version 1.94 ajoute les fonctions du lecteur PT3 mais retire QPrint. Si vous êtes autorisé à utiliser l'image choisie, sélectionnez-la dans **Optional 8 KiB QSound ROM**. L'assistant la valide, la copie sous `QSound.rom` et la monte automatiquement. NanoQL ne redistribue aucune ROM QSound.
+
 Dans l'onglet **2. ROM et microSD** :
 
 1. Sélectionnez votre ROM QL.
@@ -97,6 +100,7 @@ L'assistant valide la ROM et crée à la racine de la carte :
 ```text
 QL.rom
 nanoql.ini
+QSound.rom  # seulement si une ROM QSound a été sélectionnée
 ```
 
 #### 4. Compiler et programmer le FPGA
@@ -148,6 +152,8 @@ La commande affiche le mode sélectionné et sa fréquence effective. Pour charg
 
 Pour présenter un dossier ordinaire comme cartouche `mdv1_`, créez un sous-dossier dans `NanoQL/Microdrives` sur la microSD et placez-y les fichiers QL. Ouvrez ensuite l'overlay avec `F12`, choisissez **Build MDV1 from:** puis ce sous-dossier. Le BL616 réalise la conversion, monte la cartouche pour la session en cours et redémarre le QL, sans PC ni mode développeur. Utilisez ensuite `DIR mdv1_`, `LOAD mdv1_nom`, `LRUN mdv1_programme_bas` ou les commandes QDOS habituelles de sauvegarde. Les écritures modifient `NanoQL/Drive1/MDV1.mdv`, pas le dossier source ; reconstruire la cartouche depuis le dossier remplace donc ces modifications. L'image générée n'est volontairement pas remontée par `nanoql.ini` au démarrage. La conversion accepte 126 fichiers au maximum, huit niveaux de sous-dossiers et des noms QDOS aplatis en ASCII de 36 caractères au maximum. L'image QLAY produite mesure toujours 174 930 octets, mais sa capacité utile dépend de l'arrondi de chaque fichier par secteurs de 512 octets ; un fichier unique peut contenir au plus 128 960 octets.
 
+Pour une démonstration QSound complète, lancez `python tools/download_qsound_demo.py --sd-root D:\`, montez ensuite `QSoundZ.mdv` comme **Microdrive 1** dans l'overlay et entrez `LRUN mdv1_boot`. L'outil télécharge le musicdisk freeware [QSoundZ de SMFX](https://www.pouet.net/prod.php?which=96940), vérifie son SHA-256 et ne l'ajoute pas au dépôt NanoQL.
+
 ### Dépannage court
 
 - **Pas d'image :** vérifiez le câble HDMI, l'entrée de l'écran et la programmation Flash du FPGA.
@@ -161,17 +167,17 @@ Dernière compilation du build principal :
 
 | Ressource    |            Utilisation |
 | ------------ | ---------------------: |
-| Logic        | 13 153 / 20 736 (64 %) |
-| LUT          |                 12 359 |
-| ALU          |                    728 |
-| Registres    |                  6 269 |
-| CLS          |  8 432 / 10 368 (82 %) |
-| BSRAM        |         17 / 46 (37 %) |
+| Logic        | 14 160 / 20 736 (69 %) |
+| LUT          |                 13 231 |
+| ALU          |                    845 |
+| Registres    |                  6 863 |
+| CLS          |  8 908 / 10 368 (86 %) |
+| BSRAM        |         21 / 46 (46 %) |
 | DSP          |         0,5 / 24 (3 %) |
 | E/S          |         27 / 66 (41 %) |
 | rPLL         |           2 / 2 (100 %) |
-| Fmax système | 61,388 MHz pour 31,8 MHz |
-| Fmax HDMI    | 80,824 MHz pour 74,25 MHz |
+| Fmax système | 63,562 MHz pour 31,8 MHz |
+| Fmax HDMI    | 74,690 MHz pour 74,25 MHz |
 | TNS setup    | 0 ns (système et HDMI) |
 
 Ces valeurs sont mises à jour après les changements significatifs du build principal.
@@ -180,7 +186,8 @@ Ces valeurs sont mises à jour après les changements significatifs du build pri
 
 ```text
 Clavier USB -> BL616 FPGA Companion -> matrice QL -> IPC 8049
-microSD -> BL616 FPGA Companion -> ROM, QL-SD et image Microdrive
+microSD -> BL616 FPGA Companion -> ROM, QL-SD, Microdrive et ROM QSound
+MC6821 + AY-3-8910 QSound + BEEP QL -> audio HDMI
 OSD FPGA Companion + vidéo QL -> HDMI
 ROM + SDRAM + ZX8301/ZX8302 -> fx68k
 ```
@@ -201,6 +208,7 @@ NanoQL est un portage dérivé de QL_MiSTer et de l'ancien core MiST, pas une r�
 | Gold Card, SMSQ/E et RTC | Pris en charge | Pas encore pris en charge |
 | ROM et QL-SD | Chargement et montage dynamique par l'environnement MiSTer | Sélection depuis la microSD et l'overlay BL616 ; lecture QXL.WIN validée, écriture à valider |
 | Microdrive | Relecture en mémoire d'une image chargée | Flux matériel indépendant du CPU, écriture/effacement QDOS persistants et conversion autonome d'un dossier microSD |
+| QSound | Non intégré | Extension optionnelle MC6821 + AY-3-8910 à 0,75 MHz, ROM microSD et mixage HDMI, validée physiquement |
 | Développement | Téléchargement par le canal HPS de MiSTer | NanoQL Link par USB : clavier distant, fichiers microSD, RAM 68000, exécution et programmation FPGA |
 | Vidéo | Sortie et scaler MiSTer | HDMI 720p50 intégré, quatre géométries QL et trame QL native séparée de la trame HDMI |
 
@@ -224,6 +232,8 @@ La ROM du firmware 8049 utilise une sortie synchrone et est synthétisée dans u
 
 Le ZX8302 applique chaque écriture de registre sur la phase négative du 68008 et ne renvoie `DTACK` qu'après sa validation. Ses registres, son lien série IPC et ses interruptions suivent l'organisation du module QL MiSTer.
 
+L'extension QSound optionnelle reproduit sa fenêtre ROM `$C0000-$C1FFF`, son interface MC6821 et le câblage du générateur AY-3-8910. Son horloge de 0,75 MHz reste indépendante de la vitesse CPU et ses trois voies sont mélangées au son QL sur HDMI. Le démarrage de la ROM, les commandes sonores et la sortie HDMI sont validés physiquement. La ROM n'est pas distribuée avec NanoQL. Sa provenance, sa préparation et le test QSoundZ sont décrits dans [`docs/QSOUND.md`](docs/QSOUND.md).
+
 Le HDL et les contraintes sont dans `src/`, l'intégration Companion dans `src/companion/` et les outils utilisateur dans `tools/`.
 
 L'interface de développement USB permettant de charger et d'exécuter directement un binaire 68000 est décrite dans [`docs/NANOQL_LINK.md`](docs/NANOQL_LINK.md). Le firmware BL616 unifié démarre avec le clavier USB normal et passe à NanoQL Link lorsqu'on appuie sur S1 après le démarrage du FPGA. Cette interface peut reconfigurer temporairement la SRAM du FPGA avec le `.bin` produit par Gowin, puis revenir automatiquement en mode Companion. La commande `fpga-flash-native` automatise la programmation persistante avec Gowin Programmer ou openFPGALoader après restauration temporaire du firmware BL616 officiel.
@@ -234,6 +244,8 @@ L'interface de développement USB permettant de charger et d'exécuter directeme
 - [QL MiST](https://github.com/mist-devel/ql)
 - [MiSTeryNano](https://github.com/MiSTle-Dev/MiSTeryNano)
 - [NanoMIG](https://github.com/MiSTle-Dev/NanoMIG)
+- [Clone matériel QSound/QPrint](https://github.com/alvaroalea/QL_QsoundQprint_clone)
+- [JT49](https://github.com/jotego/jt49)
 - [Documentation Tang Nano 20K](https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html)
 
 ## English
@@ -247,6 +259,7 @@ NanoQL boots a Sinclair QL ROM from microSD and currently provides:
 - 128, 640, or 896 KiB of selectable QL RAM in the Tang Nano 20K SDRAM;
 - QL mode 4 and mode 8 video over 720p50 HDMI;
 - QL mono sound on both HDMI channels as 48 kHz PCM;
+- a physically validated optional MC6821 + AY-3-8910 QSound expansion loaded from microSD and mixed into HDMI;
 - a centered 512 x 256 image with four selectable display widths;
 - the 8049 IPC controller and QL keyboard matrix;
 - a USB keyboard through the integrated BL616 and a powered USB hub;
@@ -286,11 +299,12 @@ In **1. BL616 Companion**, select board revision 3921 or 3923, keep the **NanoQL
 
 #### 3. Prepare the ROM and microSD
 
-Provide a legally obtained 48 or 64 KiB QL ROM and the standard Sinclair IPC firmware `ipc8049.hex` from the [MiSTer QL core](https://github.com/MiSTer-devel/QL_MiSTer/tree/master/rtl). NanoQL uses this original firmware to reproduce the behavior of the QL's 8049 controller. In **2. ROM and microSD**, select the ROM, microSD root, and IPC file. Click **Prepare microSD**, then **Convert IPC firmware**. The card will contain:
+Provide a legally obtained 48 or 64 KiB QL ROM and the standard Sinclair IPC firmware `ipc8049.hex` from the [MiSTer QL core](https://github.com/MiSTer-devel/QL_MiSTer/tree/master/rtl). NanoQL uses this original firmware to reproduce the behavior of the QL's 8049 controller. An authorized 8 KiB QSound ROM is optional; the [QSound/QPrint clone ROM folder](https://github.com/alvaroalea/QL_QsoundQprint_clone/tree/main/ROM) contains the hardware-test versions, with 1.40 recommended for classic compatibility and 1.94 providing PT3-player features without QPrint. NanoQL does not redistribute these ROMs. Select the chosen image in **Optional 8 KiB QSound ROM**. In **2. ROM and microSD**, select the required files and microSD root. Click **Prepare microSD**, then **Convert IPC firmware**. The card will contain:
 
 ```text
 QL.rom
 nanoql.ini
+QSound.rom  # only when an optional QSound ROM was selected
 ```
 
 #### 4. Build and program NanoQL
@@ -318,6 +332,8 @@ For an objective CPU-speed check from a PC, enter NanoQL Link mode with S1 and r
 
 To expose an ordinary folder as the `mdv1_` cartridge, create a subfolder under `NanoQL/Microdrives` on the microSD and place the QL files inside it. Open the overlay with `F12`, select **Build MDV1 from:**, then select that folder. The BL616 converts it, mounts the cartridge for the current session, and resets the QL without a PC or development mode. Use `DIR mdv1_`, `LOAD mdv1_name`, `LRUN mdv1_program_bas`, or the usual QDOS save commands. Writes modify `NanoQL/Drive1/MDV1.mdv`, not the source folder; rebuilding the cartridge from that folder therefore replaces those changes. The generated image is deliberately not remounted by `nanoql.ini` during startup. Conversion supports up to 126 files, eight nested directory levels, and flattened ASCII QDOS names up to 36 characters. The generated QLAY image is always 174,930 bytes, but usable capacity depends on per-file 512-byte sector rounding; a single file can contain at most 128,960 bytes.
 
+For a complete QSound demonstration, run `python tools/download_qsound_demo.py --sd-root D:\`, mount `QSoundZ.mdv` as **Microdrive 1** in the overlay, and enter `LRUN mdv1_boot`. The tool downloads the freeware [QSoundZ music disk by SMFX](https://www.pouet.net/prod.php?which=96940), verifies its SHA-256, and keeps it outside the NanoQL repository.
+
 ### Quick troubleshooting
 
 - **No picture:** check HDMI input and persistent FPGA programming.
@@ -331,23 +347,24 @@ Latest main build:
 
 | Resource      |           Utilization |
 | ------------- | --------------------: |
-| Logic         | 13,153 / 20,736 (64%) |
-| LUT           |                12,359 |
-| ALU           |                   728 |
-| Registers     |                 6,269 |
-| CLS           |  8,432 / 10,368 (82%) |
-| BSRAM         |         17 / 46 (37%) |
+| Logic         | 14,160 / 20,736 (69%) |
+| LUT           |                13,231 |
+| ALU           |                   845 |
+| Registers     |                 6,863 |
+| CLS           |  8,908 / 10,368 (86%) |
+| BSRAM         |         21 / 46 (46%) |
 | DSP           |         0.5 / 24 (3%) |
 | I/O           |         27 / 66 (41%) |
-| System Fmax   | 61.388 MHz at 31.8 MHz |
-| HDMI Fmax     | 80.824 MHz at 74.25 MHz |
+| System Fmax   | 63.562 MHz at 31.8 MHz |
+| HDMI Fmax     | 74.690 MHz at 74.25 MHz |
 | Setup TNS     | 0 ns (system and HDMI) |
 
 ### Architecture and references
 
 ```text
 USB keyboard -> BL616 FPGA Companion -> QL matrix -> 8049 IPC
-microSD -> BL616 FPGA Companion -> ROM, QL-SD, and Microdrive image
+microSD -> BL616 FPGA Companion -> ROM, QL-SD, Microdrive, and QSound ROM
+MC6821 + AY-3-8910 QSound + native QL BEEP -> HDMI audio
 FPGA Companion OSD + QL video -> HDMI
 ROM + SDRAM + ZX8301/ZX8302 -> fx68k
 ```
@@ -368,6 +385,7 @@ NanoQL is a port derived from QL_MiSTer and the earlier MiST core, not an unrela
 | Gold Card, SMSQ/E, and RTC | Supported | Not implemented yet |
 | ROM and QL-SD | Dynamic loading and mounting through the MiSTer environment | microSD and BL616-overlay selection; QXL.WIN reads validated, writes pending validation |
 | Microdrive | In-memory playback of an uploaded image | CPU-independent physical stream, persistent QDOS write/erase, and autonomous microSD-folder conversion |
+| QSound | Not integrated | Physically validated optional 0.75 MHz MC6821 + AY-3-8910 expansion with microSD ROM and HDMI mixing |
 | Development | Downloads through MiSTer's HPS channel | NanoQL Link over USB: remote keyboard, microSD files, 68000 RAM, execution, and FPGA programming |
 | Video | MiSTer video output and scaler | Integrated 720p50 HDMI, four QL geometries, and a native QL raster independent of HDMI timing |
 
@@ -391,8 +409,10 @@ The 8049 firmware ROM uses a synchronous output and is synthesized into one of t
 
 The ZX8302 applies each register write on the negative 68008 phase and returns `DTACK` only after it has committed. Its registers, IPC serial link, and interrupts follow the QL MiSTer module structure.
 
+The optional QSound expansion reproduces its `$C0000-$C1FFF` ROM window, MC6821 interface, and AY-3-8910 wiring. Its 0.75 MHz clock remains independent of CPU speed, and all three channels are mixed with native QL audio over HDMI. ROM startup, sound commands, and HDMI output are physically validated. The ROM is not distributed with NanoQL. Its source, preparation, and the QSoundZ test are documented in [`docs/QSOUND.md`](docs/QSOUND.md).
+
 HDL and constraints are under `src/`, Companion integration is under `src/companion/`, and user tools are under `tools/`.
 
 The direct USB development interface is documented in [`docs/NANOQL_LINK.md`](docs/NANOQL_LINK.md). The unified BL616 firmware starts with the normal USB keyboard and switches to NanoQL Link when S1 is pressed after FPGA startup. It can temporarily reconfigure FPGA SRAM with Gowin's generated `.bin` file, then automatically returns to Companion mode. The `fpga-flash-native` command automates persistent programming with Gowin Programmer or openFPGALoader after temporarily restoring the official BL616 firmware.
 
-Reference projects: [QL MiSTer](https://github.com/MiSTer-devel/QL_MiSTer), [QL MiST](https://github.com/mist-devel/ql), [MiSTeryNano](https://github.com/MiSTle-Dev/MiSTeryNano), [NanoMIG](https://github.com/MiSTle-Dev/NanoMIG), and the [Tang Nano 20K documentation](https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html).
+Reference projects: [QL MiSTer](https://github.com/MiSTer-devel/QL_MiSTer), [QL MiST](https://github.com/mist-devel/ql), [MiSTeryNano](https://github.com/MiSTle-Dev/MiSTeryNano), [NanoMIG](https://github.com/MiSTle-Dev/NanoMIG), the [QSound/QPrint hardware clone](https://github.com/alvaroalea/QL_QsoundQprint_clone), [JT49](https://github.com/jotego/jt49), and the [Tang Nano 20K documentation](https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html).

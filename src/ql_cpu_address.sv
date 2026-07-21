@@ -12,6 +12,13 @@ module ql_cpu_address(
     wire [23:0] address_mask = (ram_config == 2'd0) ? 24'h03ffff :
                                (ram_config == 2'd3) ? 24'h7fffff :
                                                      24'h0fffff;
-    assign byte_addr = {word_addr, uds_n && !lds_n} & address_mask;
+    wire [23:0] raw_byte_addr = {word_addr, uds_n && !lds_n};
+    // The base QL mirrors its local address space through 0x3ffff, but the
+    // expansion connector at 0xc0000-0xfffff must remain visible even with
+    // no RAM expansion installed. QSound uses the first 16 KiB slot there.
+    wire expansion_slot = (raw_byte_addr[23:20] == 4'd0) &&
+                          (raw_byte_addr[19:18] == 2'b11);
+    assign byte_addr = expansion_slot ? raw_byte_addr :
+                                             (raw_byte_addr & address_mask);
 
 endmodule
