@@ -124,7 +124,8 @@ static DIR fs_directory;
 static char fs_target_path[NANOQL_FS_FULL_PATH_SIZE];
 static uint32_t fs_expected_size;
 static uint32_t fs_expected_crc;
-static uint8_t fs_verify_buffer[512];
+static uint32_t fs_received_size;
+static uint32_t fs_received_crc;
 
 static void fpga_upload_suspend_companion(void);
 static void fpga_upload_resume_companion(void);
@@ -609,6 +610,8 @@ static uint8_t fs_command(
             fs_session = NANOQL_FS_PUTTING;
             fs_expected_size = read_be32(&payload[1]);
             fs_expected_crc = read_be32(&payload[5]);
+            fs_received_size = 0;
+            fs_received_crc = UINT32_C(0xffffffff);
             memcpy(fs_target_path, path, strlen(path) + 1);
         }
         sdc_unlock();
@@ -625,8 +628,12 @@ static uint8_t fs_command(
         uint32_t data_length = (uint32_t)length - 5;
         if (data_length > NANOQL_FS_CHUNK_SIZE ||
             offset > fs_expected_size ||
-            data_length > fs_expected_size - offset)
+            data_length > fs_expected_size - offset ||
+            offset > fs_received_size ||
+            (offset < fs_received_size &&
+             data_length > fs_received_size - offset))
             return 3;
+        bool extends_file = offset == fs_received_size;
         UINT written = 0;
         sdc_lock();
         result = f_lseek(&fs_file, offset);
@@ -637,6 +644,11 @@ static uint8_t fs_command(
             fs_abort_session();
             return result == FR_OK ? 23 : fs_error_from_result(result);
         }
+        if (extends_file) {
+            fs_received_crc = crc32_update(
+                fs_received_crc, &payload[5], data_length);
+            fs_received_size += data_length;
+        }
         write_be32(response, offset + data_length);
         *response_length = 4;
         return 0;
@@ -645,7 +657,7 @@ static uint8_t fs_command(
     case NANOQL_CMD_FS_PUT_COMMIT: {
         if (length != 1 || fs_session != NANOQL_FS_PUTTING)
             return length != 1 ? 3 : 22;
-        uint32_t actual_crc = UINT32_C(0xffffffff);
+        uint32_t actual_crc = fs_received_crc ^ UINT32_C(0xffffffff);
         uint32_t actual_size = 0;
         sdc_lock();
         result = f_sync(&fs_file);
@@ -654,24 +666,10 @@ static uint8_t fs_command(
         else if (result == FR_OK)
             result = FR_INVALID_OBJECT;
         (void)f_close(&fs_file);
-        if (result == FR_OK)
-            result = fs_open_retry_locked(&fs_file, NANOQL_FS_TEMP, FA_READ);
-        if (result == FR_OK) {
-            for (;;) {
-                UINT read = 0;
-                result = f_read(
-                    &fs_file, fs_verify_buffer,
-                    sizeof(fs_verify_buffer), &read);
-                if (result != FR_OK || read == 0)
-                    break;
-                actual_crc = crc32_update(actual_crc, fs_verify_buffer, read);
-            }
-            (void)f_close(&fs_file);
-        }
-        actual_crc ^= UINT32_C(0xffffffff);
 
         if (result == FR_OK &&
-            (actual_size != fs_expected_size ||
+            (fs_received_size != fs_expected_size ||
+             actual_size != fs_expected_size ||
              actual_crc != fs_expected_crc)) {
             (void)f_unlink(NANOQL_FS_TEMP);
             fs_session = NANOQL_FS_IDLE;
@@ -801,19 +799,11 @@ static uint8_t fs_command(
         if (length != 2 || fs_session != NANOQL_FS_IDLE)
             return length != 2 ? 3 : 22;
         if (payload[1] == 0) {
-            /* Release the old file before the atomic upload replaces it. Do
-               not save this temporary ejection in nanoql.ini. */
-            fpga_upload_suspend_companion();
-            sys_set_val('R', 1);
-            microdrive_ql_held = true;
-            /* sdc_image_open() ejects and drains the old mounted image while
-               its FIL is still valid, including a mount restored by INI. */
-            if (sdc_image_open(2, NULL) != 0) {
-                sys_set_val('R', 0);
-                microdrive_ql_held = false;
-                fpga_upload_resume_companion();
+            /* Release the old file before its atomic replacement. Keep the
+               Companion and QL running so an interrupted desktop upload can
+               never leave the board held in reset. */
+            if (sdc_image_open(2, NULL) != 0)
                 return 25;
-            }
         } else if (payload[1] == 1) {
             char image_name[] = "MDV1.mdv";
             sdc_set_cwd(2, NANOQL_FS_ROOT);

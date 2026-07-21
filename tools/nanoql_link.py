@@ -16,7 +16,11 @@ import time
 import zlib
 from pathlib import Path
 
-from nanoql_drive import build_qlay_image, collect_drive_files
+from nanoql_drive import (
+    build_qlay_image,
+    collect_drive_files,
+    extract_qlay_image,
+)
 
 try:
     import serial
@@ -147,6 +151,8 @@ QL_FRENCH_KEYS = {
     "w": (0x1D, ()), "W": (0x1D, (MOD_LEFT_SHIFT,)),
     "m": (0x33, ()), "M": (0x33, (MOD_LEFT_SHIFT,)),
     "_": (0x2D, (MOD_LEFT_SHIFT,)),
+    # The French QDOS keymap expects this HID contact for double quote.
+    '"': (0x1F, (MOD_LEFT_SHIFT,)),
     "é": (0x2F, ()), "\\": (0x2F, (MOD_LEFT_SHIFT,)),
     "è": (0x30, ()), "ù": (0x31, ()), "`": (0x31, (MOD_LEFT_SHIFT,)),
     "à": (0x34, ()), "/": (0x34, (MOD_LEFT_SHIFT,)),
@@ -179,6 +185,21 @@ SCAN_TO_HID = {
 }
 
 
+def windows_keyboard_layout():
+    """Return the layout of the foreground terminal, not Python's thread."""
+    if os.name != "nt":
+        return None
+    user32 = ctypes.windll.user32
+    user32.GetForegroundWindow.restype = ctypes.c_void_p
+    user32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    user32.GetWindowThreadProcessId.restype = ctypes.c_uint
+    user32.GetKeyboardLayout.argtypes = [ctypes.c_uint]
+    user32.GetKeyboardLayout.restype = ctypes.c_void_p
+    window = user32.GetForegroundWindow()
+    thread_id = user32.GetWindowThreadProcessId(window, None) if window else 0
+    return user32.GetKeyboardLayout(thread_id)
+
+
 def windows_character_key(character: str) -> tuple[int, tuple[int, ...]] | None:
     if os.name != "nt" or len(character) != 1:
         return None
@@ -192,7 +213,7 @@ def windows_character_key(character: str) -> tuple[int, tuple[int, ...]] | None:
     user32.VkKeyScanExW.restype = ctypes.c_short
     user32.MapVirtualKeyExW.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p]
     user32.MapVirtualKeyExW.restype = ctypes.c_uint
-    layout = user32.GetKeyboardLayout(0)
+    layout = windows_keyboard_layout()
     packed = user32.VkKeyScanExW(character, layout)
     if packed == -1:
         return None
@@ -224,7 +245,7 @@ def windows_realtime_keymap() -> dict[int, int]:
     user32.MapVirtualKeyExW.argtypes = [ctypes.c_uint, ctypes.c_uint,
                                         ctypes.c_void_p]
     user32.MapVirtualKeyExW.restype = ctypes.c_uint
-    layout = user32.GetKeyboardLayout(0)
+    layout = windows_keyboard_layout()
 
     # Modifiers are first so a simultaneous modifier/key press reaches the QL
     # matrix in the same order as a physical keyboard.
@@ -308,7 +329,7 @@ def windows_virtual_key_character(virtual_key: int) -> str | None:
         keyboard_state[0xA4] = 0x80
 
     keyboard_state[0x14] = user32.GetKeyState(0x14) & 1
-    layout = user32.GetKeyboardLayout(0)
+    layout = windows_keyboard_layout()
     scan_code = user32.MapVirtualKeyExW(virtual_key, 0, layout)
     output = ctypes.create_unicode_buffer(8)
     count = user32.ToUnicodeEx(
@@ -323,7 +344,7 @@ def windows_virtual_key_character(virtual_key: int) -> str | None:
 def default_ql_layout() -> str:
     if os.name != "nt":
         return "uk"
-    layout = ctypes.windll.user32.GetKeyboardLayout(0)
+    layout = windows_keyboard_layout()
     language_id = int(layout or 0) & 0xFFFF
     return "fr" if (language_id & 0x03FF) == 0x000C else "uk"
 
@@ -706,7 +727,15 @@ class NanoQLLink:
                         raise RuntimeError("NanoQL Drive1 acknowledged an invalid offset.")
                     percent = 100 if size == 0 else sent * 100 // size
                     print(f"\rDrive1 upload: {percent:3d}%", end="", flush=True)
-            response = self.transact(bytes((CMD_FS_PUT_COMMIT,)))
+            print("\nVerifying the upload on microSD...", flush=True)
+            # Commit closes, reopens, and CRC-checks the file on microSD.
+            # A full MDV image can take longer than the normal link timeout.
+            previous_timeout = self.serial.timeout
+            self.serial.timeout = 30.0
+            try:
+                response = self.transact(bytes((CMD_FS_PUT_COMMIT,)))
+            finally:
+                self.serial.timeout = previous_timeout
             if len(response) != 8:
                 raise RuntimeError("Invalid NanoQL Drive1 upload verification response.")
             remote_size = int.from_bytes(response[:4], "big")
@@ -1423,6 +1452,22 @@ def main() -> int:
         "--name", default="NANOQL", help="QL Microdrive medium name"
     )
 
+    mdv_extract_parser = subparsers.add_parser(
+        "mdv-extract",
+        help="extract ordinary files from a local or Drive1 QLAY image",
+    )
+    mdv_extract_parser.add_argument(
+        "source", help="local image path, or relative Drive1 path with --remote"
+    )
+    mdv_extract_parser.add_argument(
+        "destination", nargs="?", type=Path,
+        help="output folder (default: IMAGE_files)",
+    )
+    mdv_extract_parser.add_argument(
+        "--remote", action="store_true",
+        help="download SOURCE from NanoQL/Drive1 before extracting it",
+    )
+
     stress_parser = subparsers.add_parser(
         "link-stress", help="run a non-destructive NanoQL Link USB stress test"
     )
@@ -1489,6 +1534,15 @@ def main() -> int:
             args.bitstream, args.tool, args.frequency,
             args.channel, args.location
         )
+        return 0
+
+    if args.command == "mdv-extract" and not args.remote:
+        source = Path(args.source).expanduser().resolve()
+        destination = args.destination or source.with_name(source.stem + "_files")
+        written = extract_qlay_image(source.read_bytes(), destination)
+        print(f"Extracted {len(written)} file(s) to {destination.resolve()}.")
+        for path in written:
+            print(f"  {path.name}: {path.stat().st_size} bytes")
         return 0
 
     port = find_port(args.port)
@@ -1641,6 +1695,20 @@ def main() -> int:
                 "MDV1 synchronized, mounted, and saved for future boots. "
                 "The QL has been restarted."
             )
+        elif args.command == "mdv-extract":
+            remote_path_bytes(args.source)
+            source_name = args.source.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+            destination = args.destination or Path(source_name).with_suffix("").with_name(
+                Path(source_name).stem + "_files"
+            )
+            with tempfile.TemporaryDirectory(prefix="nanoql-mdv-extract-") as directory:
+                local_image = Path(directory) / source_name
+                print(f"Downloading /NanoQL/Drive1/{args.source}...")
+                link.filesystem_get(args.source, local_image)
+                written = extract_qlay_image(local_image.read_bytes(), destination)
+            print(f"Extracted {len(written)} file(s) to {destination.resolve()}.")
+            for path in written:
+                print(f"  {path.name}: {path.stat().st_size} bytes")
         elif args.command == "type":
             link.type_text(args.text)
             if args.enter:

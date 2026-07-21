@@ -260,12 +260,18 @@ module nanoql_top(
     reg qlsd_byte_addr_valid;
     wire mdv_selected;
     wire mdv_gap;
-    wire mdv_tx_empty;
     wire mdv_rx_ready;
     wire [7:0] mdv_data;
     wire mdv_image_ready;
     wire mdv_sd_read_start;
+    wire mdv_sd_write_start;
     wire [31:0] mdv_sd_sector;
+    wire [7:0] mdv_sd_write_byte;
+    wire mdv_tx_full;
+    wire mdv_write_enable;
+    wire mdv_erase_enable;
+    wire mdv_tx_write;
+    wire [7:0] mdv_tx_data;
     wire [7:0] mdv_debug_flags;
     wire [17:0] mdv_debug_byte_position;
     wire [8:0] mdv_debug_current_sector;
@@ -541,6 +547,7 @@ module nanoql_top(
         .qlsd_write_start(qlsd_bridge_write_pending),
         .qlsd_sector(qlsd_bridge_lba),
         .mdv_read_start(mdv_sd_read_start),
+        .mdv_write_start(mdv_sd_write_start),
         .mdv_sector(mdv_sd_sector),
         .sd_busy(companion_sd_busy),
         .sd_done(companion_sd_done),
@@ -571,7 +578,8 @@ module nanoql_top(
         .rsrc(companion_sd_source),
         .rbusy(companion_sd_busy),
         .rdone(companion_sd_done),
-        .inbyte(qlsd_buffer_data),
+        .inbyte(companion_sd_source == 3'd2 ? mdv_sd_write_byte :
+                                              qlsd_buffer_data),
         .outen(companion_sd_byte_valid),
         .outaddr(companion_sd_byte_addr),
         .outbyte(companion_sd_byte)
@@ -692,17 +700,26 @@ module nanoql_top(
 
     ql_microdrive_stream microdrive_stream (
         .clk(clk_pixel),
-        // Rewind and invalidate the two sector buffers on every QL reset.
-        // ql_microdrive_stream deliberately retains the mounted-image
-        // metadata in its reset branch, so the cartridge itself stays in.
-        .reset(ql_system_reset),
+        // The complete FPGA reset clears the transport immediately. A QL
+        // reset is handled separately so an in-flight cartridge write can
+        // finish before the logical tape returns to its beginning.
+        .reset(video_reset),
+        // Rewind the logical cartridge after QL RESET, once any pending
+        // normalized record has safely reached the microSD.
+        .core_reset(ql_system_reset),
         .selected(mdv_selected),
         .status_read_ack(zx8302_rd && (zx8302_addr == 2'b10) &&
                          !zx8302_ds[1]),
+        .write_enable(mdv_write_enable),
+        .erase_enable(mdv_erase_enable),
+        .tx_write(mdv_tx_write),
+        .tx_data(mdv_tx_data),
         .image_mounted(companion_image_mounted_stable[2]),
         .image_size(mdv_image_size),
         .sd_read_start(mdv_sd_read_start),
+        .sd_write_start(mdv_sd_write_start),
         .sd_sector(mdv_sd_sector),
+        .sd_write_byte(mdv_sd_write_byte),
         .sd_busy(companion_sd_busy),
         .sd_done(companion_sd_done),
         .sd_source(companion_sd_source),
@@ -711,7 +728,7 @@ module nanoql_top(
         .sd_byte(companion_sd_byte),
         .image_ready(mdv_image_ready),
         .gap(mdv_gap),
-        .tx_empty(mdv_tx_empty),
+        .tx_full(mdv_tx_full),
         .rx_ready(mdv_rx_ready),
         .data(mdv_data),
         .debug_flags(mdv_debug_flags),
@@ -1051,9 +1068,13 @@ module nanoql_top(
         .keyboard_matrix(companion_keyboard_matrix),
         .microdrive_gap(mdv_gap),
         .microdrive_rx_ready(mdv_rx_ready),
-        .microdrive_tx_empty(mdv_tx_empty),
+        .microdrive_tx_full(mdv_tx_full),
         .microdrive_data(mdv_data),
         .microdrive_selected(mdv_selected),
+        .microdrive_write_enable(mdv_write_enable),
+        .microdrive_erase_enable(mdv_erase_enable),
+        .microdrive_tx_write(mdv_tx_write),
+        .microdrive_tx_data(mdv_tx_data),
         .cpu_read(zx8302_rd),
         .cpu_write(zx8302_wr),
         .cpu_addr(zx8302_addr),

@@ -19,10 +19,10 @@ NanoQL démarre une ROM Sinclair QL depuis la carte microSD et fournit :
 - le contrôleur IPC 8049 et la matrice clavier QL ;
 - un clavier USB raccordé par hub au BL616 intégré ;
 - le chargement automatique de `QL.rom` depuis la microSD ;
-- un lecteur `MDV1_` validé pour les images Microdrive QLAY ;
+- un lecteur `MDV1_` pour les images Microdrive QLAY, avec persistance des écritures QDOS dans l'image montée ;
 - un menu OSD accessible avec `F12` pour choisir la ROM, la RAM, la vitesse CPU, le cadrage vidéo et réinitialiser le QL.
 
-Le chemin Microdrive reproduit le signal physique QL à 100 kHz sous la forme du flux QLAY sérialisé à 200 kbit/s utilisé par le ZX8302. Il est validé en lecture avec `DIR`, `LOAD` et `LRUN` ; les écritures effectuées par QDOS ne sont pas encore conservées.
+Le chemin Microdrive reproduit le signal physique QL à 100 kHz sous la forme du flux QLAY sérialisé à 200 kbit/s utilisé par le ZX8302. `DIR`, `LOAD`, `LRUN`, `SAVE` et la persistance après reset sont validés physiquement. Les registres `WRITE` et `ERASE` du ZX8302 reconstruisent les blocs QLAY normalisés avant leur enregistrement dans l'image `MDV1.mdv` montée.
 
 Les objectifs et leur ordre d'intégration sont détaillés dans [la feuille de route](docs/ROADMAP.md).
 
@@ -146,7 +146,7 @@ python tools/nanoql_link.py --port COMx cpu-status
 
 La commande affiche le mode sélectionné et sa fréquence effective. Pour charger des programmes QL de manière fiable, utilisez l'image QL-SD décrite plus bas.
 
-Pour présenter un dossier ordinaire comme cartouche `mdv1_`, créez un sous-dossier dans `NanoQL/Microdrives` sur la microSD et placez-y les fichiers QL. Ouvrez ensuite l'overlay avec `F12`, choisissez **Build MDV1 from:** puis ce sous-dossier. Le BL616 réalise la conversion, monte la cartouche pour la session en cours et redémarre le QL, sans PC ni mode développeur. Utilisez ensuite `DIR mdv1_`, `LOAD mdv1_nom` ou `LRUN mdv1_programme_bas`. L'image générée n'est volontairement pas remontée par `nanoql.ini` au démarrage. La conversion accepte 126 fichiers au maximum, huit niveaux de sous-dossiers et des noms QDOS aplatis en ASCII de 36 caractères au maximum. L'image QLAY produite mesure toujours 174 930 octets, mais sa capacité utile dépend de l'arrondi de chaque fichier par secteurs de 512 octets ; un fichier unique peut contenir au plus 128 960 octets.
+Pour présenter un dossier ordinaire comme cartouche `mdv1_`, créez un sous-dossier dans `NanoQL/Microdrives` sur la microSD et placez-y les fichiers QL. Ouvrez ensuite l'overlay avec `F12`, choisissez **Build MDV1 from:** puis ce sous-dossier. Le BL616 réalise la conversion, monte la cartouche pour la session en cours et redémarre le QL, sans PC ni mode développeur. Utilisez ensuite `DIR mdv1_`, `LOAD mdv1_nom`, `LRUN mdv1_programme_bas` ou les commandes QDOS habituelles de sauvegarde. Les écritures modifient `NanoQL/Drive1/MDV1.mdv`, pas le dossier source ; reconstruire la cartouche depuis le dossier remplace donc ces modifications. L'image générée n'est volontairement pas remontée par `nanoql.ini` au démarrage. La conversion accepte 126 fichiers au maximum, huit niveaux de sous-dossiers et des noms QDOS aplatis en ASCII de 36 caractères au maximum. L'image QLAY produite mesure toujours 174 930 octets, mais sa capacité utile dépend de l'arrondi de chaque fichier par secteurs de 512 octets ; un fichier unique peut contenir au plus 128 960 octets.
 
 ### Dépannage court
 
@@ -161,16 +161,16 @@ Dernière compilation du build principal :
 
 | Ressource    |            Utilisation |
 | ------------ | ---------------------: |
-| Logic        | 12 698 / 20 736 (62 %) |
-| LUT          |                 11 897 |
-| ALU          |                    735 |
-| Registres    |                  6 110 |
-| CLS          |  8 174 / 10 368 (79 %) |
-| BSRAM        |         15 / 46 (33 %) |
+| Logic        | 13 114 / 20 736 (64 %) |
+| LUT          |                 12 303 |
+| ALU          |                    745 |
+| Registres    |                  6 249 |
+| CLS          |  8 415 / 10 368 (82 %) |
+| BSRAM        |         17 / 46 (37 %) |
 | E/S          |         27 / 66 (41 %) |
 | rPLL         |           2 / 2 (100 %) |
-| Fmax système | 62,965 MHz pour 31,8 MHz |
-| Fmax HDMI    | 74,494 MHz pour 74,25 MHz |
+| Fmax système | 52,238 MHz pour 31,8 MHz |
+| Fmax HDMI    | 75,641 MHz pour 74,25 MHz |
 | TNS setup    | 0 ns (système et HDMI) |
 
 Ces valeurs sont mises à jour après les changements significatifs du build principal.
@@ -192,7 +192,7 @@ Le menu RAM applique les mêmes masques d'adresses et plages d'extension que QL 
 
 Le premier chemin QL-SD reprend QLROMEXT et l'émulateur de carte SD de QL_MiSTer. Le sélecteur `QL-SD image` monte un fichier `QXL.WIN` de la microSD comme carte SDHC virtuelle, avec transport sectoriel en lecture et en écriture. La procédure de validation avec le pilote QL-SD 1.08 ou ultérieur est décrite dans [`docs/QL_SD.md`](docs/QL_SD.md).
 
-Le lecteur Microdrive diffuse une image QLAY de 174 930 octets depuis la microSD avec deux tampons sectoriels, sans la charger entièrement en BSRAM. Son flux sérialisé à 200 kbit/s est dérivé directement de l'horloge système et reste indépendant de la vitesse CPU ; le fonctionnement a été validé physiquement dans les modes QL et 16 MHz. Il conserve les mots de 80 µs et les gaps de 2,8 ms du modèle QL. Les préambules, les gaps et les fenêtres `RX ready` suivent le chemin Microdrive de QL_MiSTer. Le BL616 peut convertir de manière autonome un dossier de `NanoQL/Microdrives` en `MDV1.mdv` depuis l'overlay, monter l'image pour la session en cours et redémarrer le QL. La commande développeur `mdv-sync` reste disponible pour synchroniser directement un dossier du PC. La procédure est décrite dans [`docs/NANOQL_LINK.md`](docs/NANOQL_LINK.md).
+Le lecteur Microdrive diffuse une image QLAY de 174 930 octets depuis la microSD avec deux tampons sectoriels, sans la charger entièrement en BSRAM. Son flux sérialisé à 200 kbit/s est dérivé directement de l'horloge système et reste indépendant de la vitesse CPU ; la lecture et l'écriture sont validées physiquement dans les modes QL et 16 MHz. Il conserve les mots de 80 µs et les gaps de 2,8 ms du modèle QL. Les préambules, les gaps et les fenêtres `RX ready` suivent le chemin Microdrive de QL_MiSTer. Pour l'écriture, le FPGA décode le préambule variable produit par QDOS, reconstruit le bloc logique de 612 octets et le réinsère aux positions fixes du format QLAY avant sa sauvegarde sur la microSD. Après un reset, l'écriture en cours se termine puis le transport repart de façon déterministe au début de la bande. Le BL616 peut convertir de manière autonome un dossier de `NanoQL/Microdrives` en `MDV1.mdv` depuis l'overlay, monter l'image pour la session en cours et redémarrer le QL. La commande développeur expérimentale `mdv-sync` permet aussi une reconstruction depuis un PC, mais l'overlay reste la méthode recommandée. La procédure est décrite dans [`docs/NANOQL_LINK.md`](docs/NANOQL_LINK.md).
 
 La SDRAM suit la séquence complète de démarrage du GW2AR-18 : délai de stabilisation de 200 µs, précharge globale, deux auto-refresh, programmation du registre de mode, auto-précharge des accès et refresh périodique.
 
@@ -231,10 +231,10 @@ NanoQL boots a Sinclair QL ROM from microSD and currently provides:
 - the 8049 IPC controller and QL keyboard matrix;
 - a USB keyboard through the integrated BL616 and a powered USB hub;
 - automatic loading of `QL.rom` from microSD;
-- a validated `MDV1_` reader for QLAY Microdrive images;
+- an `MDV1_` reader for QLAY Microdrive images, with QDOS writes persisted to the mounted image;
 - an `F12` on-screen display for ROM, RAM, CPU speed, video framing, and QL reset.
 
-The Microdrive path reproduces the QL's physical 100 kHz signal through the 200 kbit/s serialized QLAY stream consumed by the ZX8302. `DIR`, `LOAD`, and `LRUN` are validated; QDOS writes are not persisted yet.
+The Microdrive path reproduces the QL's physical 100 kHz signal through the 200 kbit/s serialized QLAY stream consumed by the ZX8302. `DIR`, `LOAD`, `LRUN`, `SAVE`, and persistence across QL reset are physically validated. ZX8302 `WRITE` and `ERASE` rebuild normalized QLAY records before storing them in the mounted `MDV1.mdv` image.
 
 The planned features and their implementation order are documented in the [roadmap](docs/ROADMAP.md).
 
@@ -296,7 +296,7 @@ Power the board off, insert the prepared microSD card, connect HDMI, and power t
 
 For an objective CPU-speed check from a PC, enter NanoQL Link mode with S1 and run `python tools/nanoql_link.py --port COMx cpu-status`. Replace `COMx` with the serial port shown by the operating system. The command reports the selected mode and its effective clock rate. Use the QL-SD image described below for reliable QL program transfers.
 
-To expose an ordinary folder as the `mdv1_` cartridge, create a subfolder under `NanoQL/Microdrives` on the microSD and place the QL files inside it. Open the overlay with `F12`, select **Build MDV1 from:**, then select that folder. The BL616 converts it, mounts the cartridge for the current session, and resets the QL without a PC or development mode. Use `DIR mdv1_`, `LOAD mdv1_name`, or `LRUN mdv1_program_bas`. The generated image is deliberately not remounted by `nanoql.ini` during startup. Conversion supports up to 126 files, eight nested directory levels, and flattened ASCII QDOS names up to 36 characters. The generated QLAY image is always 174,930 bytes, but usable capacity depends on per-file 512-byte sector rounding; a single file can contain at most 128,960 bytes.
+To expose an ordinary folder as the `mdv1_` cartridge, create a subfolder under `NanoQL/Microdrives` on the microSD and place the QL files inside it. Open the overlay with `F12`, select **Build MDV1 from:**, then select that folder. The BL616 converts it, mounts the cartridge for the current session, and resets the QL without a PC or development mode. Use `DIR mdv1_`, `LOAD mdv1_name`, `LRUN mdv1_program_bas`, or the usual QDOS save commands. Writes modify `NanoQL/Drive1/MDV1.mdv`, not the source folder; rebuilding the cartridge from that folder therefore replaces those changes. The generated image is deliberately not remounted by `nanoql.ini` during startup. Conversion supports up to 126 files, eight nested directory levels, and flattened ASCII QDOS names up to 36 characters. The generated QLAY image is always 174,930 bytes, but usable capacity depends on per-file 512-byte sector rounding; a single file can contain at most 128,960 bytes.
 
 ### Quick troubleshooting
 
@@ -311,15 +311,15 @@ Latest main build:
 
 | Resource      |           Utilization |
 | ------------- | --------------------: |
-| Logic         | 12,698 / 20,736 (62%) |
-| LUT           |                11,897 |
-| ALU           |                   735 |
-| Registers     |                 6,110 |
-| CLS           |  8,174 / 10,368 (79%) |
-| BSRAM         |         15 / 46 (33%) |
+| Logic         | 13,114 / 20,736 (64%) |
+| LUT           |                12,303 |
+| ALU           |                   745 |
+| Registers     |                 6,249 |
+| CLS           |  8,415 / 10,368 (82%) |
+| BSRAM         |         17 / 46 (37%) |
 | I/O           |         27 / 66 (41%) |
-| System Fmax   | 62.965 MHz at 31.8 MHz |
-| HDMI Fmax     | 74.494 MHz at 74.25 MHz |
+| System Fmax   | 52.238 MHz at 31.8 MHz |
+| HDMI Fmax     | 75.641 MHz at 74.25 MHz |
 | Setup TNS     | 0 ns (system and HDMI) |
 
 ### Architecture and references
@@ -339,7 +339,7 @@ The RAM menu applies the same address masks and expansion ranges as QL MiSTer: 1
 
 The initial QL-SD path ports QL_MiSTer's QLROMEXT and virtual SD-card implementation. The `QL-SD image` selector mounts a microSD `QXL.WIN` file as a read/write virtual SDHC card. Validation with QL-SD driver 1.08 or newer is documented in [`docs/QL_SD.md`](docs/QL_SD.md).
 
-The Microdrive reader streams an exact 174,930-byte QLAY image from microSD through two sector buffers instead of storing it all in BSRAM. Its 200 kbit/s serialized stream comes directly from the fixed system clock and remains independent of CPU speed; physical operation is validated in both QL and 16 MHz modes. It preserves the QL model's 80 us words and 2.8 ms gaps. Preambles, gaps, and `RX ready` windows follow QL_MiSTer's Microdrive path. From the overlay, the BL616 can autonomously convert a folder under `NanoQL/Microdrives` into `MDV1.mdv`, mount it for the current session, and reset the QL. The developer-only `mdv-sync` command remains available for direct PC-folder synchronization. See [`docs/NANOQL_LINK.md`](docs/NANOQL_LINK.md).
+The Microdrive reader streams an exact 174,930-byte QLAY image from microSD through two sector buffers instead of storing it all in BSRAM. Its 200 kbit/s serialized stream comes directly from the fixed system clock and remains independent of CPU speed; reads and writes are physically validated in both QL and 16 MHz modes. It preserves the QL model's 80 us words and 2.8 ms gaps. Preambles, gaps, and `RX ready` windows follow QL_MiSTer's Microdrive path. For writes, the FPGA decodes QDOS's variable preamble, reconstructs the logical 612-byte record, and merges it into the fixed QLAY offsets before saving it to microSD. After QL reset, pending writeback completes before the transport deterministically returns to the beginning of the tape. From the overlay, the BL616 can autonomously convert a folder under `NanoQL/Microdrives` into `MDV1.mdv`, mount it for the current session, and reset the QL. The experimental developer `mdv-sync` command can rebuild from a PC folder, but the overlay is the recommended path. See [`docs/NANOQL_LINK.md`](docs/NANOQL_LINK.md).
 
 The SDRAM follows the complete GW2AR-18 startup sequence: a 200 us stabilization delay, precharge-all, two auto-refresh commands, mode-register programming, access auto-precharge, and periodic refresh.
 

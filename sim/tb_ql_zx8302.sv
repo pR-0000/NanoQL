@@ -21,8 +21,10 @@ module tb_ql_zx8302;
         .clk(clk), .reset(reset), .ce_11m(1'b0),
         .ce_bus_n(ce_bus_n), .vs(1'b0), .keyboard_matrix(64'd0),
         .microdrive_gap(1'b1), .microdrive_rx_ready(microdrive_rx_ready),
-        .microdrive_tx_empty(1'b0), .microdrive_data(microdrive_data),
-        .microdrive_selected(),
+        .microdrive_tx_full(1'b0), .microdrive_data(microdrive_data),
+        .microdrive_selected(), .microdrive_write_enable(),
+        .microdrive_erase_enable(), .microdrive_tx_write(),
+        .microdrive_tx_data(),
         .cpu_read(cpu_read), .cpu_write(cpu_write), .cpu_addr(cpu_addr),
         .cpu_ds_n(cpu_ds_n), .cpu_din(cpu_din),
         .cpu_write_done(cpu_write_done),
@@ -100,6 +102,12 @@ module tb_ql_zx8302;
         if (dut.comdata_reg !== 4'he)
             $fatal(1, "ZX8302 committed %h instead of the queued frame",
                    dut.comdata_reg);
+
+        // The even Microdrive data register uses the upper byte lane.
+        pulse_write(2'b11, 2'b01, 16'h5a00);
+        pulse_bus_phase();
+        if (!dut.microdrive_tx_write || dut.microdrive_tx_data != 8'h5a)
+            $fatal(1, "ZX8302 did not emit the Microdrive TX byte");
 
         dut.ipc.audio_test = 1'b1;
         #1;

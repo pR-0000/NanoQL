@@ -12,9 +12,13 @@ module ql_zx8302 (
     input  wire [63:0] keyboard_matrix,
     input  wire        microdrive_gap,
     input  wire        microdrive_rx_ready,
-    input  wire        microdrive_tx_empty,
+    input  wire        microdrive_tx_full,
     input  wire [7:0]  microdrive_data,
     output wire        microdrive_selected,
+    output wire        microdrive_write_enable,
+    output wire        microdrive_erase_enable,
+    output reg         microdrive_tx_write,
+    output reg  [7:0]  microdrive_tx_data,
 
     input  wire        cpu_read,
     input  wire        cpu_write,
@@ -64,6 +68,8 @@ module ql_zx8302 (
     );
 
     assign microdrive_selected = microdrive_select[0];
+    assign microdrive_write_enable = microdrive_control[2];
+    assign microdrive_erase_enable = microdrive_control[3];
 
     reg [5:0] rtc_frame_divider;
     reg [31:0] rtc;
@@ -89,7 +95,7 @@ module ql_zx8302 (
         2'b00,
         microdrive_gap,
         microdrive_rx_ready,
-        microdrive_tx_empty,
+        microdrive_tx_full,
         1'b0
     };
 
@@ -133,9 +139,12 @@ module ql_zx8302 (
             pending_ds_n <= 2'b11;
             pending_din <= 16'd0;
             microdrive_receive_data <= 8'd0;
+            microdrive_tx_write <= 1'b0;
+            microdrive_tx_data <= 8'd0;
             cpu_write_done <= 1'b0;
         end else begin
             irq_ack <= 5'd0;
+            microdrive_tx_write <= 1'b0;
             cpu_write_done <= 1'b0;
 
             if (cpu_write) begin
@@ -171,6 +180,19 @@ module ql_zx8302 (
                 if (!pending_ds_n[0] && (pending_addr == 2'b10)) begin
                     irq_mask <= pending_din[7:5];
                     irq_ack <= pending_din[4:0];
+                end
+
+                // $18022/$18023 is the shared serial transmit register. In
+                // Microdrive mode QDOS writes one byte only after status bit
+                // 1 reports that the previous byte has left the ZX8302.
+                if (pending_addr == 2'b11) begin
+                    if (!pending_ds_n[1]) begin
+                        microdrive_tx_data <= pending_din[15:8];
+                        microdrive_tx_write <= 1'b1;
+                    end else if (!pending_ds_n[0]) begin
+                        microdrive_tx_data <= pending_din[7:0];
+                        microdrive_tx_write <= 1'b1;
+                    end
                 end
             end
 

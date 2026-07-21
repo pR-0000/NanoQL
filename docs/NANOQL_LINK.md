@@ -49,7 +49,20 @@ Le chemin recommandé ne nécessite ni NanoQL Link ni connexion au PC. Sur la mi
 
 Les sous-dossiers sont aplatis avec `_` ; `tests/README.md` devient `tests_README_md`. Les noms résultants doivent utiliser des caractères ASCII et tenir sur 36 caractères. La conversion accepte au plus 126 fichiers et huit niveaux de sous-dossiers. Une image QLAY mesure toujours 174 930 octets, mais 253 secteurs de 512 octets seulement sont allouables aux en-têtes et aux données. La condition exacte est `ceil((nombre_fichiers + 1) × 64 / 512) + somme(ceil((taille_fichier + 64) / 512)) <= 253` ; un fichier unique peut donc contenir au plus 128 960 octets. À l'invite QDOS, utilisez `DIR mdv1_`, puis par exemple `LRUN mdv1_programme_bas`.
 
-Cette première implémentation Microdrive est en lecture seule. `DIR`, `LOAD`, `LRUN` et la lecture de fichiers fonctionnent, mais les créations et modifications faites par QDOS ne sont pas encore enregistrées dans le dossier source.
+Les commandes matérielles `WRITE` et `ERASE` du ZX8302 sont prises en charge. Les secteurs modifiés par QDOS sont réécrits dans `NanoQL/Drive1/MDV1.mdv` sur la microSD ; `SAVE`, la relecture et la persistance après reset sont validés physiquement. Le dossier source n'est pas un partage dynamique et n'est pas modifié. Ne relancez donc pas **Build MDV1 from:** après une sauvegarde importante, car la reconstruction remplace l'image et ses modifications.
+
+Pour tester l'écriture depuis SuperBASIC, montez d'abord une cartouche créée avec **Build MDV1 from:**, puis saisissez :
+
+```text
+100 PRINT "NANOQL MICRODRIVE WRITE OK"
+110 PRINT 2+2
+SAVE mdv1_write_test_bas
+DIR mdv1_
+NEW
+LRUN mdv1_write_test_bas
+```
+
+Le programme doit afficher le texte puis `4`. Après un reset QL, `DIR mdv1_` et `LRUN mdv1_write_test_bas` doivent toujours fonctionner. Après une coupure complète, sélectionnez manuellement `NanoQL/Drive1/MDV1.mdv` dans **Microdrive 1:** avant de refaire le test de lecture, car l'image générée n'est pas remontée automatiquement au démarrage.
 
 ### Gérer les fichiers de la microSD en mode développeur
 
@@ -71,9 +84,23 @@ Pour synchroniser directement un dossier du PC sans retirer la carte, utilisez l
 python tools/nanoql_link.py --port COMx mdv-sync chemin/vers/dossier --name NANOQL
 ```
 
-La commande convertit récursivement le dossier en cartouche QLAY, démonte proprement l'ancienne image, envoie et vérifie `MDV1.mdv`, la remonte pour la session en cours, puis redémarre uniquement le QL. L'onglet **4. Microdrive** de `python tools/nanoql_setup.py` réalise la même opération sans ligne de commande.
+Cette commande de développement expérimentale convertit récursivement le dossier en cartouche QLAY, démonte l'ancienne image, envoie `MDV1.mdv`, la remonte pour la session en cours, puis redémarre uniquement le QL. Elle ne maintient plus le QL en reset pendant le transfert, afin qu'une interruption USB ne puisse pas bloquer la carte. Pour l'usage courant, préférez **Build MDV1 from:** dans l'overlay, qui ne dépend pas du PC ni du transport USB CDC.
 
 Le dossier du PC n'est pas un partage en temps réel : relancez `mdv-sync` après chaque modification. La commande avancée `sd-build-mdv` reste disponible pour reconstruire une image à partir des fichiers déjà présents dans `NanoQL/Drive1`.
+
+Pour extraire les fichiers d'une image QLAY locale, sans carte ni port COM :
+
+```text
+python tools/nanoql_link.py mdv-extract MDV1.mdv MDV1_files
+```
+
+Pour télécharger puis extraire une image située dans `NanoQL/Drive1` :
+
+```text
+python tools/nanoql_link.py --port COMx mdv-extract MDV1.mdv MDV1_files --remote
+```
+
+Les octets des fichiers QDOS sont conservés tels quels. `nanoql_manifest.json` mémorise également leurs noms QDOS, leur type exécutable et leur taille de dataspace.
 
 ### Charger un programme SuperBASIC
 
@@ -131,7 +158,20 @@ The recommended path requires neither NanoQL Link nor a PC connection. Create on
 
 Subdirectories are flattened with `_`; for example, `tests/README.md` becomes `tests_README_md`. Resulting names must be ASCII and no longer than 36 characters. Conversion accepts up to 126 files and eight nested directory levels. A QLAY image is always 174,930 bytes, but only 253 512-byte sectors are allocatable to headers and data. The exact condition is `ceil((file_count + 1) × 64 / 512) + sum(ceil((file_size + 64) / 512)) <= 253`; a single file can therefore contain at most 128,960 bytes. At the QDOS prompt, enter `DIR mdv1_`, followed by a command such as `LRUN mdv1_program_bas`.
 
-This initial Microdrive implementation is read-only. `DIR`, `LOAD`, `LRUN`, and file reads work, but files created or modified by QDOS are not yet written back to the source folder.
+The ZX8302 hardware `WRITE` and `ERASE` commands are implemented. Sectors changed by QDOS are written back to `NanoQL/Drive1/MDV1.mdv`; `SAVE`, reload, and persistence across QL reset are physically validated. The source folder is not a live share and is not modified. Do not run **Build MDV1 from:** again after an important save, because rebuilding replaces the image and its changes.
+
+To test writes from SuperBASIC, first mount a cartridge created with **Build MDV1 from:**, then enter:
+
+```text
+100 PRINT "NANOQL MICRODRIVE WRITE OK"
+110 PRINT 2+2
+SAVE mdv1_write_test_bas
+DIR mdv1_
+NEW
+LRUN mdv1_write_test_bas
+```
+
+The program must print the message followed by `4`. After a QL reset, `DIR mdv1_` and `LRUN mdv1_write_test_bas` must still work. After a complete power cycle, manually select `NanoQL/Drive1/MDV1.mdv` under **Microdrive 1:** before repeating the read test, because the generated image is not automatically remounted during startup.
 
 ### Managing microSD files in development mode
 
@@ -153,9 +193,23 @@ To synchronize a PC folder directly without removing the card, use the developer
 python tools/nanoql_link.py --port COMx mdv-sync path/to/folder --name NANOQL
 ```
 
-The command recursively converts the folder to a QLAY cartridge, safely unmounts the previous image, uploads and verifies `MDV1.mdv`, mounts it for the current session, and resets only the QL. The **4. Microdrive** tab in `python tools/nanoql_setup.py` provides the same operation without a command line.
+This experimental developer command recursively converts the folder to a QLAY cartridge, unmounts the previous image, uploads `MDV1.mdv`, mounts it for the current session, and resets only the QL. It no longer holds the QL in reset during transfer, so a USB interruption cannot leave the board blocked. For normal use, prefer **Build MDV1 from:** in the overlay; it does not depend on a PC or USB CDC.
 
 This is a synchronization operation rather than a live PC share, so rerun `mdv-sync` after changing the source folder. The advanced `sd-build-mdv` command remains available to rebuild an image from files already stored under `NanoQL/Drive1`.
+
+Extract files from a local QLAY image without a board or serial port:
+
+```text
+python tools/nanoql_link.py mdv-extract MDV1.mdv MDV1_files
+```
+
+Download and extract an image stored under `NanoQL/Drive1`:
+
+```text
+python tools/nanoql_link.py --port COMx mdv-extract MDV1.mdv MDV1_files --remote
+```
+
+QDOS file bytes are preserved exactly. `nanoql_manifest.json` also records their QDOS names, executable types, and dataspace sizes.
 
 To load a numbered SuperBASIC text file, leave the QL at its SuperBASIC prompt and run `python tools/nanoql_link.py --port COMx basic path/to/program_bas`. NanoQL Link enters `NEW`, sends every source line through the remote keyboard so QDOS performs its own ROM-compatible tokenization, and then enters `RUN`. Add `--no-run` to load only. The included MIT-licensed benchmark has the experimental shortcut `python tools/nanoql_link.py --port COMx benchmark`. Remote typing is a development convenience; prefer QL-SD for reliable program transfer and execution.
 

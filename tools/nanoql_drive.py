@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build a QLAY Microdrive image from ordinary desktop files."""
+"""Build and extract QLAY Microdrive images."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import struct
 import zlib
 from dataclasses import dataclass
@@ -26,6 +27,14 @@ class DriveFile:
     data: bytes
     executable: bool = False
     data_space: int = 0
+
+
+@dataclass(frozen=True)
+class ExtractedDriveFile:
+    name: str
+    data: bytes
+    executable: bool
+    data_space: int
 
 
 def checksum(data: bytes) -> bytes:
@@ -211,26 +220,167 @@ def validate_qlay_image(image: bytes) -> None:
     sector_numbers: set[int] = set()
     for offset in range(0, len(image), QLAY_SECTOR_SIZE):
         sector = image[offset : offset + QLAY_SECTOR_SIZE]
+        record_number = offset // QLAY_SECTOR_SIZE
+        sector_number = sector[13]
+        location = f"record {record_number}, physical sector {sector_number}"
         if sector[:10] != bytes(10) or sector[10:12] != b"\xFF\xFF":
-            raise ValueError("Invalid QLAY sector header preamble.")
+            raise ValueError(f"Invalid QLAY sector header preamble at {location}.")
         if sector[12] == 0xFF:
             if sector[13] in sector_numbers:
-                raise ValueError("QLAY image repeats a usable sector number.")
+                raise ValueError(
+                    f"QLAY image repeats usable physical sector {sector_number}."
+                )
             sector_numbers.add(sector[13])
-        if sector[26:28] != checksum(sector[12:26]):
-            raise ValueError("Invalid QLAY sector header checksum.")
+        expected = checksum(sector[12:26])
+        if sector[26:28] != expected:
+            raise ValueError(
+                f"Invalid QLAY sector header checksum at {location}: "
+                f"stored {sector[26:28].hex(' ')}, expected {expected.hex(' ')}."
+            )
         if sector[28:38] != bytes(10) or sector[38:40] != b"\xFF\xFF":
-            raise ValueError("Invalid QLAY block header preamble.")
-        if sector[42:44] != checksum(sector[40:42]):
-            raise ValueError("Invalid QLAY block header checksum.")
+            raise ValueError(f"Invalid QLAY block header preamble at {location}.")
+        expected = checksum(sector[40:42])
+        if sector[42:44] != expected:
+            raise ValueError(
+                f"Invalid QLAY block header checksum at {location}: "
+                f"stored {sector[42:44].hex(' ')}, expected {expected.hex(' ')}."
+            )
         if sector[44:50] != bytes(6) or sector[50:52] != b"\xFF\xFF":
-            raise ValueError("Invalid QLAY data preamble.")
-        if sector[564:566] != checksum(sector[52:564]):
-            raise ValueError("Invalid QLAY data checksum.")
+            raise ValueError(f"Invalid QLAY data preamble at {location}.")
+        expected = checksum(sector[52:564])
+        if sector[564:566] != expected:
+            raise ValueError(
+                f"Invalid QLAY data checksum at {location}: "
+                f"stored {sector[564:566].hex(' ')}, expected {expected.hex(' ')}."
+            )
     # Real dumps can contain damaged sectors whose header number is not valid.
     # QDOS requires sector zero and at least 200 usable sectors.
     if 0 not in sector_numbers or len(sector_numbers) < 200:
         raise ValueError("QLAY image does not contain a usable cartridge map.")
+
+
+def _safe_desktop_name(name: str) -> str:
+    """Return a portable filename without changing QDOS file contents."""
+    forbidden = '<>:"/\\|?*'
+    cleaned = "".join(
+        "_" if character in forbidden or ord(character) < 0x20 else character
+        for character in name
+    ).strip(" .")
+    if cleaned in ("", ".", ".."):
+        raise ValueError(f"Unsafe QDOS filename: {name!r}")
+    return cleaned
+
+
+def parse_qlay_image(image: bytes) -> list[ExtractedDriveFile]:
+    """Decode the QDOS directory and user streams from a QLAY image."""
+    validate_qlay_image(image)
+    physical_sectors: dict[int, bytes] = {}
+    for offset in range(0, len(image), QLAY_SECTOR_SIZE):
+        sector = image[offset : offset + QLAY_SECTOR_SIZE]
+        if sector[12] == 0xFF:
+            physical_sectors[sector[13]] = sector
+    map_sector = physical_sectors.get(0)
+    if map_sector is None or map_sector[40] != 0x80:
+        raise ValueError("QLAY image does not contain a valid sector map.")
+    allocation_map = map_sector[52:564]
+
+    streams: dict[int, dict[int, bytes]] = {}
+    for sector_number, sector in physical_sectors.items():
+        file_number = allocation_map[sector_number * 2]
+        block_number = allocation_map[sector_number * 2 + 1]
+        if file_number in (FREE_SECTOR, DAMAGED_SECTOR, MAP_FILE, 0x80):
+            continue
+        if sector[40] != file_number or sector[41] != block_number:
+            raise ValueError(
+                f"QLAY sector {sector_number} does not match its allocation map."
+            )
+        blocks = streams.setdefault(file_number, {})
+        if block_number in blocks:
+            raise ValueError(
+                f"QLAY image repeats block {block_number} of file {file_number}."
+            )
+        blocks[block_number] = sector[52:564]
+
+    def joined_stream(file_number: int) -> bytes:
+        blocks = streams.get(file_number)
+        if not blocks or 0 not in blocks:
+            raise ValueError(f"QLAY image is missing file {file_number} block zero.")
+        last_block = max(blocks)
+        missing = [block for block in range(last_block + 1) if block not in blocks]
+        if missing:
+            raise ValueError(
+                f"QLAY image is missing block {missing[0]} of file {file_number}."
+            )
+        return b"".join(blocks[block] for block in range(last_block + 1))
+
+    directory = joined_stream(0)
+    directory_length = int.from_bytes(directory[0:4], "big")
+    if directory_length < QL_HEADER_SIZE or directory_length % QL_HEADER_SIZE:
+        raise ValueError("QLAY image has an invalid QDOS directory length.")
+    if directory_length > len(directory):
+        raise ValueError("QLAY image has a truncated QDOS directory.")
+
+    result: list[ExtractedDriveFile] = []
+    entry_count = directory_length // QL_HEADER_SIZE - 1
+    for index in range(entry_count):
+        start = (index + 1) * QL_HEADER_SIZE
+        header = directory[start : start + QL_HEADER_SIZE]
+        total_length = int.from_bytes(header[0:4], "big")
+        name_length = int.from_bytes(header[14:16], "big")
+        if total_length == 0 and name_length == 0:
+            continue
+        if total_length < QL_HEADER_SIZE or name_length < 1 or name_length > 36:
+            raise ValueError(f"QLAY directory entry {index + 1} is invalid.")
+        try:
+            name = header[16 : 16 + name_length].decode("ascii")
+        except UnicodeDecodeError as error:
+            raise ValueError(
+                f"QLAY directory entry {index + 1} has a non-ASCII name."
+            ) from error
+        stream = joined_stream(index + 1)
+        if total_length > len(stream):
+            raise ValueError(f"QLAY file {name!r} is truncated.")
+        result.append(
+            ExtractedDriveFile(
+                name=name,
+                data=stream[QL_HEADER_SIZE:total_length],
+                executable=header[5] == 1,
+                data_space=int.from_bytes(header[6:10], "big"),
+            )
+        )
+    return result
+
+
+def extract_qlay_image(image: bytes, destination: Path) -> list[Path]:
+    """Extract a QLAY image and retain QDOS metadata in a JSON manifest."""
+    files = parse_qlay_image(image)
+    destination = destination.expanduser().resolve()
+    destination.mkdir(parents=True, exist_ok=True)
+    used_names: set[str] = set()
+    written: list[Path] = []
+    manifest = {"format": "NanoQL QDOS metadata 1", "files": []}
+    for file in files:
+        desktop_name = _safe_desktop_name(file.name)
+        if desktop_name.lower() in used_names:
+            raise ValueError(
+                f"Two QDOS files map to the same desktop name: {desktop_name!r}."
+            )
+        used_names.add(desktop_name.lower())
+        path = destination / desktop_name
+        path.write_bytes(file.data)
+        written.append(path)
+        manifest["files"].append({
+            "qdos_name": file.name,
+            "desktop_name": desktop_name,
+            "size": len(file.data),
+            "executable": file.executable,
+            "data_space": file.data_space,
+        })
+    (destination / "nanoql_manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=True) + "\n",
+        encoding="ascii",
+    )
+    return written
 
 
 def main() -> int:

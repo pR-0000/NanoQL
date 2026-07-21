@@ -518,6 +518,17 @@ index 1964d93..b103b89 100644
      sdc_debugf("%s %d: closing file '%s'", (drive < MAX_DRIVES)?"DRV":"IMG",
  	       (drive < MAX_DRIVES)?drive:(drive-MAX_DRIVES),
  	       image_name[drive]?image_name[drive]:"<unknown>");
+@@ -718,4 +762,9 @@ int sdc_image_open(int drive, char *name) {
+-    if(f_open(&fil[drive], fname, FA_OPEN_EXISTING | FA_READ) != 0) {
++    BYTE open_mode = FA_OPEN_EXISTING | FA_READ;
++#ifdef NANOQL_COMPANION
++    if(drive == 2)
++      open_mode |= FA_WRITE;
++#endif
++    if(f_open(&fil[drive], fname, open_mode) != 0) {
+       sdc_debugf("DRV %d: file open failed", drive);
+       sdc_unlock();
+       return -1;
 @@ -978,6 +1022,7 @@ sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *ext) {
  
  int sdc_init(void) {
