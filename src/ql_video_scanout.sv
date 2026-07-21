@@ -123,8 +123,11 @@ module ql_video_scanout(
 
     reg visible_d;
     reg ql_area_d;
+    reg mode8_meta;
     reg mode8_d;
+    reg blank_meta;
     reg blank_d;
+    reg flash_phase_meta;
     reg flash_phase_d;
     reg [8:0] ql_x_d;
 
@@ -200,16 +203,22 @@ module ql_video_scanout(
             visible_d <= 1'b0;
             ql_area_d <= 1'b0;
             ql_x_d <= 9'd0;
+            mode8_meta <= 1'b0;
             mode8_d <= 1'b0;
+            blank_meta <= 1'b0;
             blank_d <= 1'b0;
+            flash_phase_meta <= 1'b0;
             flash_phase_d <= 1'b0;
         end else begin
             visible_d <= visible;
             ql_area_d <= ql_area;
             ql_x_d <= ql_x;
-            mode8_d <= mode8;
-            blank_d <= blank;
-            flash_phase_d <= flash_phase;
+            mode8_meta <= mode8;
+            mode8_d <= mode8_meta;
+            blank_meta <= blank;
+            blank_d <= blank_meta;
+            flash_phase_meta <= flash_phase;
+            flash_phase_d <= flash_phase_meta;
         end
     end
 

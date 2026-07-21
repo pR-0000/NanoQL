@@ -20,10 +20,9 @@ add_file src/nanoql_top.sv
 add_file src/ql_video_test.sv
 add_file src/ql_hdmi_window.sv
 add_file src/ql_boot_status.sv
-add_file src/ql_zx8301_lite.sv
+add_file src/ql_zx8301.sv
 add_file $zx8302_source
 add_file src/ql_video_scanout.sv
-add_file src/ql_native_timing_probe.sv
 add_file src/ql_test_pattern.sv
 add_file src/ql_sdram_memory.sv
 add_file src/ql_sdram_router.sv

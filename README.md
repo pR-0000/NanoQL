@@ -161,16 +161,17 @@ Dernière compilation du build principal :
 
 | Ressource    |            Utilisation |
 | ------------ | ---------------------: |
-| Logic        | 13 114 / 20 736 (64 %) |
-| LUT          |                 12 303 |
-| ALU          |                    745 |
-| Registres    |                  6 249 |
-| CLS          |  8 415 / 10 368 (82 %) |
+| Logic        | 13 153 / 20 736 (64 %) |
+| LUT          |                 12 359 |
+| ALU          |                    728 |
+| Registres    |                  6 269 |
+| CLS          |  8 432 / 10 368 (82 %) |
 | BSRAM        |         17 / 46 (37 %) |
+| DSP          |         0,5 / 24 (3 %) |
 | E/S          |         27 / 66 (41 %) |
 | rPLL         |           2 / 2 (100 %) |
-| Fmax système | 52,238 MHz pour 31,8 MHz |
-| Fmax HDMI    | 75,641 MHz pour 74,25 MHz |
+| Fmax système | 61,388 MHz pour 31,8 MHz |
+| Fmax HDMI    | 80,824 MHz pour 74,25 MHz |
 | TNS setup    | 0 ns (système et HDMI) |
 
 Ces valeurs sont mises à jour après les changements significatifs du build principal.
@@ -185,6 +186,25 @@ ROM + SDRAM + ZX8301/ZX8302 -> fx68k
 ```
 
 La sortie HDMI utilise le mode standard 1280 × 720p50. Le domaine QL/SDRAM reste à 31,8 MHz et un tampon de ligne à double horloge alimente le domaine HDMI à 74,25 MHz. Le cadrage `Monitor` agrandit chaque échantillon du framebuffer QL en un bloc régulier de 2 × 2 pixels carrés. Les cadrages plus larges conservent les 512 × 256 échantillons complets ; `Wide +30%` garde en plus une marge HDMI de 40 pixels à gauche et à droite.
+
+Le module `ql_zx8301` remplace l'ancien chemin `lite` et regroupe maintenant MC_STAT, les modes vidéo, le blanking, le choix de framebuffer, les timings natifs PAL/NTSC et la phase de clignotement. La trame PAL suit QL_MiSTer avec 672 périodes × 312 lignes, dont 256 lignes visibles, 56 lignes de VBL et 6 lignes de VSYNC. Le VSYNC transmis au ZX8302 et la contention RAM proviennent donc de la trame QL native et non du 720p HDMI. Le bit 6 de MC_STAT active également les timings NTSC des ZX8301 CLA2345 récents. Les détails et les limites restantes sont documentés dans [`docs/ZX8301.md`](docs/ZX8301.md).
+
+### NanoQL par rapport à QL_MiSTer
+
+NanoQL est un portage dérivé de QL_MiSTer et de l'ancien core MiST, pas une réécriture sans filiation. Il conserve notamment `fx68k`, le firmware IPC 8049, l'organisation du ZX8302, le modèle de contention `ql_timing`, QLROMEXT et la carte QL-SD virtuelle. NanoQL adapte ces blocs à une carte autonome sans HPS ni Linux.
+
+| Fonction | QL_MiSTer | NanoQL actuel |
+| --- | --- | --- |
+| Plateforme | MiSTer DE10-Nano avec HPS | Tang Nano 20K seule, avec son BL616 intégré |
+| CPU | QL, 16, 24 et 42 MHz | QL et 16 MHz commutables à chaud ; 24/42 MHz planifiés |
+| RAM | 896 Kio ou 4 Mio | 128, 640 ou 896 Kio ; 4 Mio et Gold Card planifiés |
+| Gold Card, SMSQ/E et RTC | Pris en charge | Pas encore pris en charge |
+| ROM et QL-SD | Chargement et montage dynamique par l'environnement MiSTer | Sélection depuis la microSD et l'overlay BL616 ; lecture QXL.WIN validée, écriture à valider |
+| Microdrive | Relecture en mémoire d'une image chargée | Flux matériel indépendant du CPU, écriture/effacement QDOS persistants et conversion autonome d'un dossier microSD |
+| Développement | Téléchargement par le canal HPS de MiSTer | NanoQL Link par USB : clavier distant, fichiers microSD, RAM 68000, exécution et programmation FPGA |
+| Vidéo | Sortie et scaler MiSTer | HDMI 720p50 intégré, quatre géométries QL et trame QL native séparée de la trame HDMI |
+
+Les principaux apports propres à NanoQL sont donc l'utilisation du BL616 embarqué comme compagnon, le fonctionnement sans ordinateur hôte, le Microdrive inscriptible et persistant, la conversion d'un dossier ordinaire en cartouche depuis l'overlay et l'interface USB de développement direct. QL_MiSTer reste plus complet pour les accélérations CPU, les 4 Mio, Gold Card/SMSQ/E, le RTC et plusieurs périphériques établis. La feuille de route vise cette parité sans sacrifier le profil matériel QL fidèle par défaut.
 
 Le mode CPU `QL` utilise des phases 68008 à 7,5 MHz et le modèle de contention RAM `ql_timing` du core QL MiSTer. Le mode `16 MHz` utilise 15,9 MHz avec l'horloge système actuelle et désactive cette contention, comme le mode accéléré de QL MiSTer. La vitesse peut être changée à chaud et reste conservée dans `nanoql.ini`.
 
@@ -311,15 +331,16 @@ Latest main build:
 
 | Resource      |           Utilization |
 | ------------- | --------------------: |
-| Logic         | 13,114 / 20,736 (64%) |
-| LUT           |                12,303 |
-| ALU           |                   745 |
-| Registers     |                 6,249 |
-| CLS           |  8,415 / 10,368 (82%) |
+| Logic         | 13,153 / 20,736 (64%) |
+| LUT           |                12,359 |
+| ALU           |                   728 |
+| Registers     |                 6,269 |
+| CLS           |  8,432 / 10,368 (82%) |
 | BSRAM         |         17 / 46 (37%) |
+| DSP           |         0.5 / 24 (3%) |
 | I/O           |         27 / 66 (41%) |
-| System Fmax   | 52.238 MHz at 31.8 MHz |
-| HDMI Fmax     | 75.641 MHz at 74.25 MHz |
+| System Fmax   | 61.388 MHz at 31.8 MHz |
+| HDMI Fmax     | 80.824 MHz at 74.25 MHz |
 | Setup TNS     | 0 ns (system and HDMI) |
 
 ### Architecture and references
@@ -332,6 +353,25 @@ ROM + SDRAM + ZX8301/ZX8302 -> fx68k
 ```
 
 HDMI output uses standard 1280 × 720p50 timings. The QL/SDRAM domain remains at 31.8 MHz, while a dual-clock line buffer feeds the 74.25 MHz HDMI domain. `Monitor` maps each QL sample to a uniform 2 × 2 HDMI block. Wider modes preserve all 512 × 256 source samples, and `Wide +30%` keeps a 40-pixel HDMI safety margin on both sides.
+
+The `ql_zx8301` module replaces the former `lite` path and now owns MC_STAT, video modes, display blanking, framebuffer selection, native PAL/NTSC timing, and flash phase. Its PAL raster follows QL_MiSTer at 672 periods × 312 lines, including 256 visible lines, 56 VBL lines, and a 6-line VSYNC pulse. ZX8302 VSYNC and RAM contention therefore come from the native QL raster rather than the 720p HDMI frame. MC_STAT bit 6 also selects the NTSC timing implemented by later CLA2345 ZX8301 revisions. See [`docs/ZX8301.md`](docs/ZX8301.md) for implementation details and remaining limits.
+
+### NanoQL compared with QL_MiSTer
+
+NanoQL is a port derived from QL_MiSTer and the earlier MiST core, not an unrelated rewrite. It retains `fx68k`, the original 8049 IPC firmware, the ZX8302 structure, the `ql_timing` contention model, QLROMEXT, and the virtual QL-SD card. NanoQL adapts these blocks to a standalone board without an HPS or Linux.
+
+| Feature | QL_MiSTer | Current NanoQL |
+| --- | --- | --- |
+| Platform | MiSTer DE10-Nano with HPS | Standalone Tang Nano 20K using its integrated BL616 |
+| CPU | QL, 16, 24, and 42 MHz | Live-switchable QL and 16 MHz; 24/42 MHz planned |
+| RAM | 896 KiB or 4 MiB | 128, 640, or 896 KiB; 4 MiB and Gold Card planned |
+| Gold Card, SMSQ/E, and RTC | Supported | Not implemented yet |
+| ROM and QL-SD | Dynamic loading and mounting through the MiSTer environment | microSD and BL616-overlay selection; QXL.WIN reads validated, writes pending validation |
+| Microdrive | In-memory playback of an uploaded image | CPU-independent physical stream, persistent QDOS write/erase, and autonomous microSD-folder conversion |
+| Development | Downloads through MiSTer's HPS channel | NanoQL Link over USB: remote keyboard, microSD files, 68000 RAM, execution, and FPGA programming |
+| Video | MiSTer video output and scaler | Integrated 720p50 HDMI, four QL geometries, and a native QL raster independent of HDMI timing |
+
+NanoQL-specific additions are therefore the integrated BL616 companion, standalone operation, writable persistent Microdrive, overlay-driven conversion of an ordinary folder into a cartridge, and direct USB development interface. QL_MiSTer remains more complete for CPU acceleration, 4 MiB, Gold Card/SMSQ/E, RTC, and several established peripherals. The roadmap targets that parity without compromising the faithful default QL hardware profile.
 
 The `QL` CPU mode uses 7.5 MHz 68008 phases and QL MiSTer's `ql_timing` RAM-contention model. The `16 MHz` mode runs at 15.9 MHz with the current system clock and disables this contention, as QL MiSTer's accelerated mode does. CPU speed is live-switchable and persisted in `nanoql.ini`.
 

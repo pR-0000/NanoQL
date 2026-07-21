@@ -80,7 +80,6 @@ module nanoql_top(
     wire [9:0] y;
     wire mode8_active;
     wire blank_active;
-    wire video_vblank;
     wire fetch_underflow;
 
     wire [18:0] video_mem_addr;
@@ -156,7 +155,7 @@ module nanoql_top(
     wire ql_native_ce;
     wire ql_native_hs;
     wire ql_native_vs;
-    wire ql_native_active;
+    wire ql_native_hblank;
     wire ql_native_vblank;
     wire ql_native_frame;
     wire [9:0] ql_native_h;
@@ -858,7 +857,14 @@ module nanoql_top(
         .rgb(rgb),
         .mode8_active(mode8_active),
         .blank_active(blank_active),
-        .vblank(video_vblank),
+        .ql_ce(ql_native_ce),
+        .ql_h(ql_native_h),
+        .ql_v(ql_native_v),
+        .ql_hs(ql_native_hs),
+        .ql_vs(ql_native_vs),
+        .ql_hblank(ql_native_hblank),
+        .ql_vblank(ql_native_vblank),
+        .ql_frame(ql_native_frame),
         .fetch_underflow(fetch_underflow),
         .x(x),
         .y(y)
@@ -1120,20 +1126,6 @@ module nanoql_top(
         .boot_done(cpu_boot_done),
         .boot_fail(cpu_boot_fail),
         .stress_pass_pulse(cpu_stress_pass_pulse)
-    );
-
-    ql_native_timing_probe ql_native_timing_probe (
-        .clk_pixel(clk_pixel),
-        .reset(video_reset),
-        .ntsc(1'b0),
-        .ce_ql(ql_native_ce),
-        .h_cnt(ql_native_h),
-        .v_cnt(ql_native_v),
-        .hs(ql_native_hs),
-        .vs(ql_native_vs),
-        .active(ql_native_active),
-        .vblank(ql_native_vblank),
-        .frame_pulse(ql_native_frame)
     );
 
     reg [5:0] ql_native_frame_div = 6'd0;

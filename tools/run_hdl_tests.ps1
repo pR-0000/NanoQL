@@ -34,6 +34,20 @@ $qlromextOutput = Join-Path $env:TEMP "nanoql_qlromext.vvp"
 $qlsdBufferOutput = Join-Path $env:TEMP "nanoql_qlsd_buffer.vvp"
 $microdriveOutput = Join-Path $env:TEMP "nanoql_microdrive_stream.vvp"
 $sdArbiterOutput = Join-Path $env:TEMP "nanoql_sd_request_arbiter.vvp"
+$zx8301Output = Join-Path $env:TEMP "nanoql_zx8301.vvp"
+
+& $iverilog -g2012 -s tb_ql_zx8301 -o $zx8301Output `
+    (Join-Path $projectRoot "sim\tb_ql_zx8301.sv") `
+    (Join-Path $projectRoot "src\ql_zx8301.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "ZX8301 simulation compilation failed."
+}
+
+& $vvp $zx8301Output
+if ($LASTEXITCODE -ne 0) {
+    throw "ZX8301 simulation failed."
+}
 
 & $iverilog -g2012 -s tb_ql_sd_request_arbiter -o $sdArbiterOutput `
     (Join-Path $projectRoot "sim\tb_ql_sd_request_arbiter.sv") `

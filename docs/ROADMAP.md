@@ -10,10 +10,10 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 13 114 / 20 736 cellules logiques utilisées (64 %).
+- FPGA : 13 153 / 20 736 cellules logiques utilisées (64 %), dont 12 359 LUT.
 - BSRAM : 17 / 46 blocs utilisés (37 %), dont les tampons sectoriels QL-SD et Microdrive.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
-- Domaine système : 31,8 MHz, avec une Fmax mesurée de 52,238 MHz.
+- Domaine système : 31,8 MHz, avec une Fmax mesurée de 61,388 MHz.
 - HDMI : 720p50 avec audio PCM 48 kHz fonctionnel.
 
 Le pourcentage de LUT restant ne suffit pas à garantir toutes les extensions. La migration de la ROM QL dynamique vers une zone réservée de la SDRAM a toutefois libéré 32 blocs BSRAM pour les ROM et tampons des fonctions suivantes. La fréquence du domaine système devient maintenant la contrainte principale pour les modes CPU rapides.
@@ -47,7 +47,7 @@ La Tang Nano 20K ne possédant pas de pile RTC, une heure absolue correcte aprè
 - Conserver la contention vidéo originale uniquement en mode `QL`.
 - Valider QDOS, les interruptions, le clavier, le son et la SDRAM à chaque vitesse.
 
-Le mode 16 MHz fonctionne à 15,9 MHz avec le domaine actuel. Le mode 24 MHz nécessite un domaine système plus rapide mais reste réaliste. Le mode 42 MHz requiert environ 84 MHz pour l'architecture MiSTer actuelle ; il est donc expérimental tant que les chemins critiques n'ont pas été optimisés au-delà de la Fmax actuelle de 52,238 MHz.
+Le mode 16 MHz fonctionne à 15,9 MHz avec le domaine actuel. Le mode 24 MHz nécessite un domaine système plus rapide mais reste réaliste. Le mode 42 MHz requiert environ 84 MHz pour l'architecture MiSTer actuelle ; il est donc expérimental tant que les chemins critiques n'ont pas été optimisés au-delà de la Fmax actuelle de 61,388 MHz.
 
 #### 4. Gold Card et SMSQ/E
 
@@ -92,7 +92,9 @@ La capture d'écran est réaliste. La vidéo est un objectif expérimental : ell
 
 ### Autres fonctions souhaitables
 
-- Remplacer progressivement les modules `lite`, notamment le ZX8301, par les chemins fidèles de QL_MiSTer.
+- Le ZX8301 unifié est validé sur Tang Nano 20K : MC_STAT, PAL/NTSC, HBL/VBL, HSYNC/VSYNC, interruption de trame et clignotement suivent la trame QL native indépendamment du HDMI.
+- Mesurer ultérieurement VBL, VSYNC, contention et accès mémoire sur un QL réel avec un analyseur logique afin de dépasser la fidélité fonctionnelle actuelle et de valider les écarts électriques restants.
+- Remplacer progressivement les autres approximations restantes par les chemins fidèles de QL_MiSTer.
 - Resynchroniser de façon optionnelle les modifications d'une image Microdrive vers son dossier source.
 - Ajouter les joysticks USB et les entrées GPIO du futur PCB.
 - Exposer les ports série QL par USB CDC lorsque cela peut être fait fidèlement.
@@ -112,7 +114,7 @@ Les fonctions de Q-emuLator constituent une cible de compatibilité utile, mais 
 
 ### Prochaine étape retenue
 
-Valider l'écriture QL-SD, puis sécuriser la resynchronisation optionnelle d'une image Microdrive vers son dossier source.
+Valider l'écriture QL-SD, puis poursuivre la fidélité des puces personnalisées avec des mesures matérielles comparatives du ZX8301 et du ZX8302.
 
 ## English
 
@@ -124,10 +126,10 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 13,114 / 20,736 logic cells used (64%).
+- FPGA: 13,153 / 20,736 logic cells used (64%), including 12,359 LUTs.
 - BSRAM: 17 / 46 blocks used (37%), including QL-SD and Microdrive sector buffers.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
-- System domain: 31.8 MHz, with a measured Fmax of 52.238 MHz.
+- System domain: 31.8 MHz, with a measured Fmax of 61.388 MHz.
 - HDMI: working 720p50 output with 48 kHz PCM audio.
 
 The remaining LUT percentage alone does not guarantee that every extension will fit. Moving the dynamic QL ROM to a reserved SDRAM area has nevertheless freed 32 BSRAM blocks for future ROMs and buffers. System-domain timing is now the main constraint for faster CPU modes.
@@ -161,7 +163,7 @@ The Tang Nano 20K has no battery-backed RTC. Correct absolute time after complet
 - Keep original video contention only in `QL` mode.
 - Validate QDOS, interrupts, keyboard, audio, and SDRAM at every speed.
 
-The 16 MHz mode runs at 15.9 MHz with the current domain. 24 MHz requires a faster system domain but remains realistic. 42 MHz needs about 84 MHz with the current MiSTer architecture and is therefore experimental until critical paths improve beyond the current 52.238 MHz Fmax.
+The 16 MHz mode runs at 15.9 MHz with the current domain. 24 MHz requires a faster system domain but remains realistic. 42 MHz needs about 84 MHz with the current MiSTer architecture and is therefore experimental until critical paths improve beyond the current 61.388 MHz Fmax.
 
 #### 4. Gold Card and SMSQ/E
 
@@ -206,7 +208,9 @@ Screenshots are realistic. Video recording is experimental because it depends on
 
 ### Other useful features
 
-- Progressively replace `lite` modules, especially ZX8301, with faithful QL_MiSTer paths.
+- The unified ZX8301 is validated on Tang Nano 20K: MC_STAT, PAL/NTSC, HBL/VBL, HSYNC/VSYNC, frame interrupt, and flashing follow the native QL raster independently of HDMI.
+- Later measure VBL, VSYNC, contention, and memory accesses on a physical QL with a logic analyzer to move beyond current functional fidelity and validate the remaining electrical differences.
+- Progressively replace the remaining approximations with faithful QL_MiSTer paths.
 - Optionally synchronize changes from a Microdrive image back to its source folder.
 - Add USB joysticks and GPIO inputs for the future carrier PCB.
 - Expose QL serial ports over USB CDC where this can be implemented faithfully.
@@ -226,4 +230,4 @@ Q-emuLator's feature set is a useful compatibility target, but NanoQL must prior
 
 ### Selected next step
 
-Validate QL-SD writes, then safely synchronize a Microdrive image back to its source folder as an optional operation.
+Validate QL-SD writes, then continue custom-chip fidelity with comparative hardware measurements of the ZX8301 and ZX8302.

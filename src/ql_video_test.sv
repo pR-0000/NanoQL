@@ -14,7 +14,14 @@ module ql_video_test(
     output wire [23:0] rgb,
     output wire        mode8_active,
     output wire        blank_active,
-    output wire        vblank,
+    output wire        ql_ce,
+    output wire [9:0]  ql_h,
+    output wire [9:0]  ql_v,
+    output wire        ql_hs,
+    output wire        ql_vs,
+    output wire        ql_hblank,
+    output wire        ql_vblank,
+    output wire        ql_frame,
     output wire        fetch_underflow,
     output reg  [10:0] x,
     output reg  [9:0]  y
@@ -23,7 +30,6 @@ module ql_video_test(
     // CEA-861 1280x720p50: 74.25 MHz, 1980x750 total pixels.
     localparam [10:0] FRAME_W = 11'd1980;
     localparam [9:0]  FRAME_H = 10'd750;
-    assign vblank = y >= 10'd720;
 
     wire visible_now;
     wire ql_area_now;
@@ -46,29 +52,15 @@ module ql_video_test(
         .ql_y(ql_y_now)
     );
 
-    reg flash_phase;
-    reg [5:0] flash_count;
-
     always @(posedge clk_pixel) begin
         if (reset) begin
             x <= 11'd0;
             y <= 10'd0;
-            flash_phase <= 1'b0;
-            flash_count <= 6'd0;
         end else begin
             if (x == FRAME_W - 1'b1) begin
                 x <= 11'd0;
                 if (y == FRAME_H - 1'b1) begin
                     y <= 10'd0;
-
-                    // Match the original core: toggle the mode 8 flash phase
-                    // after 26 video frames.
-                    if (flash_count == 6'd25) begin
-                        flash_count <= 6'd0;
-                        flash_phase <= ~flash_phase;
-                    end else begin
-                        flash_count <= flash_count + 6'd1;
-                    end
                 end else begin
                     y <= y + 10'd1;
                 end
@@ -79,8 +71,9 @@ module ql_video_test(
     end
 
     wire video_membase;
+    wire video_ntsc;
 
-    ql_zx8301_lite zx8301_lite (
+    ql_zx8301 zx8301 (
         .reset(reset),
         .core_reset(core_reset),
         .clk_pixel(clk_pixel),
@@ -93,7 +86,6 @@ module ql_video_test(
         .ql_fetch_y(ql_fetch_y_now),
         .ql_x(ql_x_now),
         .ql_y(ql_y_now),
-        .flash_phase(flash_phase),
         .addr(mem_addr),
         .rd(mem_rd),
         .rd_ready(mem_ready),
@@ -103,6 +95,15 @@ module ql_video_test(
         .mode8(mode8_active),
         .blank(blank_active),
         .membase(video_membase),
+        .ntsc(video_ntsc),
+        .native_ce(ql_ce),
+        .native_h(ql_h),
+        .native_v(ql_v),
+        .native_hs(ql_hs),
+        .native_vs(ql_vs),
+        .native_hblank(ql_hblank),
+        .native_vblank(ql_vblank),
+        .native_frame(ql_frame),
         .rgb(rgb)
     );
 
