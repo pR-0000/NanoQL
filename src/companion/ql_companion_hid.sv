@@ -7,6 +7,8 @@ module ql_companion_hid (
     input  wire        data_strobe,
     input  wire        data_start,
     input  wire [7:0]  data_in,
+    input  wire        host_keyboard_azerty,
+    input  wire        rom_keyboard_french,
     output reg  [7:0]  data_out,
     output wire [63:0] matrix,
     output reg         key_event,
@@ -18,6 +20,48 @@ module ql_companion_hid (
     reg [63:0] ql_matrix;
     reg [5:0] modifiers;
     reg [11:1] special;
+    reg layout_shift_force;
+    reg layout_shift_suppress;
+
+    wire shift_down = modifiers[1] || modifiers[4];
+    wire ctrl_down = modifiers[0] || modifiers[3];
+    wire alt_down = modifiers[2] || modifiers[5];
+
+    function [6:0] translated_usage;
+        input [6:0] usage;
+        input shifted;
+        begin
+            translated_usage = usage;
+            if (host_keyboard_azerty != rom_keyboard_french) begin
+                case (usage)
+                    7'h04: translated_usage = 7'h14; // A <-> Q
+                    7'h14: translated_usage = 7'h04;
+                    7'h1a: translated_usage = 7'h1d; // W <-> Z
+                    7'h1d: translated_usage = 7'h1a;
+                    default: begin
+                        if (host_keyboard_azerty && !rom_keyboard_french) begin
+                            if (usage == 7'h33)
+                                translated_usage = 7'h10; // AZERTY M -> QL M
+                            else if (usage == 7'h10)
+                                translated_usage = shifted ? 7'h38 : 7'h36;
+                            else if (usage == 7'h36)
+                                translated_usage = shifted ? 7'h37 : 7'h33;
+                            else if (usage == 7'h37)
+                                translated_usage = 7'h33; // colon -> Shift+semicolon
+                        end else if (!host_keyboard_azerty &&
+                                     rom_keyboard_french) begin
+                            if (usage == 7'h10)
+                                translated_usage = 7'h33; // QWERTY M -> French M
+                            else if (usage == 7'h36)
+                                translated_usage = 7'h10; // QWERTY comma -> French comma
+                            else if (usage == 7'h33)
+                                translated_usage = shifted ? 7'h37 : 7'h36;
+                        end
+                    end
+                endcase
+            end
+        end
+    endfunction
 
     // Special PC keys become QL modifier combinations. Delay the main key
     // by about 4 ms so the IPC observes the modifier first.
@@ -37,11 +81,8 @@ module ql_companion_hid (
     ql_key_delay delay_10(.clk(clk), .reset(reset), .tick(delay_tick), .pressed(special[10]), .delayed(special_d[10]));
     ql_key_delay delay_11(.clk(clk), .reset(reset), .tick(delay_tick), .pressed(special[11]), .delayed(special_d[11]));
 
-    wire shift_down = modifiers[1] || modifiers[4];
-    wire ctrl_down = modifiers[0] || modifiers[3];
-    wire alt_down = modifiers[2] || modifiers[5];
-
-    wire x_shift = shift_down || special[3] || special[4] ||
+    wire x_shift = (shift_down && !layout_shift_suppress) ||
+                   layout_shift_force || special[3] || special[4] ||
                    special[7] || special[8] || special[9] ||
                    special[10] || special[11];
     wire x_ctrl = ctrl_down || special[1] || special[2];
@@ -85,6 +126,8 @@ module ql_companion_hid (
             ql_matrix <= 64'd0;
             modifiers <= 6'd0;
             special <= 11'd0;
+            layout_shift_force <= 1'b0;
+            layout_shift_suppress <= 1'b0;
             key_event <= 1'b0;
             key_press_event <= 1'b0;
         end else begin
@@ -112,7 +155,29 @@ module ql_companion_hid (
                     if ((command == 8'd1) && (state == 4'd0)) begin
                         key_event <= 1'b1;
                         key_press_event <= !data_in[7];
-                        case (data_in[6:0])
+                        if (host_keyboard_azerty && !rom_keyboard_french &&
+                            ((data_in[6:0] == 7'h36) ||
+                             (data_in[6:0] == 7'h37))) begin
+                            if (data_in[7]) begin
+                                layout_shift_force <= 1'b0;
+                                layout_shift_suppress <= 1'b0;
+                            end else begin
+                                layout_shift_force <=
+                                    (data_in[6:0] == 7'h37) && !shift_down;
+                                layout_shift_suppress <= shift_down;
+                            end
+                        end else if (!host_keyboard_azerty &&
+                                     rom_keyboard_french &&
+                                     (data_in[6:0] == 7'h33)) begin
+                            if (data_in[7]) begin
+                                layout_shift_force <= 1'b0;
+                                layout_shift_suppress <= 1'b0;
+                            end else begin
+                                layout_shift_force <= 1'b0;
+                                layout_shift_suppress <= shift_down;
+                            end
+                        end
+                        case (translated_usage(data_in[6:0], shift_down))
                             // A-Z
                             7'h04: ql_matrix[36] <= !data_in[7];
                             7'h05: ql_matrix[20] <= !data_in[7];

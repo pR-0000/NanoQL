@@ -184,6 +184,8 @@ module nanoql_top(
     wire [1:0] companion_video_aspect;
     wire [1:0] companion_ram_config;
     wire [1:0] companion_cpu_speed;
+    wire companion_host_keyboard_azerty;
+    wire companion_rom_keyboard_french;
     wire companion_status_seen;
     wire companion_config_seen;
     reg [1:0] key_s1_sync;
@@ -294,6 +296,7 @@ module nanoql_top(
     wire [15:0] qsound_bus_data;
     wire qsound_bus_write_done;
     wire [9:0] qsound_audio;
+    wire qsound_audio_toggle;
     wire qsound_loading;
     wire qsound_loaded;
     wire qsound_load_fail;
@@ -474,6 +477,7 @@ module nanoql_top(
         .mdv_data_trace(mdv_data_trace),
         .cpu_speed(companion_cpu_speed),
         .cpu_phase_count(cpu_phase_count),
+        .rom_keyboard_french(companion_rom_keyboard_french),
         .cpu_hold(host_cpu_hold),
         .boot_vectors_active(host_boot_vectors_active),
         .boot_ssp(host_boot_ssp),
@@ -509,6 +513,8 @@ module nanoql_top(
         .video_aspect(companion_video_aspect),
         .ram_config(companion_ram_config),
         .cpu_speed(companion_cpu_speed),
+        .host_keyboard_azerty(companion_host_keyboard_azerty),
+        .rom_keyboard_french(companion_rom_keyboard_french),
         .status_seen(companion_status_seen),
         .config_seen(companion_config_seen)
     );
@@ -519,6 +525,8 @@ module nanoql_top(
         .data_strobe(mcu_hid_strobe),
         .data_start(mcu_start),
         .data_in(mcu_data),
+        .host_keyboard_azerty(companion_host_keyboard_azerty),
+        .rom_keyboard_french(companion_rom_keyboard_french),
         .data_out(companion_hid_data),
         .matrix(companion_keyboard_matrix),
         .key_event(companion_key_event),
@@ -854,6 +862,7 @@ module nanoql_top(
         .bus_data(qsound_bus_data),
         .bus_write_done(qsound_bus_write_done),
         .audio(qsound_audio),
+        .audio_toggle(qsound_audio_toggle),
         .loading(qsound_loading),
         .loaded(qsound_loaded),
         .failed(qsound_load_fail)
@@ -862,6 +871,7 @@ module nanoql_top(
     ql_sdram_memory sdram_memory (
         .clk(clk_pixel),
         .reset(video_reset),
+        .fast_cpu(companion_cpu_speed != 2'd0),
         .client_addr(video_mem_addr),
         .client_rd(video_mem_rd),
         .client_ready(video_mem_ready),
@@ -1590,8 +1600,11 @@ module nanoql_top(
         .clk_pixel(clk_hdmi),
         .reset(video_reset),
         .rgb(osd_rgb),
+        // HDMI is the board's common audio output. The original QL speaker
+        // and QSound jack remain logically independent before this mix.
         .ql_audio(ql_audio),
         .qsound_audio(qsound_audio),
+        .qsound_audio_toggle(qsound_audio_toggle),
         .tmds_clk_n(tmds_clk_n),
         .tmds_clk_p(tmds_clk_p),
         .tmds_d_n(tmds_d_n),

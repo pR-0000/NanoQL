@@ -49,6 +49,7 @@ module tb_ql_host_link;
         .mdv_data_trace_count(10'd518),
         .mdv_data_trace(128'hfd000c10aa55aa55aa55aa55aa55aa55),
         .cpu_speed(2'd1), .cpu_phase_count(32'h12345678),
+        .rom_keyboard_french(1'b0),
         .cpu_hold(cpu_hold), .boot_vectors_active(boot_vectors_active),
         .boot_ssp(boot_ssp), .boot_pc(boot_pc),
         .restart_pulse(restart_pulse)

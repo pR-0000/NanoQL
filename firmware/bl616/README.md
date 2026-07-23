@@ -26,6 +26,8 @@ Le paquet ne contient que deux profils par révision : `ORIGINAL` restaure FPGA 
 
 Maintenez le bouton `UPDATE`, connectez l'USB-C au PC, relâchez le bouton, rafraîchissez les ports dans FlashCube, choisissez le port COM puis cliquez sur `Download`. Le fichier à sélectionner est affiché par le script.
 
+Lors de la première installation, programmez d'abord le bitstream FPGA persistant pendant que le BL616 utilise encore le profil `ORIGINAL`. FPGA Partner expose les canaux JTAG attendus par Gowin Programmer et openFPGALoader ; le profil `NANOQL` ne les expose pas. Installez donc `NANOQL` seulement après le succès de la programmation FPGA. Pour une future mise à jour persistante du FPGA, restaurez temporairement `ORIGINAL`, programmez le FPGA, puis réinstallez `NANOQL`.
+
 ## English
 
 This directory contains reproducible on-board BL616 configurations for Tang Nano 20K revisions 3921 and 3923. The graphical assistant selects the matching files:
@@ -53,6 +55,8 @@ On Windows, append `--launch` to open FlashCube. FlashCube itself is a Windows a
 The package contains only two profiles per revision: `ORIGINAL` restores Sipeed FPGA Partner and Companion, while `NANOQL` installs the unified firmware required for the USB keyboard, microSD, and NanoQL Link.
 
 Hold `UPDATE`, connect USB-C to the PC, release the button, refresh ports in FlashCube, select the COM port, then click `Download`. The script displays the configuration file to select.
+
+For the first installation, program persistent FPGA Flash while the BL616 still uses the `ORIGINAL` profile. FPGA Partner exposes the JTAG channels expected by Gowin Programmer and openFPGALoader; the `NANOQL` profile does not. Install `NANOQL` only after FPGA programming succeeds. For a later persistent FPGA update, temporarily restore `ORIGINAL`, program the FPGA, then reinstall `NANOQL`.
 
 ## Provenance
 

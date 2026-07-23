@@ -18,7 +18,7 @@ NanoQL démarre une ROM Sinclair QL depuis la carte microSD et fournit :
 - une extension QSound optionnelle MC6821 + AY-3-8910, chargée depuis la microSD, mixée sur HDMI et validée physiquement ;
 - une image 512 x 256 centrée avec quatre largeurs sélectionnables ;
 - le contrôleur IPC 8049 et la matrice clavier QL ;
-- un clavier USB raccordé par hub au BL616 intégré ;
+- un clavier USB raccordé par hub au BL616 intégré, avec dispositions USB QWERTY/AZERTY et ROM anglaise/française sélectionnables dans l'OSD ;
 - le chargement automatique de `QL.rom` depuis la microSD ;
 - un lecteur `MDV1_` pour les images Microdrive QLAY, avec persistance des écritures QDOS dans l'image montée ;
 - un menu OSD accessible avec `F12` pour choisir la ROM, la RAM, la vitesse CPU, le cadrage vidéo et réinitialiser le QL.
@@ -42,13 +42,9 @@ La révision est imprimée sur la carte, par exemple `3923`.
 
 ### Logiciels
 
-Installez :
+Pour installer une [release compilée](https://github.com/pR-0000/NanoQL/releases), Python 3 avec Tkinter et un seul programmateur FPGA suffisent. Choisissez **Gowin Programmer**, fourni avec Gowin EDA, ou [openFPGALoader](https://github.com/trabucayre/openFPGALoader). Gowin Programmer n'est donc pas obligatoire.
 
-1. [Git](https://git-scm.com/downloads)
-2. [Python 3](https://www.python.org/downloads/) avec Tkinter
-3. [Gowin EDA Education](https://www.gowinsemi.com/en/support/download_eda/) pour compiler le HDL
-
-Pour programmer le FPGA, choisissez une seule solution : **Gowin Programmer**, installé avec Gowin EDA, ou [openFPGALoader](https://github.com/trabucayre/openFPGALoader). Gowin Programmer n'est pas obligatoire. Si vous utilisez un bitstream NanoQL déjà compilé, openFPGALoader permet de se passer entièrement de Gowin EDA pour la programmation.
+Pour modifier ou compiler le HDL, installez également [Git](https://git-scm.com/downloads) et [Gowin EDA Education](https://www.gowinsemi.com/en/support/download_eda/).
 
 Sous Windows, cochez **Add Python to PATH** pendant l'installation. Sous Linux, Tkinter peut nécessiter le paquet `python3-tk`. VS Code n'est pas nécessaire.
 
@@ -62,24 +58,9 @@ cd NanoQL
 python tools/nanoql_setup.py
 ```
 
-L'assistant utilise uniquement la bibliothèque standard de Python. Il fonctionne sous Windows, macOS et Linux. Le flash initial du BL616 avec FlashCube est actuellement disponible sous Windows.
+Vous pouvez aussi télécharger le code source de la dernière [release NanoQL](https://github.com/pR-0000/NanoQL/releases), puis lancer `python tools/nanoql_setup.py` dans le dossier extrait. L'assistant utilise uniquement la bibliothèque standard de Python. Il fonctionne sous Windows, macOS et Linux. Le flash du BL616 avec FlashCube est actuellement disponible sous Windows.
 
-#### 2. Préparer le BL616 intégré
-
-Cette opération n'est nécessaire qu'une fois.
-
-1. Ouvrez l'onglet **1. BL616 Companion**.
-2. Sélectionnez la révision `3921` ou `3923`.
-3. Gardez le profil **NanoQL**.
-4. Cliquez sur **Préparer et ouvrir FlashCube**.
-5. Débranchez la carte.
-6. Maintenez le bouton **UPDATE**, branchez le câble USB, puis relâchez le bouton.
-7. Dans FlashCube, sélectionnez le port série de la carte et le fichier `.ini` indiqué par l'assistant.
-8. Lancez la programmation, puis débranchez la carte.
-
-Le profil NanoQL fournit le clavier USB, la microSD et NanoQL Link. Le profil Original restaure temporairement FPGA Partner lorsqu'une programmation persistante avec Gowin Programmer est nécessaire.
-
-#### 3. Préparer la ROM et la microSD
+#### 2. Préparer la ROM et la microSD
 
 Vous devez fournir légalement :
 
@@ -103,9 +84,11 @@ nanoql.ini
 QSound.rom  # seulement si une ROM QSound a été sélectionnée
 ```
 
-#### 4. Compiler et programmer le FPGA
+#### 3. Programmer le FPGA avant de modifier le BL616
 
-Dans l'onglet **3. FPGA** :
+La carte doit encore utiliser son firmware BL616 Sipeed d'origine, appelé **FPGA Partner**. Ce firmware expose au PC les canaux `USB Debugger A/0` et `A/1` nécessaires au JTAG. Le firmware BL616 NanoQL les remplace par le clavier USB, la microSD et NanoQL Link ; il ne faut donc l'installer qu'après la programmation persistante du FPGA.
+
+Téléchargez `NanoQL-v0.1.0-FPGA.fs` depuis la release, ou compilez-le dans l'onglet **3. FPGA** :
 
 1. Vérifiez le chemin de `gw_sh`.
 2. Cliquez sur **Compiler**.
@@ -131,6 +114,21 @@ openFPGALoader -b tangnano20k -f impl/pnr/NanoQL_sd_rom.fs
 ```
 
 Dans Gowin EDA, l'option **Use JTAG as regular IO** doit rester décochée.
+
+#### 4. Installer le firmware BL616 NanoQL
+
+Cette opération n'est nécessaire qu'une fois, après le succès de la programmation persistante du FPGA.
+
+1. Ouvrez l'onglet **1. BL616 Companion**.
+2. Sélectionnez la révision `3921` ou `3923`.
+3. Gardez le profil **NanoQL**.
+4. Cliquez sur **Préparer et ouvrir FlashCube**.
+5. Débranchez la carte.
+6. Maintenez le bouton **UPDATE**, branchez le câble USB, puis relâchez le bouton.
+7. Dans FlashCube, sélectionnez le port série et le fichier `.ini` indiqué.
+8. Lancez la programmation, puis débranchez la carte.
+
+Pour reprogrammer plus tard la Flash FPGA par JTAG, restaurez temporairement le profil BL616 **Original**, programmez le `.fs`, puis réinstallez le profil **NanoQL**. Les essais courants ne nécessitent pas cette permutation : NanoQL Link peut charger temporairement un `.bin` en SRAM avec la commande `fpga`.
 
 #### 5. Démarrer et tester
 
@@ -167,11 +165,11 @@ Dernière compilation du build principal :
 
 | Ressource    |            Utilisation |
 | ------------ | ---------------------: |
-| Logic        | 14 160 / 20 736 (69 %) |
-| LUT          |                 13 231 |
-| ALU          |                    845 |
-| Registres    |                  6 863 |
-| CLS          |  8 908 / 10 368 (86 %) |
+| Logic        | 14 281 / 20 736 (69 %) |
+| LUT          |                 13 396 |
+| ALU          |                    801 |
+| Registres    |                  6 865 |
+| CLS          |  8 939 / 10 368 (87 %) |
 | BSRAM        |         21 / 46 (46 %) |
 | DSP          |         0,5 / 24 (3 %) |
 | E/S          |         27 / 66 (41 %) |
@@ -262,7 +260,7 @@ NanoQL boots a Sinclair QL ROM from microSD and currently provides:
 - a physically validated optional MC6821 + AY-3-8910 QSound expansion loaded from microSD and mixed into HDMI;
 - a centered 512 x 256 image with four selectable display widths;
 - the 8049 IPC controller and QL keyboard matrix;
-- a USB keyboard through the integrated BL616 and a powered USB hub;
+- a USB keyboard through the integrated BL616 and a powered USB hub, with OSD-selectable USB QWERTY/AZERTY and English/French ROM layouts;
 - automatic loading of `QL.rom` from microSD;
 - an `MDV1_` reader for QLAY Microdrive images, with QDOS writes persisted to the mounted image;
 - an `F12` on-screen display for ROM, RAM, CPU speed, video framing, and QL reset.
@@ -279,7 +277,7 @@ Required hardware: a Tang Nano 20K revision 3921 or 3923, a FAT32 or exFAT micro
 
 A USB keyboard and powered USB OTG hub are optional. They are only required for direct USB-keyboard input in QDOS; NanoQL can boot and display the QL without them.
 
-Install [Git](https://git-scm.com/downloads), [Python 3](https://www.python.org/downloads/) with Tkinter, and [Gowin EDA Education](https://www.gowinsemi.com/en/support/download_eda/) to compile the HDL. FPGA programming requires either Gowin Programmer, which is bundled with Gowin EDA, or [openFPGALoader](https://github.com/trabucayre/openFPGALoader). Gowin Programmer is not mandatory. When using a prebuilt NanoQL bitstream, openFPGALoader removes the need to install Gowin EDA for FPGA programming. VS Code is not required.
+To install a prebuilt [NanoQL release](https://github.com/pR-0000/NanoQL/releases), Python 3 with Tkinter and one FPGA programmer are sufficient. Choose either Gowin Programmer, bundled with Gowin EDA, or [openFPGALoader](https://github.com/trabucayre/openFPGALoader). Gowin Programmer is not mandatory. Install [Git](https://git-scm.com/downloads) and [Gowin EDA Education](https://www.gowinsemi.com/en/support/download_eda/) only when modifying or compiling the HDL. VS Code is not required.
 
 ### Step-by-step setup
 
@@ -291,13 +289,9 @@ cd NanoQL
 python tools/nanoql_setup.py
 ```
 
-The assistant uses only Python's standard library and runs on Windows, macOS, and Linux. The initial BL616 FlashCube operation currently requires Windows.
+Alternatively, download and extract the latest [NanoQL release](https://github.com/pR-0000/NanoQL/releases), then run `python tools/nanoql_setup.py` in that directory. The assistant uses only Python's standard library and runs on Windows, macOS, and Linux. BL616 flashing through FlashCube currently requires Windows.
 
-#### 2. Prepare the integrated BL616
-
-In **1. BL616 Companion**, select board revision 3921 or 3923, keep the **NanoQL** profile, and click **Prepare and open FlashCube**. Disconnect the board, hold **UPDATE** while reconnecting USB, then release it. In FlashCube, select the serial port and the `.ini` file displayed by the assistant, and program it. The NanoQL profile provides the USB keyboard, microSD, and NanoQL Link. The Original profile temporarily restores FPGA Partner when persistent Gowin programming is required.
-
-#### 3. Prepare the ROM and microSD
+#### 2. Prepare the ROM and microSD
 
 Provide a legally obtained 48 or 64 KiB QL ROM and the standard Sinclair IPC firmware `ipc8049.hex` from the [MiSTer QL core](https://github.com/MiSTer-devel/QL_MiSTer/tree/master/rtl). NanoQL uses this original firmware to reproduce the behavior of the QL's 8049 controller. An authorized 8 KiB QSound ROM is optional; the [QSound/QPrint clone ROM folder](https://github.com/alvaroalea/QL_QsoundQprint_clone/tree/main/ROM) contains the hardware-test versions, with 1.40 recommended for classic compatibility and 1.94 providing PT3-player features without QPrint. NanoQL does not redistribute these ROMs. Select the chosen image in **Optional 8 KiB QSound ROM**. In **2. ROM and microSD**, select the required files and microSD root. Click **Prepare microSD**, then **Convert IPC firmware**. The card will contain:
 
@@ -307,9 +301,11 @@ nanoql.ini
 QSound.rom  # only when an optional QSound ROM was selected
 ```
 
-#### 4. Build and program NanoQL
+#### 3. Program the FPGA before changing BL616 firmware
 
-In **3. FPGA**, check the `gw_sh` path and click **Build**. The resulting bitstream is `impl/pnr/NanoQL_sd_rom.fs`.
+The board must still run Sipeed's original BL616 **FPGA Partner** firmware. It exposes the `USB Debugger A/0` and `A/1` channels required for JTAG. NanoQL BL616 firmware replaces those channels with USB keyboard, microSD, and NanoQL Link services, so install it only after persistent FPGA programming succeeds.
+
+Download `NanoQL-v0.1.0-FPGA.fs` from the release, or use **3. FPGA** to build `impl/pnr/NanoQL_sd_rom.fs`.
 
 With Gowin Programmer, select that `.fs` file. Use **SRAM Mode** for a temporary test, or **External Flash Mode**, an erase/program operation, and **Generic Flash** for persistent programming. When openFPGALoader is installed, the assistant's **Program SRAM** and **Program Flash** buttons provide the optional command-line method.
 
@@ -323,6 +319,12 @@ openFPGALoader -b tangnano20k -f impl/pnr/NanoQL_sd_rom.fs
 ```
 
 Keep Gowin EDA's **Use JTAG as regular IO** option disabled.
+
+#### 4. Install NanoQL BL616 firmware
+
+After persistent FPGA programming succeeds, open **1. BL616 Companion**, select revision 3921 or 3923 and the **NanoQL** profile, then click **Prepare and open FlashCube**. Disconnect the board, hold **UPDATE** while reconnecting USB, release it, select the displayed serial port and `.ini` file in FlashCube, and program it.
+
+To reprogram persistent FPGA Flash later through JTAG, temporarily restore the BL616 **Original** profile, program the `.fs`, then reinstall **NanoQL**. Routine development does not require this swap: NanoQL Link can load a temporary `.bin` into FPGA SRAM with the `fpga` command.
 
 #### 5. Boot and test
 
@@ -347,11 +349,11 @@ Latest main build:
 
 | Resource      |           Utilization |
 | ------------- | --------------------: |
-| Logic         | 14,160 / 20,736 (69%) |
-| LUT           |                13,231 |
-| ALU           |                   845 |
-| Registers     |                 6,863 |
-| CLS           |  8,908 / 10,368 (86%) |
+| Logic         | 14,281 / 20,736 (69%) |
+| LUT           |                13,396 |
+| ALU           |                   801 |
+| Registers     |                 6,865 |
+| CLS           |  8,939 / 10,368 (87%) |
 | BSRAM         |         21 / 46 (46%) |
 | DSP           |         0.5 / 24 (3%) |
 | I/O           |         27 / 66 (41%) |

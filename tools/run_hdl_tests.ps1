@@ -36,6 +36,20 @@ $microdriveOutput = Join-Path $env:TEMP "nanoql_microdrive_stream.vvp"
 $sdArbiterOutput = Join-Path $env:TEMP "nanoql_sd_request_arbiter.vvp"
 $zx8301Output = Join-Path $env:TEMP "nanoql_zx8301.vvp"
 $qsoundOutput = Join-Path $env:TEMP "nanoql_qsound.vvp"
+$companionHidOutput = Join-Path $env:TEMP "nanoql_companion_hid.vvp"
+
+& $iverilog -g2012 -s tb_ql_companion_hid -o $companionHidOutput `
+    (Join-Path $projectRoot "sim\tb_ql_companion_hid.sv") `
+    (Join-Path $projectRoot "src\companion\ql_companion_hid.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Companion HID simulation compilation failed."
+}
+
+& $vvp $companionHidOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "Companion HID simulation failed."
+}
 
 & $iverilog -g2012 -s tb_ql_qsound_card -o $qsoundOutput `
     (Join-Path $projectRoot "sim\tb_ql_qsound_card.sv") `

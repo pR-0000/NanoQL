@@ -66,6 +66,7 @@ module tb_ql_bus_memory;
     ql_sdram_memory #(.INIT_LAST_WORD_INDEX(19'h0ffff)) memory (
         .clk(clk),
         .reset(reset),
+        .fast_cpu(1'b0),
         .client_rd(client_rd),
         .client_addr(client_addr),
         .client_ready(client_ready),

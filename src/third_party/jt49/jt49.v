@@ -49,6 +49,7 @@ module jt49 ( // note that input ports are not multiplexed
 parameter [2:0] COMP=3'b000;
 parameter       YM2203_LUMPED=0;
 parameter       CLKDIV=3;
+parameter       AY8910=0;
 wire [2:0] comp = COMP;
 
 reg  [ 7:0] regarray[15:0];
@@ -162,6 +163,12 @@ wire use_noA  = regarray[ 7][3];
 wire use_noB  = regarray[ 7][4];
 wire use_noC  = regarray[ 7][5];
 
+// The YM2149 envelope has 32 levels at twice the AY-3-8910 step rate.
+// Repeating each of the AY's 16 DAC levels for two YM steps preserves the
+// envelope period while reproducing the original GI chip's resolution.
+wire [4:0] envelope_level = AY8910 ?
+                            {envelope[4:1], envelope[4]} : envelope;
+
 reg [3:0] acc_st;
 
 always @(posedge clk) if( clk_en ) begin
@@ -169,9 +176,9 @@ always @(posedge clk) if( clk_en ) begin
     Bmix <= (noise|use_noB) & (bitB|regarray[7][1]);
     Cmix <= (noise|use_noC) & (bitC|regarray[7][2]);
 
-    logA <= !Amix ? 5'd0 : (use_envA ? envelope : volA );
-    logB <= !Bmix ? 5'd0 : (use_envB ? envelope : volB );
-    logC <= !Cmix ? 5'd0 : (use_envC ? envelope : volC );
+    logA <= !Amix ? 5'd0 : (use_envA ? envelope_level : volA );
+    logB <= !Bmix ? 5'd0 : (use_envB ? envelope_level : volB );
+    logC <= !Cmix ? 5'd0 : (use_envC ? envelope_level : volC );
 end
 
 reg  [9:0] acc;

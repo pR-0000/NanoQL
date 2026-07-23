@@ -21,13 +21,24 @@ module ql_ipc_t48(
     wire [7:0] unused_db;
     wire unused_db_dir;
     wire unused_p2l;
-    wire unused_p2h;
+    wire p2_write_strobe;
     wire unused_p1_low;
     wire unused_prog_n;
 
-    assign comdata_out = p2_out[7];
-    assign audio = p2_out[1];
-    assign ipl = p2_out[3:2];
+    // During MOVX cycles, a physical MCS-48 temporarily drives the external
+    // address on the low half of P2. Keep the last actual port-register value
+    // so those bus phases cannot leak into BEEP or the QL interrupt lines.
+    reg [7:0] p2_port = 8'hff;
+    always @(posedge clk) begin
+        if (reset)
+            p2_port <= 8'hff;
+        else if (p2_write_strobe)
+            p2_port <= p2_out;
+    end
+
+    assign comdata_out = p2_port[7];
+    assign audio = p2_port[1];
+    assign ipl = p2_port[3:2];
     wire [7:0] keyboard_data =
         (p1_out[0] ? keyboard_matrix[7:0] : 8'h00) |
         (p1_out[1] ? keyboard_matrix[15:8] : 8'h00) |
@@ -60,7 +71,7 @@ module ql_ipc_t48(
         .p2_i(p2_in),
         .p2_o(p2_out),
         .p2l_low_imp_o(unused_p2l),
-        .p2h_low_imp_o(unused_p2h),
+        .p2h_low_imp_o(p2_write_strobe),
         .p1_i(8'h00),
         .p1_o(p1_out),
         .p1_low_imp_o(unused_p1_low),

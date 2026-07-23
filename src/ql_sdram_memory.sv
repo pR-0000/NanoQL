@@ -3,6 +3,7 @@ module ql_sdram_memory #(
 )(
     input  wire        clk,
     input  wire        reset,
+    input  wire        fast_cpu,
 
     input  wire [18:0] client_addr,
     input  wire        client_rd,
@@ -50,6 +51,11 @@ module ql_sdram_memory #(
     localparam [1:0] RESUME_WRITE  = 2'd0;
     localparam [1:0] RESUME_VERIFY = 2'd1;
     localparam [1:0] RESUME_CLIENT = 2'd2;
+    // The SDRAM core captures read data five clocks after a request. Two
+    // further clocks provide a safe registered-data margin without retaining
+    // the former four-clock idle tail on every transaction.
+    localparam [3:0] TRANSACTION_WAIT = 4'd6;
+    localparam [3:0] FAST_CPU_WAIT = 4'd8;
 
     reg [3:0] state;
     reg [1:0] resume_state;
@@ -66,6 +72,8 @@ module ql_sdram_memory #(
     reg [1:0] ram_ds;
     reg ram_refresh;
     reg transaction_system;
+    reg prefer_video;
+    reg [1:0] fast_video_streak;
     wire ram_ready;
 
     wire [15:0] init_pattern;
@@ -82,11 +90,19 @@ module ql_sdram_memory #(
     wire [15:0] init_data = (init_index < 19'h08000) ?
                             init_pattern : 16'h0000;
 
+    // Alternate at transaction granularity when CPU and video are both
+    // waiting. A complete 64-word video burst must not block ROM instruction
+    // fetches, but absolute CPU priority can starve the HDMI line buffer at
+    // 16 MHz. RAM contention visible to the CPU remains modeled by ql_timing.
+    wire client_idle = init_done && !init_fail &&
+                       (state == ST_CLIENT_IDLE) && !refresh_pending;
+    wire grant_video = client_idle && client_rd &&
+                       (!system_req || (fast_cpu ?
+                        (fast_video_streak < 2'd2) : prefer_video));
+    wire grant_system = client_idle && system_req && !grant_video;
     assign client_ready = init_done && !init_fail &&
-                          (state == ST_CLIENT_IDLE) && !refresh_pending;
-    assign system_ready = init_done && !init_fail &&
-                          (state == ST_CLIENT_IDLE) && !refresh_pending &&
-                          !client_rd;
+                          grant_video;
+    assign system_ready = grant_system;
 
     wire [12:0] controller_addr;
     assign sdram_addr = controller_addr[10:0];
@@ -129,6 +145,8 @@ module ql_sdram_memory #(
             ram_ds <= 2'b00;
             ram_refresh <= 1'b0;
             transaction_system <= 1'b0;
+            prefer_video <= 1'b1;
+            fast_video_streak <= 2'd0;
             client_data_valid <= 1'b0;
             client_data <= 16'd0;
             system_data_valid <= 1'b0;
@@ -174,7 +192,7 @@ module ql_sdram_memory #(
                 end
 
                 ST_WRITE_WAIT: begin
-                    if (wait_count == 4'd8) begin
+                    if (wait_count == TRANSACTION_WAIT) begin
                         ram_cs <= 1'b0;
                         if (init_index == INIT_LAST_WORD_INDEX) begin
                             init_index <= 19'd0;
@@ -204,7 +222,7 @@ module ql_sdram_memory #(
                 end
 
                 ST_VERIFY_WAIT: begin
-                    if (wait_count == 4'd8) begin
+                    if (wait_count == TRANSACTION_WAIT) begin
                         ram_cs <= 1'b0;
                         if (ram_dout != init_data)
                             init_fail <= 1'b1;
@@ -226,16 +244,7 @@ module ql_sdram_memory #(
                     if (refresh_pending) begin
                         resume_state <= RESUME_CLIENT;
                         state <= ST_REFRESH_START;
-                    end else if (client_rd && !init_fail) begin
-                        ram_addr <= {3'd0, client_addr};
-                        ram_we <= 1'b0;
-                        ram_ds <= 2'b00;
-                        ram_refresh <= 1'b0;
-                        ram_cs <= 1'b1;
-                        transaction_system <= 1'b0;
-                        wait_count <= 4'd0;
-                        state <= ST_CLIENT_WAIT;
-                    end else if (system_req && !init_fail) begin
+                    end else if (grant_system) begin
                         ram_addr <= system_addr;
                         ram_din <= system_wdata;
                         ram_we <= system_we;
@@ -243,13 +252,28 @@ module ql_sdram_memory #(
                         ram_refresh <= 1'b0;
                         ram_cs <= 1'b1;
                         transaction_system <= 1'b1;
+                        prefer_video <= 1'b1;
+                        fast_video_streak <= 2'd0;
+                        wait_count <= 4'd0;
+                        state <= ST_CLIENT_WAIT;
+                    end else if (grant_video) begin
+                        ram_addr <= {3'd0, client_addr};
+                        ram_we <= 1'b0;
+                        ram_ds <= 2'b00;
+                        ram_refresh <= 1'b0;
+                        ram_cs <= 1'b1;
+                        transaction_system <= 1'b0;
+                        prefer_video <= 1'b0;
+                        if (fast_cpu && (fast_video_streak < 2'd2))
+                            fast_video_streak <= fast_video_streak + 2'd1;
                         wait_count <= 4'd0;
                         state <= ST_CLIENT_WAIT;
                     end
                 end
 
                 ST_CLIENT_WAIT: begin
-                    if (wait_count == 4'd8) begin
+                    if (wait_count == ((transaction_system && fast_cpu) ?
+                                      FAST_CPU_WAIT : TRANSACTION_WAIT)) begin
                         ram_cs <= 1'b0;
                         if (transaction_system) begin
                             if (!ram_we) begin
@@ -277,7 +301,7 @@ module ql_sdram_memory #(
                 end
 
                 default: begin
-                    if (wait_count == 4'd8) begin
+                    if (wait_count == TRANSACTION_WAIT) begin
                         ram_cs <= 1'b0;
                         refresh_pending <= 1'b0;
                         if (resume_state == RESUME_WRITE)

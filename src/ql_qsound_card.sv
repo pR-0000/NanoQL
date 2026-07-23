@@ -25,6 +25,7 @@ module ql_qsound_card (
     output reg         bus_write_done,
 
     output reg  [9:0]  audio,
+    output reg         audio_toggle,
     output reg         loading,
     output reg         loaded,
     output reg         failed
@@ -255,7 +256,9 @@ module ql_qsound_card (
         end
     end
 
-    jt49_bus psg (
+    jt49_bus #(
+        .AY8910(1)
+    ) psg (
         .rst_n(psg_reset_n),
         .clk(clk),
         .clk_en(psg_clock_enable),
@@ -278,10 +281,13 @@ module ql_qsound_card (
     );
 
     always @(posedge clk) begin
-        if (!psg_reset_n)
+        if (!psg_reset_n) begin
             audio <= 10'd0;
-        else if (psg_sample)
+            audio_toggle <= 1'b0;
+        end else if (psg_sample) begin
             audio <= psg_sound;
+            audio_toggle <= ~audio_toggle;
+        end
     end
 
 endmodule

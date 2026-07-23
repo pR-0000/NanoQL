@@ -151,9 +151,9 @@ QL_FRENCH_KEYS = {
     "w": (0x1D, ()), "W": (0x1D, (MOD_LEFT_SHIFT,)),
     "m": (0x33, ()), "M": (0x33, (MOD_LEFT_SHIFT,)),
     "_": (0x2D, (MOD_LEFT_SHIFT,)),
-    # French QDOS labels these two QL matrix contacts in the opposite order
-    # from the PC/USB punctuation usages.
-    ",": (0x37, ()), ".": (0x36, ()),
+    # French QDOS places comma on the physical QL M contact. The M character
+    # itself is on the semicolon contact, as on a conventional AZERTY layout.
+    ",": (0x10, ()), ".": (0x36, ()),
     # The French QDOS keymap expects this HID contact for double quote.
     '"': (0x1F, (MOD_LEFT_SHIFT,)),
     "é": (0x2F, ()), "\\": (0x2F, (MOD_LEFT_SHIFT,)),
@@ -582,6 +582,13 @@ class NanoQLLink:
             raise RuntimeError("This bitstream does not expose CPU diagnostics.")
         detail = rx[detail_at:detail_at + 9]
         return detail[4] & 0x03, int.from_bytes(detail[5:9], "big")
+
+    def configured_ql_layout(self) -> str:
+        rx = self.transact(bytes((CMD_CPU_DIAG,)) + bytes(16))
+        detail_at = rx.find(b"CPU1")
+        if detail_at < 0 or detail_at + 10 > len(rx):
+            raise RuntimeError("This bitstream does not expose the ROM keyboard layout.")
+        return "fr" if (rx[detail_at + 9] & 0x01) else "uk"
 
     def mdv_diagnostic(
         self,
@@ -1380,7 +1387,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--ql-layout", choices=("auto", "uk", "fr"), default="auto",
-        help="QL logical layout; auto selects FR for a French Windows keyboard",
+        help="QL ROM layout; auto reads the persistent FPGA overlay setting",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -1549,9 +1556,16 @@ def main() -> int:
         return 0
 
     port = find_port(args.port)
-    ql_layout = default_ql_layout() if args.ql_layout == "auto" else args.ql_layout
+    ql_layout = "uk" if args.ql_layout == "auto" else args.ql_layout
     link = NanoQLLink(port, keyboard_layout=args.keyboard_layout, ql_layout=ql_layout)
     try:
+        if args.ql_layout == "auto":
+            try:
+                link.ql_layout = link.configured_ql_layout()
+            except RuntimeError:
+                # Compatibility with older bitstreams which inferred the QL
+                # profile from the active Windows keyboard layout.
+                link.ql_layout = default_ql_layout()
         if args.command == "status":
             print(f"NanoQL Link status: 0x{link.status():02x}")
         elif args.command == "cpu-status":
@@ -1559,6 +1573,7 @@ def main() -> int:
             cpu_label = "QL" if cpu_speed == 0 else "16 MHz" if cpu_speed == 1 else f"mode {cpu_speed}"
             print(f"FPGA CPU mode: {cpu_label}")
             print(f"Measured phase rate: {cpu_rate / 1_000_000:.3f} MHz")
+            print(f"QL ROM keyboard: {'French' if link.ql_layout == 'fr' else 'English'}")
         elif args.command == "qlsd-status":
             flags, lba, header, byte_count, crc32, sample = link.qlsd_status()
             print(f"QL-SD flags: 0x{flags:02x}")

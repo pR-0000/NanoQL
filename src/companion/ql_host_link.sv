@@ -51,6 +51,7 @@ module ql_host_link (
     input  wire [127:0] mdv_data_trace,
     input  wire [1:0]  cpu_speed,
     input  wire [31:0] cpu_phase_count,
+    input  wire        rom_keyboard_french,
 
     output reg         cpu_hold,
     output reg         boot_vectors_active,
@@ -167,6 +168,7 @@ module ql_host_link (
                 4'd6: cpu_diag_byte = cpu_phase_count[23:16];
                 4'd7: cpu_diag_byte = cpu_phase_count[15:8];
                 4'd8: cpu_diag_byte = cpu_phase_count[7:0];
+                4'd9: cpu_diag_byte = {7'd0, rom_keyboard_french};
                 default: cpu_diag_byte = 8'h00;
             endcase
         end

@@ -26,6 +26,7 @@ module tb_ql_qsound_card;
     wire [15:0] bus_data;
     wire bus_write_done;
     wire [9:0] audio;
+    wire audio_toggle;
     wire loading;
     wire loaded;
     wire failed;
@@ -42,7 +43,8 @@ module tb_ql_qsound_card;
         .bus_addr(bus_addr), .bus_ds(bus_ds), .bus_wdata(bus_wdata),
         .bus_ready(bus_ready), .bus_data_valid(bus_data_valid),
         .bus_data(bus_data), .bus_write_done(bus_write_done),
-        .audio(audio), .loading(loading), .loaded(loaded), .failed(failed)
+        .audio(audio), .audio_toggle(audio_toggle),
+        .loading(loading), .loaded(loaded), .failed(failed)
     );
 
     always @(posedge clk)

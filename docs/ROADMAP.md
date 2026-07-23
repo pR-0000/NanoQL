@@ -10,7 +10,7 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 14 160 / 20 736 cellules logiques utilisées (69 %), dont 13 231 LUT.
+- FPGA : 14 281 / 20 736 cellules logiques utilisées (69 %), dont 13 396 LUT.
 - BSRAM : 21 / 46 blocs utilisés (46 %), dont les tampons sectoriels QL-SD et Microdrive et la ROM QSound optionnelle.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
 - Domaine système : 31,8 MHz, avec une Fmax mesurée de 63,562 MHz.
@@ -127,7 +127,7 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 14,160 / 20,736 logic cells used (69%), including 13,231 LUTs.
+- FPGA: 14,281 / 20,736 logic cells used (69%), including 13,396 LUTs.
 - BSRAM: 21 / 46 blocks used (46%), including QL-SD and Microdrive sector buffers and the optional QSound ROM.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
 - System domain: 31.8 MHz, with a measured Fmax of 63.562 MHz.

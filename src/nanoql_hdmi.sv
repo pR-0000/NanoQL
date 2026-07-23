@@ -7,6 +7,7 @@ module nanoql_hdmi #(
     input  wire [23:0] rgb,
     input  wire       ql_audio,
     input  wire [9:0] qsound_audio,
+    input  wire       qsound_audio_toggle,
 
     output wire       tmds_clk_n,
     output wire       tmds_clk_p,
@@ -29,6 +30,7 @@ module nanoql_hdmi #(
         .reset(reset),
         .ql_audio(ql_audio),
         .qsound_audio(qsound_audio),
+        .qsound_audio_toggle(qsound_audio_toggle),
         .clk_audio(clk_audio),
         .sample_left(audio_left),
         .sample_right(audio_right)
