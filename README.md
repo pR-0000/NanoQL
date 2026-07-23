@@ -42,9 +42,9 @@ La révision est imprimée sur la carte, par exemple `3923`.
 
 ### Logiciels
 
-Pour installer une [release compilée](https://github.com/pR-0000/NanoQL/releases), Python 3 avec Tkinter et un seul programmateur FPGA suffisent. Choisissez **Gowin Programmer**, fourni avec Gowin EDA, ou [openFPGALoader](https://github.com/trabucayre/openFPGALoader). Gowin Programmer n'est donc pas obligatoire.
+Installez Python 3 avec Tkinter et [Gowin EDA Education](https://www.gowinsemi.com/en/support/download_eda/) pour compiler le bitstream après avoir fourni légalement le firmware IPC. Git n'est nécessaire que pour cloner le dépôt ; le code source peut aussi être téléchargé depuis les [releases](https://github.com/pR-0000/NanoQL/releases).
 
-Pour modifier ou compiler le HDL, installez également [Git](https://git-scm.com/downloads) et [Gowin EDA Education](https://www.gowinsemi.com/en/support/download_eda/).
+Pour programmer le FPGA, choisissez **Gowin Programmer**, fourni avec Gowin EDA, ou [openFPGALoader](https://github.com/trabucayre/openFPGALoader). Gowin Programmer n'est pas obligatoire, mais Gowin EDA reste nécessaire pour la compilation actuelle.
 
 Sous Windows, cochez **Add Python to PATH** pendant l'installation. Sous Linux, Tkinter peut nécessiter le paquet `python3-tk`. VS Code n'est pas nécessaire.
 
@@ -88,7 +88,7 @@ QSound.rom  # seulement si une ROM QSound a été sélectionnée
 
 La carte doit encore utiliser son firmware BL616 Sipeed d'origine, appelé **FPGA Partner**. Ce firmware expose au PC les canaux `USB Debugger A/0` et `A/1` nécessaires au JTAG. Le firmware BL616 NanoQL les remplace par le clavier USB, la microSD et NanoQL Link ; il ne faut donc l'installer qu'après la programmation persistante du FPGA.
 
-Téléchargez `NanoQL-v0.1.0-FPGA.fs` depuis la release, ou compilez-le dans l'onglet **3. FPGA** :
+Compilez le bitstream dans l'onglet **3. FPGA** :
 
 1. Vérifiez le chemin de `gw_sh`.
 2. Cliquez sur **Compiler**.
@@ -277,7 +277,7 @@ Required hardware: a Tang Nano 20K revision 3921 or 3923, a FAT32 or exFAT micro
 
 A USB keyboard and powered USB OTG hub are optional. They are only required for direct USB-keyboard input in QDOS; NanoQL can boot and display the QL without them.
 
-To install a prebuilt [NanoQL release](https://github.com/pR-0000/NanoQL/releases), Python 3 with Tkinter and one FPGA programmer are sufficient. Choose either Gowin Programmer, bundled with Gowin EDA, or [openFPGALoader](https://github.com/trabucayre/openFPGALoader). Gowin Programmer is not mandatory. Install [Git](https://git-scm.com/downloads) and [Gowin EDA Education](https://www.gowinsemi.com/en/support/download_eda/) only when modifying or compiling the HDL. VS Code is not required.
+Install Python 3 with Tkinter and [Gowin EDA Education](https://www.gowinsemi.com/en/support/download_eda/) to compile the bitstream after supplying the IPC firmware legally. Git is only required to clone the repository; source archives are also available from [GitHub Releases](https://github.com/pR-0000/NanoQL/releases). Choose either Gowin Programmer, bundled with Gowin EDA, or [openFPGALoader](https://github.com/trabucayre/openFPGALoader) for FPGA programming. Gowin Programmer is optional, but Gowin EDA is currently required for compilation. VS Code is not required.
 
 ### Step-by-step setup
 
@@ -305,7 +305,7 @@ QSound.rom  # only when an optional QSound ROM was selected
 
 The board must still run Sipeed's original BL616 **FPGA Partner** firmware. It exposes the `USB Debugger A/0` and `A/1` channels required for JTAG. NanoQL BL616 firmware replaces those channels with USB keyboard, microSD, and NanoQL Link services, so install it only after persistent FPGA programming succeeds.
 
-Download `NanoQL-v0.1.0-FPGA.fs` from the release, or use **3. FPGA** to build `impl/pnr/NanoQL_sd_rom.fs`.
+Use **3. FPGA** to build `impl/pnr/NanoQL_sd_rom.fs`.
 
 With Gowin Programmer, select that `.fs` file. Use **SRAM Mode** for a temporary test, or **External Flash Mode**, an erase/program operation, and **Generic Flash** for persistent programming. When openFPGALoader is installed, the assistant's **Program SRAM** and **Program Flash** buttons provide the optional command-line method.
 

@@ -14,4 +14,4 @@ First packaged NanoQL release for Tang Nano 20K revisions 3921 and 3923.
 - Adds the NanoQL Link USB development interface and direct FPGA SRAM loading.
 - Displays the NanoQL version in the overlay.
 
-The release assets contain the compiled FPGA bitstream and BL616 firmware images for both supported board revisions. User-supplied QL, IPC, QL-SD, and QSound ROM images are not distributed.
+The release assets contain compiled BL616 firmware images for both supported board revisions. The FPGA bitstream is built locally because it currently embeds the user-supplied IPC firmware; publishing it would redistribute that firmware indirectly. User-supplied QL, IPC, QL-SD, and QSound ROM images are not distributed.
