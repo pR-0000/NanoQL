@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 - 2026-07-30
 
 - Loads the 2 KiB 8049 IPC firmware dynamically from microSD instead of embedding it in the FPGA bitstream.
 - Adds an OSD selector for standard Sinclair or Hermes IPC firmware.
