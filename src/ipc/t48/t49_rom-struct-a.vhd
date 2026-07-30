@@ -49,7 +49,10 @@ architecture struct of t49_rom is
     port(
       clock : in  std_logic;
       address   : in  std_logic_vector(10 downto 0);
-      q   : out std_logic_vector( 7 downto 0)
+      q   : out std_logic_vector( 7 downto 0);
+      write_enable : in std_logic;
+      write_address : in std_logic_vector(10 downto 0);
+      write_data : in std_logic_vector(7 downto 0)
     );
   end component;
 
@@ -59,7 +62,10 @@ begin
     port map (
       clock     => clk_i,
       address   => rom_addr_i,
-      q         => rom_data_o
+      q         => rom_data_o,
+      write_enable => rom_we_i,
+      write_address => rom_waddr_i,
+      write_data => rom_wdata_i
     );
 
 end struct;

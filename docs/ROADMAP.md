@@ -10,10 +10,10 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 14 281 / 20 736 cellules logiques utilisées (69 %), dont 13 396 LUT.
+- FPGA : 14 927 / 20 736 cellules logiques utilisées (72 %), dont 13 939 LUT.
 - BSRAM : 21 / 46 blocs utilisés (46 %), dont les tampons sectoriels QL-SD et Microdrive et la ROM QSound optionnelle.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
-- Domaine système : 31,8 MHz, avec une Fmax mesurée de 63,562 MHz.
+- Domaine système : 31,8 MHz, avec une Fmax mesurée de 68,037 MHz.
 - HDMI : 720p50 avec audio PCM 48 kHz fonctionnel.
 
 Le pourcentage de LUT restant ne suffit pas à garantir toutes les extensions. La migration de la ROM QL dynamique vers une zone réservée de la SDRAM a toutefois libéré 32 blocs BSRAM pour les ROM et tampons des fonctions suivantes. La fréquence du domaine système devient maintenant la contrainte principale pour les modes CPU rapides.
@@ -25,6 +25,8 @@ Le pourcentage de LUT restant ne suffit pas à garantir toutes les extensions. L
 - Conserver la ROM QL chargée depuis la microSD dans sa zone SDRAM réservée.
 - Réserver une carte SDRAM documentée pour la RAM QL, les ROM système, la ROM Gold Card et les futurs tampons.
 - Étendre le canal de configuration Companion/FPGA pour transporter proprement les réglages RAM, CPU, OS, QL-SD et RTC.
+- Le firmware IPC 8049 est désormais séparé du bitstream, chargé depuis la microSD et sélectionnable dans l'OSD entre les variantes Sinclair standard et Hermes.
+- Les ROM QL et IPC n'ont aucun nom imposé. Sans configuration, l'écran de démarrage demande de sélectionner les deux fichiers dans l'OSD ; l'IPC accepte directement le binaire brut ou Intel HEX vérifié matériellement.
 - Proposer `128 Kio`, `640 Kio` et `896 Kio` dans le menu ; ajouter `4096 Kio` uniquement avec l'implémentation Gold Card.
 - Reprendre le décodage mémoire et les masques d'adresses de QL_MiSTer.
 - Appliquer les changements matériels au reset et les conserver dans `nanoql.ini`.
@@ -47,7 +49,7 @@ La Tang Nano 20K ne possédant pas de pile RTC, une heure absolue correcte aprè
 - Conserver la contention vidéo originale uniquement en mode `QL`.
 - Valider QDOS, les interruptions, le clavier, le son et la SDRAM à chaque vitesse.
 
-Le mode 16 MHz fonctionne à 15,9 MHz avec le domaine actuel. Le mode 24 MHz nécessite un domaine système plus rapide mais reste réaliste. Le mode 42 MHz requiert environ 84 MHz pour l'architecture MiSTer actuelle ; il est donc expérimental tant que les chemins critiques n'ont pas été optimisés au-delà de la Fmax actuelle de 63,562 MHz.
+Le mode 16 MHz fonctionne à 15,9 MHz avec le domaine actuel. Le mode 24 MHz nécessite un domaine système plus rapide mais reste réaliste. Le mode 42 MHz requiert environ 84 MHz pour l'architecture MiSTer actuelle ; il est donc expérimental tant que les chemins critiques n'ont pas été optimisés au-delà de la Fmax actuelle de 54,785 MHz.
 
 #### 4. Gold Card et SMSQ/E
 
@@ -76,8 +78,11 @@ Le support d'une vraie seconde carte QL-SD nécessitera un connecteur microSD su
 - Le chemin matériel `MDV1_`, `DIR`, `LOAD` et `LRUN` est validé physiquement en lecture.
 - Le BL616 convertit de façon autonome un dossier de `NanoQL/Microdrives` en image QLAY depuis l'overlay, sans mode développeur. La conversion, le montage, `DIR`, `LOAD` et `LRUN` sont validés physiquement dans les modes CPU QL et 16 MHz.
 - Les commandes `WRITE` et `ERASE` du ZX8302, les tampons modifiables, la normalisation QLAY et la persistance dans `MDV1.mdv` sont validés physiquement, y compris après reset et aux deux vitesses CPU actuelles.
+- Le flux matériel corrige aussi à la volée le checksum nul du secteur de carte et les motifs de fin de secteur absents de certaines images QLAY créées pour Q-emuLator.
+- L'assistant Tkinter guide maintenant l'installation dans l'ordre microSD, FPGA, puis BL616, détecte openFPGALoader et expose la connexion, le clavier distant et le test USB NanoQL Link.
+- Le guide d'installation documente Windows, macOS et Linux sans présenter FlashCube comme multiplateforme.
 - Ajouter ensuite une resynchronisation sûre des modifications de l'image vers le dossier source.
-- Intégrer le flash du firmware BL616 dans l'outil Python sous Windows, Linux et macOS.
+- Le flash BL616 natif est intégré à l'assistant Python sous Windows, Linux et macOS avec l'outil UART officiel de Bouffalo Lab ; il reste à valider physiquement sur chaque système et révision.
 - Détecter la révision 3921/3923 et vérifier le firmware après programmation.
 - Garder une procédure de récupération explicite ; l'entrée dans le bootloader BL616 pourra toujours nécessiter le bouton `UPDATE`.
 
@@ -93,6 +98,7 @@ La capture d'écran est réaliste. La vidéo est un objectif expérimental : ell
 ### Autres fonctions souhaitables
 
 - Le ZX8301 unifié est validé sur Tang Nano 20K : MC_STAT, PAL/NTSC, HBL/VBL, HSYNC/VSYNC, interruption de trame et clignotement suivent la trame QL native indépendamment du HDMI.
+- Le ZX8302 mémorise le front VSYNC jusqu'à l'acquittement du 68000 et la contention vidéo reste active avec un Microdrive monté en mode `QL`, conformément à QL_MiSTer et au budget CPU du matériel original.
 - Mesurer ultérieurement VBL, VSYNC, contention et accès mémoire sur un QL réel avec un analyseur logique afin de dépasser la fidélité fonctionnelle actuelle et de valider les écarts électriques restants.
 - Remplacer progressivement les autres approximations restantes par les chemins fidèles de QL_MiSTer.
 - Resynchroniser de façon optionnelle les modifications d'une image Microdrive vers son dossier source.
@@ -127,10 +133,10 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 14,281 / 20,736 logic cells used (69%), including 13,396 LUTs.
+- FPGA: 14,927 / 20,736 logic cells used (72%), including 13,939 LUTs.
 - BSRAM: 21 / 46 blocks used (46%), including QL-SD and Microdrive sector buffers and the optional QSound ROM.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
-- System domain: 31.8 MHz, with a measured Fmax of 63.562 MHz.
+- System domain: 31.8 MHz, with a measured Fmax of 61.539 MHz.
 - HDMI: working 720p50 output with 48 kHz PCM audio.
 
 The remaining LUT percentage alone does not guarantee that every extension will fit. Moving the dynamic QL ROM to a reserved SDRAM area has nevertheless freed 32 BSRAM blocks for future ROMs and buffers. System-domain timing is now the main constraint for faster CPU modes.
@@ -142,6 +148,8 @@ The remaining LUT percentage alone does not guarantee that every extension will 
 - Keep the microSD-loaded QL ROM in its reserved SDRAM area.
 - Define and document an SDRAM map for QL RAM, system ROMs, Gold Card ROM, and future buffers.
 - Extend the Companion/FPGA configuration channel for RAM, CPU, OS, QL-SD, and RTC settings.
+- The 8049 IPC firmware is now separate from the bitstream, loaded from microSD, and selectable in the OSD between standard Sinclair and Hermes variants.
+- QL and IPC ROM filenames are unrestricted. Without saved configuration, the startup screen asks for both files through the OSD; IPC accepts raw binary or hardware-validated Intel HEX directly.
 - Provide `128 KiB`, `640 KiB`, and `896 KiB` in the menu; add `4096 KiB` only with the Gold Card implementation.
 - Port QL_MiSTer's memory decoding and address masks.
 - Apply hardware changes on reset and persist them in `nanoql.ini`.
@@ -164,7 +172,7 @@ The Tang Nano 20K has no battery-backed RTC. Correct absolute time after complet
 - Keep original video contention only in `QL` mode.
 - Validate QDOS, interrupts, keyboard, audio, and SDRAM at every speed.
 
-The 16 MHz mode runs at 15.9 MHz with the current domain. 24 MHz requires a faster system domain but remains realistic. 42 MHz needs about 84 MHz with the current MiSTer architecture and is therefore experimental until critical paths improve beyond the current 63.562 MHz Fmax.
+The 16 MHz mode runs at 15.9 MHz with the current domain. 24 MHz requires a faster system domain but remains realistic. 42 MHz needs about 84 MHz with the current MiSTer architecture and is therefore experimental until critical paths improve beyond the current 54.785 MHz Fmax.
 
 #### 4. Gold Card and SMSQ/E
 
@@ -193,8 +201,11 @@ A real secondary QL-SD card requires an additional microSD connector on an exter
 - The hardware `MDV1_` path, `DIR`, `LOAD`, and `LRUN` are physically validated for reads.
 - The BL616 autonomously converts a folder under `NanoQL/Microdrives` to a QLAY image from the overlay without development mode. Conversion, mounting, `DIR`, `LOAD`, and `LRUN` are physically validated in both QL and 16 MHz CPU modes.
 - ZX8302 `WRITE` and `ERASE`, writable buffers, QLAY normalization, and persistence to `MDV1.mdv` are physically validated across reset and at both current CPU speeds.
+- The hardware stream also repairs the zero map-sector checksum and missing physical sector-tail patterns found in some QLAY images created for Q-emuLator.
+- The Tkinter assistant now guides installation in microSD, FPGA, then BL616 order, detects openFPGALoader, and exposes NanoQL Link connection, remote keyboard, and USB test controls.
+- The installation guide covers Windows, macOS, and Linux without presenting FlashCube as cross-platform.
 - Add safe synchronization of image changes back to the source folder afterward.
-- Integrate BL616 firmware flashing into the Python tool on Windows, Linux, and macOS.
+- Native BL616 flashing is integrated into the Python assistant on Windows, Linux, and macOS through Bouffalo Lab's official UART tool; physical validation remains required on each operating system and board revision.
 - Detect revisions 3921/3923 and verify firmware after programming.
 - Keep an explicit recovery path; entering the BL616 bootloader may still require the `UPDATE` button.
 
@@ -210,6 +221,7 @@ Screenshots are realistic. Video recording is experimental because it depends on
 ### Other useful features
 
 - The unified ZX8301 is validated on Tang Nano 20K: MC_STAT, PAL/NTSC, HBL/VBL, HSYNC/VSYNC, frame interrupt, and flashing follow the native QL raster independently of HDMI.
+- ZX8302 latches the VSYNC edge until the 68000 acknowledges it, and video contention remains active with a mounted Microdrive in `QL` mode, matching QL_MiSTer and the original hardware CPU budget.
 - Later measure VBL, VSYNC, contention, and memory accesses on a physical QL with a logic analyzer to move beyond current functional fidelity and validate the remaining electrical differences.
 - Progressively replace the remaining approximations with faithful QL_MiSTer paths.
 - Optionally synchronize changes from a Microdrive image back to its source folder.

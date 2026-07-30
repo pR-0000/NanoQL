@@ -1,4 +1,4 @@
-// Serialize ROM, QL-SD, and Microdrive accesses to FPGA Companion's
+// Serialize ROM, IPC, QL-SD, Microdrive, and QSound accesses to Companion's
 // edge-triggered SD image interface.
 module ql_sd_request_arbiter (
     input  wire        clk,
@@ -6,6 +6,8 @@ module ql_sd_request_arbiter (
 
     input  wire        rom_read_start,
     input  wire [31:0] rom_sector,
+    input  wire        ipc_read_start,
+    input  wire [31:0] ipc_sector,
     input  wire        qlsd_read_start,
     input  wire        qlsd_write_start,
     input  wire [31:0] qlsd_sector,
@@ -50,6 +52,11 @@ module ql_sd_request_arbiter (
                         owner <= 3'd0;
                         owner_write <= 1'b0;
                         sd_sector <= rom_sector;
+                        state <= ST_ASSERT;
+                    end else if (ipc_read_start) begin
+                        owner <= 3'd4;
+                        owner_write <= 1'b0;
+                        sd_sector <= ipc_sector;
                         state <= ST_ASSERT;
                     end else if (qlsd_read_start || qlsd_write_start) begin
                         owner <= 3'd1;

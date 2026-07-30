@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert a complete Intel HEX dump to NanoQL's 2 KiB IPC ROM hex file."""
+"""Convert supported 8049 firmware representations to a 2 KiB raw image."""
 
 from __future__ import annotations
 
@@ -7,24 +7,13 @@ import argparse
 from pathlib import Path
 
 
-def main() -> int:
-    repository = Path(__file__).resolve().parent.parent
-    parser = argparse.ArgumentParser()
-    parser.add_argument("input", type=Path)
-    parser.add_argument(
-        "output",
-        nargs="?",
-        type=Path,
-        default=repository / "src" / "ipc" / "ql_ipc_rom.hex",
-    )
-    args = parser.parse_args()
-
+def parse_intel_hex(source: Path) -> bytes:
     rom = bytearray([0xFF] * 2048)
     written = bytearray(2048)
     upper_address = 0
     eof_seen = False
 
-    for raw_line in args.input.read_text(encoding="ascii").splitlines():
+    for raw_line in source.read_text(encoding="ascii").splitlines():
         line = raw_line.strip()
         if not line:
             continue
@@ -58,10 +47,44 @@ def main() -> int:
         raise ValueError("Intel HEX EOF record is missing")
     if not all(written):
         raise ValueError("IPC firmware does not define all 2048 ROM bytes")
+    return bytes(rom)
 
+
+def read_ipc_firmware(source: Path) -> bytes:
+    if not source.is_file():
+        raise ValueError(f"IPC firmware does not exist: {source}")
+    raw = source.read_bytes()
+    if raw.lstrip().startswith(b":"):
+        return parse_intel_hex(source)
+    if len(raw) == 2048:
+        return raw
+    try:
+        tokens = raw.decode("ascii").split()
+    except UnicodeDecodeError as error:
+        raise ValueError(
+            "IPC firmware must be raw binary, Intel HEX, or hexadecimal byte pairs"
+        ) from error
+    if len(tokens) != 2048 or any(
+        len(token) != 2 or any(char not in "0123456789abcdefABCDEF" for char in token)
+        for token in tokens
+    ):
+        raise ValueError(
+            "Text IPC firmware must contain exactly 2,048 hexadecimal byte pairs"
+        )
+    return bytes(int(token, 16) for token in tokens)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input", type=Path)
+    parser.add_argument(
+        "output", nargs="?", type=Path, default=Path("IPC.rom")
+    )
+    args = parser.parse_args()
+    rom = read_ipc_firmware(args.input)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text("".join(f"{value:02X}\n" for value in rom), encoding="ascii")
-    print(f"IPC ROM converted: {args.output.resolve()}")
+    args.output.write_bytes(rom)
+    print(f"IPC ROM prepared: {args.output.resolve()}")
     print("Output size: 2048 bytes")
     return 0
 

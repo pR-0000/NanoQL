@@ -18,6 +18,9 @@ module ql_boot_status (
     localparam [3:0] STATUS_SDRAM_FAIL  = 4'd7;
     localparam [3:0] STATUS_QSOUND_FAIL = 4'd8;
     localparam [3:0] STATUS_QSOUND_LOAD = 4'd9;
+    localparam [3:0] STATUS_IPC_MISSING = 4'd10;
+    localparam [3:0] STATUS_IPC_LOADING = 4'd11;
+    localparam [3:0] STATUS_IPC_FAILED  = 4'd12;
 
     function automatic [7:0] message_char;
         input [3:0] message_status;
@@ -52,11 +55,11 @@ module ql_boot_status (
                     end
                     STATUS_ROM_MISSING: begin
                         if (line == 3'd1)
-                            text = {"QL.ROM NOT MOUNTED", {14{8'h20}}};
+                            text = {"SELECT QL AND IPC ROM", {11{8'h20}}};
                         else if (line == 3'd2)
-                            text = {"CHECK MICROSD AND FILE", {10{8'h20}}};
+                            text = {"OPEN MENU WITH F12", {14{8'h20}}};
                         else if (line == 3'd3)
-                            text = {"AUTOMATIC RETRY ACTIVE", {10{8'h20}}};
+                            text = {"THEN CHOOSE BOTH FILES", {10{8'h20}}};
                     end
                     STATUS_LOADING: begin
                         if (line == 3'd1)
@@ -83,6 +86,24 @@ module ql_boot_status (
                     STATUS_QSOUND_LOAD: begin
                         if (line == 3'd1)
                             text = {"LOADING QSOUND ROM", {14{8'h20}}};
+                    end
+                    STATUS_IPC_MISSING: begin
+                        if (line == 3'd1)
+                            text = {"SELECT QL AND IPC ROM", {11{8'h20}}};
+                        else if (line == 3'd2)
+                            text = {"OPEN MENU WITH F12", {14{8'h20}}};
+                        else if (line == 3'd3)
+                            text = {"THEN CHOOSE BOTH FILES", {10{8'h20}}};
+                    end
+                    STATUS_IPC_LOADING: begin
+                        if (line == 3'd1)
+                            text = {"LOADING IPC ROM", {17{8'h20}}};
+                    end
+                    STATUS_IPC_FAILED: begin
+                        if (line == 3'd1)
+                            text = {"IPC ROM LOAD FAILED", {13{8'h20}}};
+                        else if (line == 3'd2)
+                            text = {"USE 2 KIB BIN ROM OR HEX", {8{8'h20}}};
                     end
                     default: begin
                         if (line == 3'd1)
@@ -191,19 +212,23 @@ module ql_boot_status (
             glyph_x_d <= glyph_x;
             glyph_y_d <= glyph_y;
             text_area_d <= text_area;
-            progress_border_d <= (status_d == STATUS_LOADING) &&
+            progress_border_d <= ((status_d == STATUS_LOADING) ||
+                                  (status_d == STATUS_IPC_LOADING)) &&
                 (x_d >= 11'd384) && (x_d < 11'd896) &&
                 (y_d >= 10'd344) && (y_d < 10'd368) &&
                 ((x_d < 11'd388) || (x_d >= 11'd892) ||
                  (y_d < 10'd348) || (y_d >= 10'd364));
-            progress_fill_d <= (status_d == STATUS_LOADING) &&
+            progress_fill_d <= ((status_d == STATUS_LOADING) ||
+                                (status_d == STATUS_IPC_LOADING)) &&
                 (x_d >= 11'd388) &&
                 (x_d < 11'd388 + {progress_d[6:0], 2'b00}) &&
                 (y_d >= 10'd348) && (y_d < 10'd364);
             text_color_d <= ((status_d == STATUS_ROM_FAILED) ||
                              (status_d == STATUS_QSOUND_FAIL) ||
+                             (status_d == STATUS_IPC_FAILED) ||
                              (status_d == STATUS_SDRAM_FAIL)) ? 24'hff6058 :
                             ((status_d == STATUS_LOADING) ||
+                             (status_d == STATUS_IPC_LOADING) ||
                              (status_d == STATUS_QSOUND_LOAD)) ? 24'h40d8d0 :
                                                           24'hffffff;
         end

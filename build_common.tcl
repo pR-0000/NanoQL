@@ -114,8 +114,8 @@ if {[info exists include_t48_ipc]} {
     add_file src/ipc/t48/t49_rom-struct-a.vhd
     add_file src/ipc/t48/t8049_notri.vhd
     add_file src/ipc/rom_t49.sv
+    add_file src/ipc/ql_ipc_rom_loader.sv
     add_file src/ipc/ql_ipc_t48.sv
-    add_file $ipc_rom_data_file
 }
 
 if {[info exists rom_data_file]} {

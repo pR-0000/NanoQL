@@ -233,9 +233,10 @@ index 5f5fb8e..efbe294 100644
        char *image = sdc_get_image_name(drive);
  
 +#ifdef NANOQL_COMPANION
-+      // Folder-built MDV1 is a runtime cartridge. Persisting it as drive2
++      // Folder-built cartridges are runtime images. Persisting one as drive2
 +      // makes the generic INI loader mount it too early on the next boot.
-+      if(drive == 2 && image && strcasecmp(image, "MDV1.mdv") == 0)
++      if(drive == 2 && cwd &&
++         strcasecmp(cwd, "/sd/NanoQL/Generated") == 0)
 +        continue;
 +#endif
 +

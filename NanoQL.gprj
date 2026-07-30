@@ -101,7 +101,7 @@
         <File path="src/ipc/t48/t49_rom-struct-a.vhd" type="file.vhdl" enable="1"/>
         <File path="src/ipc/t48/t8049_notri.vhd" type="file.vhdl" enable="1"/>
         <File path="src/ipc/rom_t49.sv" type="file.verilog" enable="1"/>
+        <File path="src/ipc/ql_ipc_rom_loader.sv" type="file.verilog" enable="1"/>
         <File path="src/ipc/ql_ipc_t48.sv" type="file.verilog" enable="1"/>
-        <File path="src/ipc/ql_ipc_rom.hex" type="file.other" enable="1"/>
     </FileList>
 </Project>

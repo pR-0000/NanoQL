@@ -204,6 +204,7 @@ module nanoql_top(
     reg [63:0] qlsd_image_size = 64'd0;
     reg [63:0] mdv_image_size = 64'd0;
     reg [63:0] qsound_image_size = 64'd0;
+    reg [63:0] ipc_image_size = 64'd0;
     reg qsound_mount_seen = 1'b0;
     wire companion_sd_busy;
     wire companion_sd_done;
@@ -300,6 +301,15 @@ module nanoql_top(
     wire qsound_loading;
     wire qsound_loaded;
     wire qsound_load_fail;
+    wire ipc_sd_read_start;
+    wire [31:0] ipc_sd_sector;
+    wire ipc_rom_write_enable;
+    wire [10:0] ipc_rom_write_address;
+    wire [7:0] ipc_rom_write_data;
+    wire ipc_loading;
+    wire ipc_loaded;
+    wire ipc_load_fail;
+    wire [7:0] ipc_sector_progress;
     wire mdv_cpu_data_read;
     reg [15:0] mdv_cpu_read_count;
     reg [7:0] mdv_cpu_read_xor;
@@ -563,6 +573,8 @@ module nanoql_top(
         .reset(video_reset),
         .rom_read_start(rom_sd_read_start),
         .rom_sector(rom_sd_sector),
+        .ipc_read_start(ipc_sd_read_start),
+        .ipc_sector(ipc_sd_sector),
         .qlsd_read_start(qlsd_bridge_read_pending),
         .qlsd_write_start(qlsd_bridge_write_pending),
         .qlsd_sector(qlsd_bridge_lba),
@@ -626,6 +638,8 @@ module nanoql_top(
             qsound_image_size <= companion_image_size;
             qsound_mount_seen <= companion_image_size != 64'd0;
         end
+        if (companion_image_mounted_delay[4])
+            ipc_image_size <= companion_image_size;
     end
 
     always @(posedge clk_pixel) begin
@@ -837,6 +851,29 @@ module nanoql_top(
         .sector_progress(rom_sector_progress)
     );
 
+    ql_ipc_rom_loader ipc_rom_loader (
+        .clk(clk_pixel),
+        .reset(video_reset),
+        .enable(1'b1),
+        .image_mounted(companion_image_mounted_stable[4]),
+        .image_size(ipc_image_size),
+        .sd_read_start(ipc_sd_read_start),
+        .sd_sector(ipc_sd_sector),
+        .sd_busy(companion_sd_busy && companion_sd_source == 3'd4),
+        .sd_done(companion_sd_done && companion_sd_source == 3'd4),
+        .sd_byte_valid(companion_sd_byte_valid &&
+                       companion_sd_source == 3'd4),
+        .sd_byte_addr(companion_sd_byte_addr),
+        .sd_byte(companion_sd_byte),
+        .rom_write_enable(ipc_rom_write_enable),
+        .rom_write_address(ipc_rom_write_address),
+        .rom_write_data(ipc_rom_write_data),
+        .loading(ipc_loading),
+        .loaded(ipc_loaded),
+        .failed(ipc_load_fail),
+        .sector_progress(ipc_sector_progress)
+    );
+
     ql_qsound_card qsound_card (
         .clk(clk_pixel),
         .reset(video_reset),
@@ -929,7 +966,7 @@ module nanoql_top(
         .y(y)
     );
 
-    wire ql_core_ready = sdram_init_done && !sdram_init_fail &&
+    wire ql_core_ready = sdram_init_done && !sdram_init_fail && ipc_loaded &&
                          (!qsound_mount_seen || qsound_loaded) &&
                          (!rom_is_dynamic ||
                           (rom_load_done &&
@@ -976,10 +1013,10 @@ module nanoql_top(
     ql_timing ql_bus_timing (
         .clk_sys(clk_pixel),
         .reset(ql_system_reset),
-        // The MiST QL timing model explicitly removes RAM contention while
-        // a Microdrive is selected; retaining it can stall QDOS polling.
-        .enable(cpu_run_enable && (companion_cpu_speed == 2'd0) &&
-                !mdv_selected),
+        // Video contention remains active in QL mode even while a Microdrive
+        // is selected. This matches QL_MiSTer and prevents programs launched
+        // from MDV1 from gaining an unrealistic amount of frame headroom.
+        .enable(cpu_run_enable && (companion_cpu_speed == 2'd0)),
         .ce_bus_p(cpu_ce_bus_p),
         .vblank(ql_native_vblank),
         .cpu_uds(!cpu_uds_n),
@@ -1140,6 +1177,9 @@ module nanoql_top(
         .ce_bus_n(cpu_ce_bus_n),
         .vs(ql_native_vs),
         .keyboard_matrix(companion_keyboard_matrix),
+        .ipc_rom_write_enable(ipc_rom_write_enable),
+        .ipc_rom_write_address(ipc_rom_write_address),
+        .ipc_rom_write_data(ipc_rom_write_data),
         .microdrive_gap(mdv_gap),
         .microdrive_rx_ready(mdv_rx_ready),
         .microdrive_tx_full(mdv_tx_full),
@@ -1210,7 +1250,8 @@ module nanoql_top(
         end
     end
     wire memory_status_area = (x < 11'd16) && (y < 10'd16);
-    wire memory_failure = sdram_init_fail || qsound_load_fail ||
+    wire memory_failure = sdram_init_fail || ipc_load_fail ||
+                          qsound_load_fail ||
                           (rom_is_diagnostic && cpu_boot_fail) ||
                           (rom_is_dynamic && rom_load_fail);
     wire [23:0] memory_status_rgb = memory_failure ? 24'hff2020 :
@@ -1253,12 +1294,19 @@ module nanoql_top(
     localparam [3:0] BOOT_SDRAM_FAIL  = 4'd7;
     localparam [3:0] BOOT_QSOUND_FAIL = 4'd8;
     localparam [3:0] BOOT_QSOUND_LOAD = 4'd9;
+    localparam [3:0] BOOT_IPC_MISSING = 4'd10;
+    localparam [3:0] BOOT_IPC_LOADING = 4'd11;
+    localparam [3:0] BOOT_IPC_FAILED  = 4'd12;
     reg [3:0] boot_status;
     always @(*) begin
         if (sdram_init_fail)
             boot_status = BOOT_SDRAM_FAIL;
         else if (!sdram_init_done)
             boot_status = BOOT_MEMORY;
+        else if (ipc_load_fail)
+            boot_status = BOOT_IPC_FAILED;
+        else if (ipc_loading)
+            boot_status = BOOT_IPC_LOADING;
         else if (rom_load_fail)
             boot_status = BOOT_ROM_FAILED;
         else if (rom_loading)
@@ -1273,6 +1321,8 @@ module nanoql_top(
             boot_status = BOOT_WAIT;
         else if (!companion_raw_spi_seen || !companion_status_seen)
             boot_status = BOOT_BL616;
+        else if (!ipc_loaded)
+            boot_status = BOOT_IPC_MISSING;
         else
             boot_status = BOOT_ROM_MISSING;
     end
@@ -1284,7 +1334,7 @@ module nanoql_top(
         .x(x),
         .y(y),
         .status(boot_status),
-        .progress(rom_sector_progress),
+        .progress(ipc_loading ? ipc_sector_progress : rom_sector_progress),
         .rgb(companion_diag_rgb)
     );
 
@@ -1629,6 +1679,7 @@ module nanoql_top(
     // Board LEDs are active-low on the Tang Nano 20K.
     assign leds_n[0] = ~heartbeat[24];
     assign leds_n[1] = ~(pll_lock && sdram_init_done &&
+                         ipc_loaded &&
                          (rom_is_dynamic ? rom_load_done :
                           rom_is_diagnostic ? cpu_boot_done : zx8302_ipc_ready) &&
                          !memory_failure);

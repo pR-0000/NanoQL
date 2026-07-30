@@ -54,6 +54,9 @@ DOWNLOADS = (
 FLASHCUBE_SHA256 = (
     "2FD7EA7FBE4499CC1897145FDDE74E5551BDDCD27C68115BF6A065FDBD92B181"
 )
+BFLB_MCU_TOOL_PACKAGE = "bflb-mcu-tool-uart"
+BFLB_MCU_TOOL_VERSION = "1.10.1"
+BL616_APPLICATION_OFFSET = 0x20000
 
 
 def sha256(path: Path) -> str:
@@ -87,6 +90,84 @@ def verified_download(url: str, destination: Path, expected: str, force: bool) -
     print(f"Verified SHA-256: {actual}")
 
 
+def ensure_bflb_mcu_tool() -> None:
+    try:
+        import bflb_mcu_tool  # noqa: F401
+    except ImportError:
+        subprocess.check_call([
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            f"{BFLB_MCU_TOOL_PACKAGE}=={BFLB_MCU_TOOL_VERSION}",
+        ])
+        import bflb_mcu_tool  # noqa: F401
+
+
+def build_full_flash_image(
+    segments: list[tuple[int, Path]], destination: Path
+) -> None:
+    end = max(address + path.stat().st_size for address, path in segments)
+    image = bytearray([0xFF]) * end
+    occupied: list[tuple[int, int]] = []
+    for address, path in sorted(segments):
+        data = path.read_bytes()
+        segment_end = address + len(data)
+        if any(address < prior_end and prior_address < segment_end
+               for prior_address, prior_end in occupied):
+            raise RuntimeError(f"Overlapping BL616 Flash segment: {path}")
+        image[address:segment_end] = data
+        occupied.append((address, segment_end))
+    destination.write_bytes(image)
+    print(
+        f"Prepared complete BL616 Flash image: {destination} "
+        f"({destination.stat().st_size} bytes)"
+    )
+
+
+def flash_bl616(image: Path, port: str, baudrate: int) -> None:
+    ensure_bflb_mcu_tool()
+    print("\nPut the Tang Nano 20K BL616 in boot mode:")
+    print("1. Disconnect USB.")
+    print("2. Hold UPDATE while reconnecting USB, then release UPDATE.")
+    print(f"3. Flashing through {port} at {baudrate} baud.")
+    command = [
+        sys.executable,
+        "-W",
+        "ignore::RuntimeWarning",
+        "-m",
+        "bflb_mcu_tool.libs.bflb_eflash_loader",
+        "--chipname=bl616",
+        "--interface=uart",
+        "--write",
+        "--flash",
+        f"--port={port}",
+        f"--baudrate={baudrate}",
+        f"--file={image}",
+        "--addr=0x0",
+    ]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert process.stdout is not None
+    output: list[str] = []
+    for line in process.stdout:
+        print(line, end="")
+        output.append(line)
+    return_code = process.wait()
+    transcript = "".join(output)
+    if return_code != 0 or "[All Successful]" not in transcript:
+        raise RuntimeError(
+            "Bouffalo Lab's tool did not confirm successful BL616 programming."
+        )
+    print("BL616 programming command completed. Power-cycle the board normally.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--launch", action="store_true", help="launch FlashCube on Windows")
@@ -112,7 +193,33 @@ def main() -> int:
         type=Path,
         help="override the packaged NanoQL firmware for revision 3923",
     )
+    parser.add_argument(
+        "--flash",
+        action="store_true",
+        help="program the BL616 with Bouffalo Lab's cross-platform command tool",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=("nanoql", "original"),
+        default="nanoql",
+        help="firmware profile used with --flash",
+    )
+    parser.add_argument("--port", help="BL616 bootloader serial port")
+    parser.add_argument("--baudrate", type=int, default=2_000_000)
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="confirm the destructive BL616 Flash operation",
+    )
     args = parser.parse_args()
+
+    if args.flash:
+        if args.revision == "both":
+            parser.error("--flash requires --revision 3921 or --revision 3923")
+        if not args.port:
+            parser.error("--flash requires --port")
+        if not args.yes:
+            parser.error("--flash requires --yes")
 
     repository = Path(__file__).resolve().parent.parent
     cache = repository / "private" / "bl616"
@@ -197,7 +304,27 @@ def main() -> int:
     if flashcube_executable:
         print(f"FlashCube: {flashcube_executable}")
     else:
-        print("FlashCube is Windows-only; the verified firmware package is ready.")
+        print(
+            "FlashCube is Windows-only; native BL616 flashing is available "
+            "with --flash on Windows, macOS, and Linux."
+        )
+
+    if args.flash:
+        revision = args.revision
+        suffix = "" if revision == "3921" else "_v3923"
+        if args.profile == "nanoql":
+            segments = [
+                (0, package / "bl616_bootloader_0x20000_nano20k_signed.bin"),
+                (BL616_APPLICATION_OFFSET, package / unified_firmware[revision][1]),
+            ]
+        else:
+            segments = [
+                (0, package / f"bl616_fpga_partner_nano20k{suffix}.bin"),
+                (0x40000, package / f"fpga_companion_nano20k{suffix}.bin"),
+            ]
+        full_image = package / f"nanoql_bl616_{revision}_{args.profile}_full.bin"
+        build_full_flash_image(segments, full_image)
+        flash_bl616(full_image, args.port, args.baudrate)
 
     if args.launch:
         if not is_windows or not flashcube_executable:

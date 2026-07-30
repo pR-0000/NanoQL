@@ -40,7 +40,12 @@ module ql_companion_hid (
                     7'h1d: translated_usage = 7'h1a;
                     default: begin
                         if (host_keyboard_azerty && !rom_keyboard_french) begin
-                            if (usage == 7'h33)
+                            if (usage == 7'h20)
+                                // AZERTY key 3 is quote without Shift and 3
+                                // with Shift. The English QL follows the UK
+                                // layout and produces quote from Shift+2.
+                                translated_usage = shifted ? 7'h20 : 7'h1f;
+                            else if (usage == 7'h33)
                                 translated_usage = 7'h10; // AZERTY M -> QL M
                             else if (usage == 7'h10)
                                 translated_usage = shifted ? 7'h38 : 7'h36;
@@ -156,14 +161,17 @@ module ql_companion_hid (
                         key_event <= 1'b1;
                         key_press_event <= !data_in[7];
                         if (host_keyboard_azerty && !rom_keyboard_french &&
-                            ((data_in[6:0] == 7'h36) ||
+                            ((data_in[6:0] == 7'h20) ||
+                             (data_in[6:0] == 7'h36) ||
                              (data_in[6:0] == 7'h37))) begin
                             if (data_in[7]) begin
                                 layout_shift_force <= 1'b0;
                                 layout_shift_suppress <= 1'b0;
                             end else begin
                                 layout_shift_force <=
-                                    (data_in[6:0] == 7'h37) && !shift_down;
+                                    (((data_in[6:0] == 7'h20) ||
+                                      (data_in[6:0] == 7'h37)) &&
+                                     !shift_down);
                                 layout_shift_suppress <= shift_down;
                             end
                         end else if (!host_keyboard_azerty &&

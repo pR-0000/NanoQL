@@ -71,6 +71,7 @@ module ql_microdrive_stream #(
     reg [7:0] record_ram [0:1023];
     reg [7:0] patch_ram [0:511];
     reg [7:0] incoming_high_byte;
+    reg [15:0] first_header_checksum;
     reg [15:0] stream_word;
     reg [7:0] record_read_byte;
     reg [7:0] patch_read_byte;
@@ -158,7 +159,14 @@ module ql_microdrive_stream #(
         writeback_state == WB_IDLE;
     wire [8:0] sector_ram_write_address =
         {sd_sector[0], sd_byte_addr[8:1]};
-    wire [15:0] sector_ram_write_data = {incoming_high_byte, sd_byte};
+    wire repair_first_header_checksum =
+        sector_ram_write && (sd_sector == 0) &&
+        (sd_byte_addr == 9'd27) &&
+        (incoming_high_byte == 8'h00) && (sd_byte == 8'h00);
+    wire [15:0] sector_ram_write_data =
+        repair_first_header_checksum ?
+            {first_header_checksum[7:0], first_header_checksum[15:8]} :
+            {incoming_high_byte, sd_byte};
     wire capture_ram_write = tx_consume && capture_active &&
         capture_count < 10'd612;
     wire fill_ram_write = writeback_state == WB_FILL;
@@ -202,6 +210,16 @@ module ql_microdrive_stream #(
                      bit_counter[2:0] == 3'd2;
     wire [7:0] stream_data = bit_counter[3] ? microdrive_word[7:0] :
                                              microdrive_word[15:8];
+    // Some emulator-oriented QLAY files omit the physical calibration tail
+    // because software emulators reconstruct it internally. The real ZX8302
+    // path still needs those words. Canonical NanoQL images already contain
+    // the same values, so this normalization is transparent for them.
+    wire [15:0] normalized_stream_word =
+        (qlay_record_position >= 10'd566 &&
+         qlay_record_position <= 10'd648) ? 16'haa55 :
+        (qlay_record_position == 10'd650) ? 16'h193b :
+        (qlay_record_position >= 10'd652) ? 16'h5a5a :
+                                            stream_word;
     assign debug_flags = {
         read_in_flight, rx_ready, gap, current_available,
         stream_started, selected, image_ready, image_valid
@@ -291,6 +309,7 @@ module ql_microdrive_stream #(
             buffer_sector[0] <= 9'd0;
             buffer_sector[1] <= 9'd0;
             incoming_high_byte <= 8'd0;
+            first_header_checksum <= 16'h0f0f;
             read_in_flight <= 1'b0;
             write_in_flight <= 1'b0;
             writeback_state <= WB_IDLE;
@@ -431,6 +450,13 @@ module ql_microdrive_stream #(
 
                 if (sd_byte_valid && sd_source == 3'd2 &&
                     read_in_flight && writeback_state == WB_IDLE) begin
+                    if ((sd_sector == 0) && (sd_byte_addr == 0))
+                        first_header_checksum <= 16'h0f0f;
+                    else if ((sd_sector == 0) &&
+                             (sd_byte_addr >= 9'd12) &&
+                             (sd_byte_addr <= 9'd25))
+                        first_header_checksum <=
+                            first_header_checksum + sd_byte;
                     if (!sd_byte_addr[0])
                         incoming_high_byte <= sd_byte;
                 end
@@ -602,7 +628,7 @@ module ql_microdrive_stream #(
                             gap_reg <= 1'b1;
                             data_valid <= 1'b0;
                         end else begin
-                            microdrive_word <= stream_word;
+                            microdrive_word <= normalized_stream_word;
                             // Match the original QL/MiSTer data-valid window:
                             // hide the zero/FF preambles while still replaying
                             // every physical word at the cartridge data rate.

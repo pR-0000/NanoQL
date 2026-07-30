@@ -88,7 +88,10 @@ package t48_core_comp_pack is
     port (
       clk_i      : in  std_logic;
       rom_addr_i : in  std_logic_vector(10 downto 0);
-      rom_data_o : out std_logic_vector( 7 downto 0)
+      rom_data_o : out std_logic_vector( 7 downto 0);
+      rom_we_i   : in  std_logic;
+      rom_waddr_i: in  std_logic_vector(10 downto 0);
+      rom_wdata_i: in  std_logic_vector( 7 downto 0)
     );
   end component;
 

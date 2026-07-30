@@ -4,6 +4,9 @@ module ql_ipc_t48(
     input  wire       ce_11m,
     input  wire       comdata_in,
     input  wire [63:0] keyboard_matrix,
+    input  wire       rom_write_enable,
+    input  wire [10:0] rom_write_address,
+    input  wire [7:0] rom_write_data,
     output wire       comctrl,
     output wire       comdata_out,
     output wire       audio,
@@ -75,7 +78,10 @@ module ql_ipc_t48(
         .p1_i(8'h00),
         .p1_o(p1_out),
         .p1_low_imp_o(unused_p1_low),
-        .prog_n_o(unused_prog_n)
+        .prog_n_o(unused_prog_n),
+        .rom_we_i(rom_write_enable),
+        .rom_waddr_i(rom_write_address),
+        .rom_wdata_i(rom_write_data)
     );
 
 endmodule

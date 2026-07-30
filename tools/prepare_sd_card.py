@@ -9,16 +9,21 @@ import shutil
 from pathlib import Path
 
 from nanoql_drive import build_qlay_image, collect_drive_files
+from prepare_ql_ipc_rom import read_ipc_firmware
 
 
-def update_defaults(config: Path, mount_mdv1: bool, mount_qsound: bool) -> None:
+def update_defaults(
+    config: Path, mount_mdv1: bool, mount_qsound: bool, mount_ipc: bool
+) -> None:
     lines = config.read_text(encoding="ascii").splitlines() if config.exists() else []
     replacements = {"drive0": "drive0 = /sd/QL.rom"}
     if mount_mdv1:
         replacements["drive2"] = "drive2 = /sd/NanoQL/Drive1/MDV1.mdv"
     if mount_qsound:
         replacements["drive3"] = "drive3 = /sd/QSound.rom"
-    managed_keys = {"drive0", "drive2", "drive3"}
+    if mount_ipc:
+        replacements["drive4"] = "drive4 = /sd/IPC.rom"
+    managed_keys = {"drive0", "drive2", "drive3", "drive4"}
     updated: list[str] = []
     replaced: set[str] = set()
     for line in lines:
@@ -49,6 +54,14 @@ def main() -> int:
         "--qsound-rom", type=Path,
         help="optional 8 KiB QSound expansion ROM",
     )
+    parser.add_argument(
+        "--ipc-rom", type=Path,
+        help="primary IPC firmware as raw binary, Intel HEX, or hex byte pairs",
+    )
+    parser.add_argument(
+        "--hermes-ipc-rom", type=Path,
+        help="optional Hermes firmware as raw binary, Intel HEX, or hex byte pairs",
+    )
     args = parser.parse_args()
 
     if not args.rom.is_file():
@@ -70,9 +83,15 @@ def main() -> int:
     drive1 = args.destination / "NanoQL" / "Drive1"
     microdrives = args.destination / "NanoQL" / "Microdrives"
     qsound_output = args.destination / "QSound.rom"
+    ipc_output = args.destination / "IPC.rom"
+    hermes_ipc_output = args.destination / "IPC-Hermes.rom"
     shutil.copyfile(args.rom, output)
     if args.qsound_rom is not None:
         shutil.copyfile(args.qsound_rom, qsound_output)
+    if args.ipc_rom is not None:
+        ipc_output.write_bytes(read_ipc_firmware(args.ipc_rom))
+    if args.hermes_ipc_rom is not None:
+        hermes_ipc_output.write_bytes(read_ipc_firmware(args.hermes_ipc_rom))
     drive1.mkdir(parents=True, exist_ok=True)
     microdrives.mkdir(parents=True, exist_ok=True)
     mdv_image = drive1 / "MDV1.mdv"
@@ -80,7 +99,9 @@ def main() -> int:
         files = collect_drive_files(args.mdv_folder, args.mdv_folder / "MDV1.mdv")
         mdv_image.write_bytes(build_qlay_image(files, args.mdv_name))
         print(f"Prepared: {mdv_image} ({len(files)} file(s))")
-    update_defaults(config, mdv_image.is_file(), qsound_output.is_file())
+    update_defaults(
+        config, mdv_image.is_file(), qsound_output.is_file(), ipc_output.is_file()
+    )
     digest = hashlib.sha256(output.read_bytes()).hexdigest().upper()
     print(f"Prepared: {output}")
     print(f"Prepared: {config}")
@@ -89,6 +110,15 @@ def main() -> int:
     print(f"SHA-256: {digest}")
     if qsound_output.is_file():
         print(f"Prepared: {qsound_output} ({qsound_output.stat().st_size} bytes)")
+    if ipc_output.is_file():
+        print(f"Prepared: {ipc_output} ({ipc_output.stat().st_size} bytes)")
+    else:
+        print("Warning: IPC.rom is missing; NanoQL will keep the QL in reset.")
+    if hermes_ipc_output.is_file():
+        print(
+            f"Prepared: {hermes_ipc_output} "
+            f"({hermes_ipc_output.stat().st_size} bytes)"
+        )
     return 0
 
 

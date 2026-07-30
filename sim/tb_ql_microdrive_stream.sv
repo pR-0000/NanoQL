@@ -87,7 +87,9 @@ module tb_ql_microdrive_stream;
 
             for (index = 0; index < 512; index = index + 1) begin
                 sd_byte_addr = index[8:0];
-                sd_byte = index[7:0] ^ xor_pattern;
+                sd_byte = (expected_sector == 0 &&
+                           (index == 26 || index == 27)) ?
+                          8'h00 : index[7:0] ^ xor_pattern;
                 sd_byte_valid = 1'b1;
                 @(negedge clk);
             end
@@ -235,6 +237,24 @@ module tb_ql_microdrive_stream;
         if (!image_ready)
             $fatal(1, "Microdrive image was not marked ready");
 
+        // Emulator-oriented images can leave the derivable physical tail
+        // zeroed. The hardware stream must regenerate its canonical words.
+        @(negedge clk);
+        dut.qlay_record_position = 10'd566;
+        dut.stream_word = 16'h0000;
+        #1;
+        if (dut.normalized_stream_word !== 16'haa55)
+            $fatal(1, "Microdrive calibration tail was not normalized");
+        dut.qlay_record_position = 10'd650;
+        #1;
+        if (dut.normalized_stream_word !== 16'h193b)
+            $fatal(1, "Microdrive tail checksum was not normalized");
+        dut.qlay_record_position = 10'd652;
+        #1;
+        if (dut.normalized_stream_word !== 16'h5a5a)
+            $fatal(1, "Microdrive padding was not normalized");
+        dut.qlay_record_position = 10'd0;
+
         // The streamed cartridge must not consume the shared SD path while
         // the startup ROM is still loading and QDOS has not selected MDV1.
         repeat (400) @(posedge clk);
@@ -260,8 +280,10 @@ module tb_ql_microdrive_stream;
         expect_ready_byte(8'h19, 1'b0);
         // GAP rises when the checksum word enters the receive shifter. The
         // original ZX8302 still presents both checksum bytes to the CPU.
-        expect_ready_byte(8'h1a, 1'b1);
-        expect_ready_byte(8'h1b, 1'b1);
+        // Q-emuLator accepts QLAY images whose map-sector header checksum is
+        // zero. NanoQL repairs that one missing checksum while streaming.
+        expect_ready_byte(8'h12, 1'b1);
+        expect_ready_byte(8'h10, 1'b1);
 
         // QDOS toggles drive selection while scanning. The cartridge must
         // continue moving instead of restarting from byte zero.

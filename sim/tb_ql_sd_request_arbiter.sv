@@ -6,6 +6,7 @@ module tb_ql_sd_request_arbiter;
     always #5 clk = ~clk;
 
     reg rom_read = 1'b0;
+    reg ipc_read = 1'b0;
     reg qlsd_read = 1'b0;
     reg qlsd_write = 1'b0;
     reg mdv_read = 1'b0;
@@ -20,6 +21,7 @@ module tb_ql_sd_request_arbiter;
     ql_sd_request_arbiter dut (
         .clk(clk), .reset(reset),
         .rom_read_start(rom_read), .rom_sector(32'h10),
+        .ipc_read_start(ipc_read), .ipc_sector(32'h50),
         .qlsd_read_start(qlsd_read),
         .qlsd_write_start(qlsd_write), .qlsd_sector(32'h20),
         .mdv_read_start(mdv_read), .mdv_write_start(mdv_write),
@@ -76,11 +78,14 @@ module tb_ql_sd_request_arbiter;
         repeat (2) @(posedge clk);
         reset = 1'b0;
         rom_read = 1'b1;
+        ipc_read = 1'b1;
         qlsd_read = 1'b1;
         mdv_read = 1'b1;
 
         expect_read(8'h01, 32'h10);
         rom_read = 1'b0;
+        expect_read(8'h10, 32'h50);
+        ipc_read = 1'b0;
         expect_read(8'h02, 32'h20);
         qlsd_read = 1'b0;
         expect_read(8'h04, 32'h30);
@@ -97,7 +102,7 @@ module tb_ql_sd_request_arbiter;
         repeat (4) @(posedge clk);
         if (rstart != 0 || wstart != 0)
             $fatal(1, "Arbiter did not return idle");
-        $display("PASS: serialized ROM, QL-SD, Microdrive, and QSound requests");
+        $display("PASS: serialized ROM, IPC, QL-SD, Microdrive, and QSound requests");
         $finish;
     end
 endmodule

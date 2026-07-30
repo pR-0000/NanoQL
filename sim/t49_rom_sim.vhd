@@ -20,7 +20,15 @@ architecture sim of t49_rom is
     return contents;
   end function;
 
-  constant contents : rom_t := load_rom;
+  signal contents : rom_t := load_rom;
 begin
-  rom_data_o <= contents(to_integer(unsigned(rom_addr_i)));
+  process(clk_i)
+  begin
+    if rising_edge(clk_i) then
+      if rom_we_i = '1' then
+        contents(to_integer(unsigned(rom_waddr_i))) <= rom_wdata_i;
+      end if;
+      rom_data_o <= contents(to_integer(unsigned(rom_addr_i)));
+    end if;
+  end process;
 end sim;

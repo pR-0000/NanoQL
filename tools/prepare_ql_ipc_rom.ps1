@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$InputPath,
 
-    [string]$OutputPath = (Join-Path $PSScriptRoot "..\src\ipc\ql_ipc_rom.hex")
+    [string]$OutputPath = "IPC.rom"
 )
 
 $resolvedInput = (Resolve-Path -LiteralPath $InputPath).Path
@@ -54,14 +54,9 @@ foreach ($rawLine in [System.IO.File]::ReadAllLines($resolvedInput)) {
 if (!$eofSeen) { throw "Intel HEX EOF record is missing." }
 if ($written -contains $false) { throw "The IPC firmware does not define all 2048 ROM bytes." }
 
-$builder = [System.Text.StringBuilder]::new(6144)
-foreach ($value in $rom) {
-    [void]$builder.AppendFormat("{0:X2}`n", $value)
-}
-
 $fullOutput = [System.IO.Path]::GetFullPath($OutputPath)
 [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($fullOutput)) | Out-Null
-[System.IO.File]::WriteAllText($fullOutput, $builder.ToString(), [System.Text.Encoding]::ASCII)
+[System.IO.File]::WriteAllBytes($fullOutput, $rom)
 
-Write-Host ("IPC ROM converted: {0}" -f $fullOutput)
+Write-Host ("IPC ROM prepared: {0}" -f $fullOutput)
 Write-Host "Output size: 2048 bytes"

@@ -232,7 +232,12 @@ def validate_qlay_image(image: bytes) -> None:
                 )
             sector_numbers.add(sector[13])
         expected = checksum(sector[12:26])
-        if sector[26:28] != expected:
+        qemulator_zero_map_checksum = (
+            record_number == 0
+            and sector_number == 0
+            and sector[26:28] == b"\x00\x00"
+        )
+        if sector[26:28] != expected and not qemulator_zero_map_checksum:
             raise ValueError(
                 f"Invalid QLAY sector header checksum at {location}: "
                 f"stored {sector[26:28].hex(' ')}, expected {expected.hex(' ')}."

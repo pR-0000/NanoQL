@@ -45,11 +45,11 @@ La commande `python tools/nanoql_link.py --port COMx cpu-status` affiche le mode
 
 ### Utiliser un dossier comme Microdrive
 
-Le chemin recommandé ne nécessite ni NanoQL Link ni connexion au PC. Sur la microSD, créez un sous-dossier par cartouche dans `NanoQL/Microdrives`, par exemple `NanoQL/Microdrives/Benchmark`, puis placez-y les fichiers QL. Dans l'overlay `F12`, choisissez **Build MDV1 from:** puis `Benchmark`. Le BL616 convertit récursivement ce dossier en image QLAY, monte celle-ci comme `mdv1_` pour la session en cours et redémarre uniquement le QL.
+Le chemin recommandé ne nécessite ni NanoQL Link ni connexion au PC. Sur la microSD, créez un sous-dossier par cartouche dans `NanoQL/Microdrives`, par exemple `NanoQL/Microdrives/Benchmark`, puis placez-y les fichiers QL. Dans l'overlay `F12`, choisissez **Build MDV1 from:** puis `Benchmark`. Le BL616 crée `NanoQL/Generated/Benchmark.mdv`, monte cette image QLAY comme `mdv1_` en lecture/écriture et redémarre uniquement le QL.
 
 Les sous-dossiers sont aplatis avec `_` ; `tests/README.md` devient `tests_README_md`. Les noms résultants doivent utiliser des caractères ASCII et tenir sur 36 caractères. La conversion accepte au plus 126 fichiers et huit niveaux de sous-dossiers. Une image QLAY mesure toujours 174 930 octets, mais 253 secteurs de 512 octets seulement sont allouables aux en-têtes et aux données. La condition exacte est `ceil((nombre_fichiers + 1) × 64 / 512) + somme(ceil((taille_fichier + 64) / 512)) <= 253` ; un fichier unique peut donc contenir au plus 128 960 octets. À l'invite QDOS, utilisez `DIR mdv1_`, puis par exemple `LRUN mdv1_programme_bas`.
 
-Les commandes matérielles `WRITE` et `ERASE` du ZX8302 sont prises en charge. Les secteurs modifiés par QDOS sont réécrits dans `NanoQL/Drive1/MDV1.mdv` sur la microSD ; `SAVE`, la relecture et la persistance après reset sont validés physiquement. Le dossier source n'est pas un partage dynamique et n'est pas modifié. Ne relancez donc pas **Build MDV1 from:** après une sauvegarde importante, car la reconstruction remplace l'image et ses modifications.
+Les commandes matérielles `WRITE` et `ERASE` du ZX8302 sont prises en charge. Les secteurs modifiés par QDOS sont réécrits dans l'image nommée sous `NanoQL/Generated` ; `SAVE`, la relecture et la persistance après reset sont validés physiquement. Le dossier source n'est pas un partage dynamique et n'est pas modifié. Ne relancez donc pas **Build MDV1 from:** après une sauvegarde importante, car la reconstruction remplace l'image et ses modifications. `SAVE mdv1_TEST_mdv` ajoute un fichier QDOS nommé `TEST_mdv` dans la cartouche ; l'extension apparente fait partie du nom QDOS et ne crée pas une seconde image `TEST.mdv`.
 
 Pour tester l'écriture depuis SuperBASIC, montez d'abord une cartouche créée avec **Build MDV1 from:**, puis saisissez :
 
@@ -62,7 +62,7 @@ NEW
 LRUN mdv1_write_test_bas
 ```
 
-Le programme doit afficher le texte puis `4`. Après un reset QL, `DIR mdv1_` et `LRUN mdv1_write_test_bas` doivent toujours fonctionner. Après une coupure complète, sélectionnez manuellement `NanoQL/Drive1/MDV1.mdv` dans **Microdrive 1:** avant de refaire le test de lecture, car l'image générée n'est pas remontée automatiquement au démarrage.
+Le programme doit afficher le texte puis `4`. Après un reset QL, `DIR mdv1_` et `LRUN mdv1_write_test_bas` doivent toujours fonctionner. Après une coupure complète, sélectionnez manuellement `NanoQL/Generated/Benchmark.mdv` dans **Microdrive 1:** avant de refaire le test de lecture, car l'image générée n'est pas remontée automatiquement au démarrage.
 
 ### Gérer les fichiers de la microSD en mode développeur
 
@@ -154,11 +154,11 @@ Run `python tools/nanoql_link.py --port COMx cpu-status` to display the selected
 
 ### Using a folder as a Microdrive
 
-The recommended path requires neither NanoQL Link nor a PC connection. Create one cartridge subfolder under `NanoQL/Microdrives` on the microSD, for example `NanoQL/Microdrives/Benchmark`, and place the QL files inside it. In the `F12` overlay, select **Build MDV1 from:** and then `Benchmark`. The BL616 recursively converts that folder to a QLAY image, mounts it as `mdv1_` for the current session, and resets only the QL.
+The recommended path requires neither NanoQL Link nor a PC connection. Create one cartridge subfolder under `NanoQL/Microdrives` on the microSD, for example `NanoQL/Microdrives/Benchmark`, and place the QL files inside it. In the `F12` overlay, select **Build MDV1 from:** and then `Benchmark`. The BL616 creates `NanoQL/Generated/Benchmark.mdv`, mounts that QLAY image read/write as `mdv1_`, and resets only the QL.
 
 Subdirectories are flattened with `_`; for example, `tests/README.md` becomes `tests_README_md`. Resulting names must be ASCII and no longer than 36 characters. Conversion accepts up to 126 files and eight nested directory levels. A QLAY image is always 174,930 bytes, but only 253 512-byte sectors are allocatable to headers and data. The exact condition is `ceil((file_count + 1) × 64 / 512) + sum(ceil((file_size + 64) / 512)) <= 253`; a single file can therefore contain at most 128,960 bytes. At the QDOS prompt, enter `DIR mdv1_`, followed by a command such as `LRUN mdv1_program_bas`.
 
-The ZX8302 hardware `WRITE` and `ERASE` commands are implemented. Sectors changed by QDOS are written back to `NanoQL/Drive1/MDV1.mdv`; `SAVE`, reload, and persistence across QL reset are physically validated. The source folder is not a live share and is not modified. Do not run **Build MDV1 from:** again after an important save, because rebuilding replaces the image and its changes.
+The ZX8302 hardware `WRITE` and `ERASE` commands are implemented. Sectors changed by QDOS are written back to the named image under `NanoQL/Generated`; `SAVE`, reload, and persistence across QL reset are physically validated. The source folder is not a live share and is not modified. Do not run **Build MDV1 from:** again after an important save, because rebuilding replaces the image and its changes. `SAVE mdv1_TEST_mdv` adds a QDOS file named `TEST_mdv` inside the cartridge; the suffix is part of the QDOS name and does not create another `TEST.mdv` cartridge image.
 
 To test writes from SuperBASIC, first mount a cartridge created with **Build MDV1 from:**, then enter:
 
@@ -171,7 +171,7 @@ NEW
 LRUN mdv1_write_test_bas
 ```
 
-The program must print the message followed by `4`. After a QL reset, `DIR mdv1_` and `LRUN mdv1_write_test_bas` must still work. After a complete power cycle, manually select `NanoQL/Drive1/MDV1.mdv` under **Microdrive 1:** before repeating the read test, because the generated image is not automatically remounted during startup.
+The program must print the message followed by `4`. After a QL reset, `DIR mdv1_` and `LRUN mdv1_write_test_bas` must still work. After a complete power cycle, manually select `NanoQL/Generated/Benchmark.mdv` under **Microdrive 1:** before repeating the read test, because the generated image is not automatically remounted during startup.
 
 ### Managing microSD files in development mode
 

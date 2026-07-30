@@ -37,6 +37,45 @@ $sdArbiterOutput = Join-Path $env:TEMP "nanoql_sd_request_arbiter.vvp"
 $zx8301Output = Join-Path $env:TEMP "nanoql_zx8301.vvp"
 $qsoundOutput = Join-Path $env:TEMP "nanoql_qsound.vvp"
 $companionHidOutput = Join-Path $env:TEMP "nanoql_companion_hid.vvp"
+$ipcRomLoaderOutput = Join-Path $env:TEMP "nanoql_ipc_rom_loader.vvp"
+$ipcHexLoaderOutput = Join-Path $env:TEMP "nanoql_ipc_hex_loader.vvp"
+$ipcPlainHexLoaderOutput = Join-Path $env:TEMP "nanoql_ipc_plain_hex_loader.vvp"
+
+& $iverilog -g2012 -s tb_ql_ipc_rom_loader -o $ipcRomLoaderOutput `
+    (Join-Path $projectRoot "sim\tb_ql_ipc_rom_loader.sv") `
+    (Join-Path $projectRoot "src\ipc\ql_ipc_rom_loader.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "IPC ROM loader simulation compilation failed."
+}
+
+& $vvp $ipcRomLoaderOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "IPC ROM loader simulation failed."
+}
+
+& $iverilog -g2012 -s tb_ql_ipc_hex_loader -o $ipcHexLoaderOutput `
+    (Join-Path $projectRoot "sim\tb_ql_ipc_hex_loader.sv") `
+    (Join-Path $projectRoot "src\ipc\ql_ipc_rom_loader.sv")
+if ($LASTEXITCODE -ne 0) {
+    throw "Intel HEX IPC loader simulation compilation failed."
+}
+& $vvp $ipcHexLoaderOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "Intel HEX IPC loader simulation failed."
+}
+
+& $iverilog -g2012 -s tb_ql_ipc_plain_hex_loader `
+    -o $ipcPlainHexLoaderOutput `
+    (Join-Path $projectRoot "sim\tb_ql_ipc_plain_hex_loader.sv") `
+    (Join-Path $projectRoot "src\ipc\ql_ipc_rom_loader.sv")
+if ($LASTEXITCODE -ne 0) {
+    throw "Plain HEX IPC loader simulation compilation failed."
+}
+& $vvp $ipcPlainHexLoaderOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "Plain HEX IPC loader simulation failed."
+}
 
 & $iverilog -g2012 -s tb_ql_companion_hid -o $companionHidOutput `
     (Join-Path $projectRoot "sim\tb_ql_companion_hid.sv") `

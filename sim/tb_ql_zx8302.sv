@@ -16,10 +16,13 @@ module tb_ql_zx8302;
     wire audio;
     reg microdrive_rx_ready = 1'b0;
     reg [7:0] microdrive_data = 8'd0;
+    reg vs = 1'b0;
 
     ql_zx8302 dut (
         .clk(clk), .reset(reset), .ce_11m(1'b0),
-        .ce_bus_n(ce_bus_n), .vs(1'b0), .keyboard_matrix(64'd0),
+        .ce_bus_n(ce_bus_n), .vs(vs), .keyboard_matrix(64'd0),
+        .ipc_rom_write_enable(1'b0),
+        .ipc_rom_write_address(11'd0), .ipc_rom_write_data(8'd0),
         .microdrive_gap(1'b1), .microdrive_rx_ready(microdrive_rx_ready),
         .microdrive_tx_full(1'b0), .microdrive_data(microdrive_data),
         .microdrive_selected(), .microdrive_write_enable(),
@@ -103,6 +106,22 @@ module tb_ql_zx8302;
             $fatal(1, "ZX8302 committed %h instead of the queued frame",
                    dut.comdata_reg);
 
+        // The rising native ZX8301 VSYNC edge sets frame-interrupt bit 3.
+        // Writing the same bit to $18021 acknowledges and clears it.
+        @(negedge clk);
+        vs = 1'b1;
+        @(negedge clk);
+        vs = 1'b0;
+        cpu_addr = 2'b10;
+        #1;
+        if (!cpu_dout[3])
+            $fatal(1, "ZX8302 did not latch the native frame interrupt");
+        pulse_write(2'b10, 2'b10, 16'h0008);
+        pulse_bus_phase();
+        repeat (2) @(posedge clk);
+        if (cpu_dout[3])
+            $fatal(1, "ZX8302 did not acknowledge the frame interrupt");
+
         // The even Microdrive data register uses the upper byte lane.
         pulse_write(2'b11, 2'b01, 16'h5a00);
         pulse_bus_phase();
@@ -114,7 +133,7 @@ module tb_ql_zx8302;
         if (audio !== 1'b1)
             $fatal(1, "ZX8302 did not expose IPC audio");
 
-        $display("PASS: ZX8302 phase sampling and COMCTRL collision");
+        $display("PASS: ZX8302 phase sampling, frame IRQ, and COMCTRL collision");
         $finish;
     end
 endmodule
@@ -125,6 +144,9 @@ module ql_ipc_t48 (
     input wire ce_11m,
     input wire comdata_in,
     input wire [63:0] keyboard_matrix,
+    input wire rom_write_enable,
+    input wire [10:0] rom_write_address,
+    input wire [7:0] rom_write_data,
     output reg comctrl = 1'b1,
     output wire comdata_out,
     output wire audio,

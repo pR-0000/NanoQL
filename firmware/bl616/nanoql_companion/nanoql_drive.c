@@ -22,9 +22,10 @@
 #define QL_DAMAGED_SECTOR 0xff
 #define QL_MAP_FILE 0xf8
 
-#define NANOQL_MDV_TARGET "/sd/NanoQL/Drive1/MDV1.mdv"
-#define NANOQL_MDV_TEMP "/sd/NQLMDV.TMP"
-#define NANOQL_MDV_BACKUP "/sd/NQLMDV.BAK"
+#define NANOQL_MDV_LEGACY_TARGET "/sd/NanoQL/Drive1/MDV1.mdv"
+#define NANOQL_MDV_OUTPUT_ROOT "/sd/NanoQL/Generated"
+#define NANOQL_MDV_TEMP "/sd/NanoQL/Generated/NQLMDV.TMP"
+#define NANOQL_MDV_BACKUP "/sd/NanoQL/Generated/NQLMDV.BAK"
 
 typedef struct {
     char path[FF_LFN_BUF + 1];
@@ -64,7 +65,7 @@ static int compare_files(const void *left, const void *right)
 
 static bool path_is_generated_file(const char *path)
 {
-    return ascii_case_compare(path, NANOQL_MDV_TARGET) == 0 ||
+    return ascii_case_compare(path, NANOQL_MDV_LEGACY_TARGET) == 0 ||
            ascii_case_compare(path, NANOQL_MDV_TEMP) == 0 ||
            ascii_case_compare(path, NANOQL_MDV_BACKUP) == 0;
 }
@@ -83,7 +84,39 @@ static int prepare_root_locked(void)
         result = make_directory_locked(NANOQL_MDV_SOURCE_ROOT);
     if (result == NANOQL_DRIVE_OK)
         result = make_directory_locked("/sd/NanoQL/Drive1");
+    if (result == NANOQL_DRIVE_OK)
+        result = make_directory_locked(NANOQL_MDV_OUTPUT_ROOT);
     return result;
+}
+
+static int generated_image_name(
+    const char *source, char image_name[64], char target[FF_LFN_BUF + 1])
+{
+    const char *base = strrchr(source, '/');
+    base = base == NULL ? source : base + 1;
+    size_t length = strlen(base);
+    if (length == 0 || length > 48)
+        return NANOQL_DRIVE_INVALID_NAME;
+
+    for (size_t index = 0; index < length; ++index) {
+        unsigned char value = (unsigned char)base[index];
+        if (value < 0x20 || value > 0x7e)
+            return NANOQL_DRIVE_INVALID_NAME;
+        if (strchr("\"*/:<>?\\|", value) != NULL)
+            value = '_';
+        image_name[index] = (char)value;
+    }
+    while (length > 0 &&
+           (image_name[length - 1] == ' ' || image_name[length - 1] == '.'))
+        --length;
+    if (length == 0)
+        return NANOQL_DRIVE_INVALID_NAME;
+    memcpy(&image_name[length], ".mdv", 5);
+
+    int written = snprintf(
+        target, FF_LFN_BUF + 1, "%s/%s", NANOQL_MDV_OUTPUT_ROOT, image_name);
+    return written > 0 && written <= FF_LFN_BUF
+        ? NANOQL_DRIVE_OK : NANOQL_DRIVE_INVALID_NAME;
 }
 
 int nanoql_drive_prepare_root(void)
@@ -522,6 +555,12 @@ int nanoql_drive_build_folder(const char *source)
 {
     if (source == NULL || strncmp(source, "/sd/", 4) != 0)
         return NANOQL_DRIVE_INVALID_NAME;
+
+    char image_name[64];
+    char target[FF_LFN_BUF + 1];
+    int status = generated_image_name(source, image_name, target);
+    if (status != NANOQL_DRIVE_OK)
+        return status;
     if (sdc_image_open(2, NULL) != 0)
         return NANOQL_DRIVE_IO;
 
@@ -537,7 +576,7 @@ int nanoql_drive_build_folder(const char *source)
     memcpy(builder->medium_name, "NANOQL    ", 10);
 
     sdc_lock();
-    int status = prepare_root_locked();
+    status = prepare_root_locked();
     (void)f_unlink(NANOQL_MDV_TEMP);
     if (status == NANOQL_DRIVE_OK)
         status = generate_image_locked(builder, source);
@@ -546,10 +585,10 @@ int nanoql_drive_build_folder(const char *source)
     if (status == NANOQL_DRIVE_OK) {
         (void)f_unlink(NANOQL_MDV_BACKUP);
         FILINFO information;
-        FRESULT existing = f_stat(NANOQL_MDV_TARGET, &information);
+        FRESULT existing = f_stat(target, &information);
         if (existing == FR_OK) {
             if ((information.fattrib & AM_DIR) != 0 ||
-                f_rename(NANOQL_MDV_TARGET, NANOQL_MDV_BACKUP) != FR_OK)
+                f_rename(target, NANOQL_MDV_BACKUP) != FR_OK)
                 status = NANOQL_DRIVE_IO;
             else
                 backup_created = true;
@@ -558,10 +597,10 @@ int nanoql_drive_build_folder(const char *source)
         }
     }
     if (status == NANOQL_DRIVE_OK &&
-        f_rename(NANOQL_MDV_TEMP, NANOQL_MDV_TARGET) != FR_OK) {
+        f_rename(NANOQL_MDV_TEMP, target) != FR_OK) {
         status = NANOQL_DRIVE_IO;
         if (backup_created)
-            (void)f_rename(NANOQL_MDV_BACKUP, NANOQL_MDV_TARGET);
+            (void)f_rename(NANOQL_MDV_BACKUP, target);
     }
     sdc_unlock();
 
@@ -569,13 +608,12 @@ int nanoql_drive_build_folder(const char *source)
     vPortFree(builder);
 
     if (status == NANOQL_DRIVE_OK) {
-        char image_name[] = "MDV1.mdv";
-        sdc_set_cwd(2, "/sd/NanoQL/Drive1");
+        sdc_set_cwd(2, NANOQL_MDV_OUTPUT_ROOT);
         if (sdc_image_open(2, image_name) != 0) {
             sdc_lock();
-            (void)f_unlink(NANOQL_MDV_TARGET);
+            (void)f_unlink(target);
             if (backup_created)
-                (void)f_rename(NANOQL_MDV_BACKUP, NANOQL_MDV_TARGET);
+                (void)f_rename(NANOQL_MDV_BACKUP, target);
             sdc_unlock();
             if (backup_created)
                 (void)sdc_image_open(2, image_name);
@@ -592,8 +630,7 @@ int nanoql_drive_build_folder(const char *source)
     sdc_lock();
     (void)f_unlink(NANOQL_MDV_TEMP);
     sdc_unlock();
-    char image_name[] = "MDV1.mdv";
-    sdc_set_cwd(2, "/sd/NanoQL/Drive1");
+    sdc_set_cwd(2, NANOQL_MDV_OUTPUT_ROOT);
     (void)sdc_image_open(2, image_name);
     return status;
 }

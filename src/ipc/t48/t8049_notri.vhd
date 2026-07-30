@@ -78,7 +78,10 @@ entity t8049_notri is
     p1_i          : in  std_logic_vector( 7 downto 0);
     p1_o          : out std_logic_vector( 7 downto 0);
     p1_low_imp_o  : out std_logic;
-    prog_n_o      : out std_logic
+    prog_n_o      : out std_logic;
+    rom_we_i      : in  std_logic;
+    rom_waddr_i   : in  std_logic_vector(10 downto 0);
+    rom_wdata_i   : in  std_logic_vector( 7 downto 0)
   );
 
 end t8049_notri;
@@ -225,7 +228,10 @@ begin
     port map (
       clk_i      => xtal_i,
       rom_addr_i => pmem_addr_s(rom_addr_width_c-1 downto 0),
-      rom_data_o => pmem_data_s
+      rom_data_o => pmem_data_s,
+      rom_we_i   => rom_we_i,
+      rom_waddr_i => rom_waddr_i,
+      rom_wdata_i => rom_wdata_i
     );
 
   ram_128_b : generic_ram_ena

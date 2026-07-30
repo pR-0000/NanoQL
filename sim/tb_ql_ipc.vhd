@@ -61,7 +61,9 @@ begin
       t1_i => '0', p2_i => p2_in, p2_o => p2_out,
       p2l_low_imp_o => open, p2h_low_imp_o => open,
       p1_i => x"00", p1_o => p1_out, p1_low_imp_o => open,
-      prog_n_o => open
+      prog_n_o => open,
+      rom_we_i => '0', rom_waddr_i => (others => '0'),
+      rom_wdata_i => (others => '0')
     );
 
   process(clk)

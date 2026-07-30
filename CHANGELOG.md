@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- Loads the 2 KiB 8049 IPC firmware dynamically from microSD instead of embedding it in the FPGA bitstream.
+- Adds an OSD selector for standard Sinclair or Hermes IPC firmware.
+- Accepts raw `.bin`/`.rom` and Intel HEX IPC files directly from the OSD, with hardware checksum and coverage validation.
+- Accepts whitespace-separated hexadecimal IPC dumps such as 8,192-byte CR/LF files containing one byte per line.
+- Removes mandatory `QL.rom` and `IPC.rom` filenames; missing selections now lead to a clear `F12` setup screen.
+- Repairs a zero map-sector header checksum and restores omitted physical sector-tail patterns while streaming otherwise valid QLAY images accepted by Q-emuLator.
+- Expands the Tkinter setup assistant with a guided install page, tool detection, official ROM/tool links, safe FPGA/BL616 sequencing, NanoQL Link checks, USB stress testing, and one-click remote keyboard startup.
+- Replaces the oversized README with a concise bilingual project overview and adds a dedicated French/English installation guide.
+- Adds native BL616 flashing on Windows, macOS, and Linux through Bouffalo Lab's official Python UART loader, while retaining FlashCube as an optional Windows recovery path.
+- Stores every overlay-built folder cartridge as `/NanoQL/Generated/<folder>.mdv`, so users can copy, archive, remount, and retain QDOS writes in a clearly named image.
+- Corrects the physical AZERTY `3` key for an English QL ROM by emitting the QL's Shift+2 quote contact; host Shift+3 remains the digit `3`.
+- Holds the QL in reset and displays a clear startup diagnostic when the selected IPC image is missing, invalid, or cannot be read.
+- Keeps all user-supplied IPC firmware outside the repository and compiled FPGA artifacts.
+- Keeps QL-mode video contention active while a Microdrive is selected, restoring realistic VBL-to-VBL CPU headroom for programs such as Game8.
+- Adds regression coverage for native VSYNC frame-interrupt latching and 68000 acknowledgement.
+
 ## v0.1.0 - 2026-07-23
 
 First packaged NanoQL release for Tang Nano 20K revisions 3921 and 3923.
@@ -14,4 +32,4 @@ First packaged NanoQL release for Tang Nano 20K revisions 3921 and 3923.
 - Adds the NanoQL Link USB development interface and direct FPGA SRAM loading.
 - Displays the NanoQL version in the overlay.
 
-The release assets contain compiled BL616 firmware images for both supported board revisions. The FPGA bitstream is built locally because it currently embeds the user-supplied IPC firmware; publishing it would redistribute that firmware indirectly. User-supplied QL, IPC, QL-SD, and QSound ROM images are not distributed.
+The v0.1.0 release assets contain compiled BL616 firmware images for both supported board revisions. Its FPGA bitstream was built locally because that version still embedded the user-supplied IPC firmware. User-supplied QL, IPC, QL-SD, and QSound ROM images are not distributed.

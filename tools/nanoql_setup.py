@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import webbrowser
 from pathlib import Path
 
 try:
@@ -25,6 +26,14 @@ REPOSITORY = Path(__file__).resolve().parent.parent
 TOOLS = REPOSITORY / "tools"
 CREATE_NO_WINDOW = 0x08000000 if platform.system() == "Windows" else 0
 BUILD_SCRIPT = "build_sd_rom.tcl"
+OPENFPGA_INSTALL_URL = (
+    "https://trabucayre.github.io/openFPGALoader/guide/install.html"
+)
+FLASHCUBE_URL = "https://dev.bouffalolab.com/download"
+QL_ROM_URL = "https://sinclairql.net/djw/qlrom/index.html"
+IPC_ROM_URL = "https://github.com/MiSTer-devel/QL_MiSTer/tree/master/rtl"
+HERMES_URL = "http://firshman.co.uk/ql/hermes.htm"
+PYTHON_URL = "https://www.python.org/downloads/"
 
 
 def find_gowin() -> str:
@@ -42,6 +51,20 @@ def find_gowin() -> str:
     return ""
 
 
+def find_openfpgaloader() -> str:
+    command = shutil.which("openFPGALoader") or shutil.which("openfpgaloader")
+    if command:
+        return command
+    candidates = (
+        Path("C:/msys64/ucrt64/bin/openFPGALoader.exe"),
+        Path("C:/msys64/mingw64/bin/openFPGALoader.exe"),
+        Path("C:/Program Files/openFPGALoader/bin/openFPGALoader.exe"),
+        Path("C:/Program Files/openFPGALoader/openFPGALoader.exe"),
+        Path.home() / "scoop/apps/openfpgaloader/current/openFPGALoader.exe",
+    )
+    return next((str(path) for path in candidates if path.is_file()), "")
+
+
 class NanoQLSetup(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -53,15 +76,18 @@ class NanoQLSetup(tk.Tk):
 
         self.revision = tk.StringVar(value="3923")
         self.firmware_mode = tk.StringVar(value="nanoql")
+        self.bl616_port = tk.StringVar()
         self.rom_path = tk.StringVar()
         self.qsound_rom_path = tk.StringVar()
         self.sd_path = tk.StringVar()
         self.ipc_path = tk.StringVar()
+        self.hermes_ipc_path = tk.StringVar()
         self.mdv_folder = tk.StringVar()
         self.mdv_name = tk.StringVar(value="NANOQL")
         self.link_port = tk.StringVar()
+        self.ql_layout = tk.StringVar(value="auto")
         self.gowin_path = tk.StringVar(value=find_gowin())
-        self.loader_path = tk.StringVar(value=shutil.which("openFPGALoader") or "")
+        self.loader_path = tk.StringVar(value=find_openfpgaloader())
         self.bitstream_path = tk.StringVar(
             value=str(REPOSITORY / "impl" / "pnr" / "NanoQL_sd_rom.fs")
         )
@@ -84,18 +110,24 @@ class NanoQLSetup(tk.Tk):
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=12)
+        quick_tab = ttk.Frame(notebook, padding=16)
+        link_tab = ttk.Frame(notebook, padding=16)
         firmware_tab = ttk.Frame(notebook, padding=16)
         storage_tab = ttk.Frame(notebook, padding=16)
         fpga_tab = ttk.Frame(notebook, padding=16)
         microdrive_tab = ttk.Frame(notebook, padding=16)
-        notebook.add(firmware_tab, text="1. BL616 Companion")
-        notebook.add(storage_tab, text="2. ROM and microSD")
-        notebook.add(fpga_tab, text="3. FPGA")
-        notebook.add(microdrive_tab, text="4. Developer MDV sync")
+        notebook.add(quick_tab, text="Start here")
+        notebook.add(storage_tab, text="1. ROMs and microSD")
+        notebook.add(fpga_tab, text="2. FPGA")
+        notebook.add(firmware_tab, text="3. BL616")
+        notebook.add(link_tab, text="4. USB keyboard")
+        notebook.add(microdrive_tab, text="Advanced MDV sync")
 
+        self._build_quick_tab(quick_tab)
         self._build_firmware_tab(firmware_tab)
         self._build_storage_tab(storage_tab)
         self._build_fpga_tab(fpga_tab)
+        self._build_link_tab(link_tab)
         self._build_microdrive_tab(microdrive_tab)
 
         log_frame = ttk.LabelFrame(self, text="Log", padding=8)
@@ -112,6 +144,91 @@ class NanoQLSetup(tk.Tk):
         self.log.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         self._append_log(f"Repository: {REPOSITORY}\n")
+        self.after(200, self.check_requirements)
+
+    def _build_quick_tab(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        ttk.Label(
+            parent,
+            text="Install NanoQL in three steps",
+            style="Title.TLabel",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 14))
+        ttk.Label(
+            parent,
+            text=(
+                "1. Prepare the microSD with one QL ROM and one IPC firmware.\n"
+                "2. While the board still has its original BL616 firmware, program "
+                "NanoQL permanently into the FPGA.\n"
+                "3. Install the NanoQL BL616 firmware last. This enables the USB "
+                "keyboard, microSD services, overlay, and NanoQL Link."
+            ),
+            wraplength=780,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w")
+
+        requirements = ttk.LabelFrame(parent, text="Requirements", padding=12)
+        requirements.grid(row=2, column=0, sticky="ew", pady=(18, 10))
+        requirements.columnconfigure(1, weight=1)
+        self.requirements_text = tk.StringVar()
+        ttk.Label(
+            requirements,
+            textvariable=self.requirements_text,
+            justify="left",
+            wraplength=650,
+        ).grid(row=0, column=0, columnspan=3, sticky="w")
+        actions = ttk.Frame(requirements)
+        actions.grid(row=1, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        self._button(actions, "Check again", self.check_requirements).pack(
+            side="left", padx=(0, 8)
+        )
+        ttk.Button(
+            actions,
+            text="Install openFPGALoader",
+            command=lambda: self._open_url(OPENFPGA_INSTALL_URL),
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            actions,
+            text="Install Python",
+            command=lambda: self._open_url(PYTHON_URL),
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            actions,
+            text="BL616 tools",
+            command=lambda: self._open_url(FLASHCUBE_URL),
+        ).pack(side="left")
+
+        sources = ttk.LabelFrame(parent, text="ROM sources", padding=12)
+        sources.grid(row=3, column=0, sticky="ew", pady=10)
+        ttk.Label(
+            sources,
+            text=(
+                "NanoQL does not redistribute Sinclair or third-party ROMs. Obtain "
+                "files legally, then select them in the next tab."
+            ),
+            wraplength=760,
+        ).pack(anchor="w")
+        links = ttk.Frame(sources)
+        links.pack(anchor="w", pady=(10, 0))
+        ttk.Button(
+            links, text="QL ROM archive", command=lambda: self._open_url(QL_ROM_URL)
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            links, text="Standard IPC source", command=lambda: self._open_url(IPC_ROM_URL)
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            links, text="Hermes IPC", command=lambda: self._open_url(HERMES_URL)
+        ).pack(side="left")
+
+        ttk.Label(
+            parent,
+            text=(
+                "Important: after installing the NanoQL BL616 firmware, standard JTAG "
+                "is no longer exposed. To update the persistent FPGA core later, use "
+                "NanoQL Link's native flash command or temporarily restore the ORIGINAL "
+                "BL616 profile."
+            ),
+            wraplength=780,
+        ).grid(row=4, column=0, sticky="w", pady=(12, 0))
 
     def _build_firmware_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -141,46 +258,65 @@ class NanoQLSetup(tk.Tk):
             value="original",
         ).pack(anchor="w")
 
+        ttk.Label(parent, text="BL616 bootloader port", style="Section.TLabel").grid(
+            row=2, column=0, sticky="w", pady=8
+        )
+        ttk.Entry(parent, textvariable=self.bl616_port, width=28).grid(
+            row=2, column=1, sticky="w", pady=8
+        )
+
         actions = ttk.Frame(parent)
-        actions.grid(row=2, column=0, columnspan=2, sticky="w", pady=(18, 8))
+        actions.grid(row=3, column=0, columnspan=2, sticky="w", pady=(18, 8))
         self._button(actions, "Prepare files", self.prepare_firmware).pack(
             side="left", padx=(0, 8)
         )
         self._button(actions, "Prepare and open FlashCube", self.prepare_and_open_flashcube).pack(
+            side="left", padx=(0, 8)
+        )
+        self._button(actions, "Flash selected firmware", self.flash_bl616).pack(
             side="left"
         )
 
         ttk.Label(
             parent,
             text=(
-                "Hold UPDATE while connecting USB, release it, select the serial port "
-                "in FlashCube, then choose the .ini file shown in the log."
+                "Do this only after persistent FPGA programming. Hold UPDATE while "
+                "connecting USB, release it, and enter the new bootloader serial port. "
+                "The native button uses Bouffalo Lab's Python tool on Windows, macOS, "
+                "and Linux. FlashCube remains available as a Windows fallback."
             ),
             wraplength=760,
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(12, 0))
 
     def _build_storage_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
         self._path_row(parent, 0, "48/64 KiB QL ROM", self.rom_path, self._browse_rom)
         self._path_row(parent, 1, "Optional 8 KiB QSound ROM", self.qsound_rom_path, self._browse_qsound_rom)
         self._path_row(parent, 2, "microSD root", self.sd_path, self._browse_sd)
-        self._path_row(parent, 3, "Sinclair IPC firmware (Intel HEX)", self.ipc_path, self._browse_ipc)
+        self._path_row(
+            parent, 3, "Primary IPC firmware (2 KiB after decoding)",
+            self.ipc_path, self._browse_ipc,
+        )
+        self._path_row(
+            parent, 4, "Optional Hermes IPC firmware",
+            self.hermes_ipc_path, self._browse_hermes_ipc,
+        )
 
         actions = ttk.Frame(parent)
-        actions.grid(row=4, column=0, columnspan=3, sticky="w", pady=(18, 8))
+        actions.grid(row=5, column=0, columnspan=3, sticky="w", pady=(18, 8))
         self._button(actions, "Prepare microSD", self.prepare_sd).pack(
             side="left", padx=(0, 8)
         )
-        self._button(actions, "Convert IPC firmware", self.prepare_ipc).pack(side="left")
 
         ttk.Label(
             parent,
             text=(
-                "The ROM remains private: it is validated and copied as QL.rom. "
-                "nanoql.ini and the NanoQL/Drive1 user-file folder are also created."
+                "The selected files are validated and copied to the card. These "
+                "convenient names are not mandatory: files copied manually can be "
+                "selected later from the F12 overlay."
             ),
             wraplength=760,
-        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
     def _build_fpga_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -212,11 +348,49 @@ class NanoQLSetup(tk.Tk):
         ttk.Label(
             parent,
             text=(
-                "SRAM is temporary and is lost at power-off. Flash is persistent and lets "
-                "the normal BL616 firmware start Companion without a computer."
+                "Program Flash before replacing the original BL616 firmware. SRAM is "
+                "temporary and lost at power-off; Flash is persistent."
             ),
             wraplength=760,
         ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
+
+    def _build_link_tab(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(1, weight=1)
+        ttk.Label(parent, text="NanoQL Link port", style="Section.TLabel").grid(
+            row=0, column=0, sticky="w", pady=8
+        )
+        ttk.Entry(parent, textvariable=self.link_port, width=18).grid(
+            row=0, column=1, sticky="w", padx=8, pady=8
+        )
+        ttk.Label(parent, text="QL keyboard layout", style="Section.TLabel").grid(
+            row=1, column=0, sticky="w", pady=8
+        )
+        ttk.Combobox(
+            parent,
+            textvariable=self.ql_layout,
+            values=("auto", "fr", "uk"),
+            state="readonly",
+            width=15,
+        ).grid(row=1, column=1, sticky="w", padx=8, pady=8)
+        actions = ttk.Frame(parent)
+        actions.grid(row=2, column=0, columnspan=3, sticky="w", pady=(18, 8))
+        self._button(actions, "Check connection", self.link_status).pack(
+            side="left", padx=(0, 8)
+        )
+        self._button(actions, "Start remote keyboard", self.start_remote_keyboard).pack(
+            side="left", padx=(0, 8)
+        )
+        self._button(actions, "30 s USB test", self.link_stress).pack(side="left")
+        ttk.Label(
+            parent,
+            text=(
+                "Connect NanoQL to the computer with a USB data cable, let the FPGA "
+                "start, then briefly press S1. Leave the port blank for automatic "
+                "detection. Remote keyboard mode is currently available on Windows; "
+                "press F6 to return control to this assistant."
+            ),
+            wraplength=760,
+        ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
     def _build_microdrive_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -293,11 +467,25 @@ class NanoQLSetup(tk.Tk):
 
     def _browse_ipc(self) -> None:
         path = filedialog.askopenfilename(
-            title="Select ipc8049.hex",
-            filetypes=(("Intel HEX", "*.hex"), ("All files", "*")),
+            title="Select the primary IPC firmware",
+            filetypes=(
+                ("IPC firmware", "*.hex *.rom *.bin"),
+                ("All files", "*"),
+            ),
         )
         if path:
             self.ipc_path.set(path)
+
+    def _browse_hermes_ipc(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Select optional Hermes IPC firmware",
+            filetypes=(
+                ("IPC firmware", "*.hex *.rom *.bin"),
+                ("All files", "*"),
+            ),
+        )
+        if path:
+            self.hermes_ipc_path.set(path)
 
     def _browse_mdv_folder(self) -> None:
         path = filedialog.askdirectory(title="Select the folder exposed as MDV1")
@@ -313,6 +501,49 @@ class NanoQLSetup(tk.Tk):
         path = filedialog.askopenfilename(title="Select openFPGALoader")
         if path:
             self.loader_path.set(path)
+
+    def _open_url(self, url: str) -> None:
+        webbrowser.open(url)
+
+    def check_requirements(self) -> None:
+        loader = find_openfpgaloader()
+        if loader:
+            self.loader_path.set(loader)
+        system = platform.system()
+        python_state = f"Python {platform.python_version()}: ready"
+        loader_state = (
+            f"openFPGALoader: {loader}" if loader else "openFPGALoader: not found"
+        )
+        flash_state = (
+            "BL616: native cross-platform flashing available; FlashCube fallback "
+            + ("available" if system == "Windows" else "is Windows-only")
+        )
+        self.requirements_text.set(
+            f"Operating system: {system}\n{python_state}\n{loader_state}\n{flash_state}"
+        )
+
+    def _link_command(self, command: str) -> list[str]:
+        result = [sys.executable, str(TOOLS / "nanoql_link.py")]
+        port = self.link_port.get().strip()
+        if port:
+            result.extend(["--port", port])
+        result.extend(["--ql-layout", self.ql_layout.get(), command])
+        return result
+
+    def link_status(self) -> None:
+        self._run(self._link_command("status"), "Checking NanoQL Link")
+
+    def start_remote_keyboard(self) -> None:
+        if platform.system() != "Windows":
+            messagebox.showinfo(
+                "Remote keyboard",
+                "The low-latency remote keyboard is currently available on Windows only.",
+            )
+            return
+        self._run(self._link_command("keyboard"), "Remote keyboard active; press F6 to stop")
+
+    def link_stress(self) -> None:
+        self._run(self._link_command("link-stress"), "Testing NanoQL Link USB")
 
     def _selected_config(self) -> Path:
         if self.firmware_mode.get() == "nanoql":
@@ -338,6 +569,33 @@ class NanoQLSetup(tk.Tk):
 
     def prepare_and_open_flashcube(self) -> None:
         self.prepare_firmware(self._open_flashcube)
+
+    def flash_bl616(self) -> None:
+        port = self.bl616_port.get().strip()
+        if not port:
+            messagebox.showerror(
+                "Missing port",
+                "Enter the serial port that appears while UPDATE boot mode is active.",
+            )
+            return
+        if not messagebox.askyesno(
+            "Program BL616",
+            "This replaces the selected BL616 firmware profile. Continue?",
+        ):
+            return
+        command = [
+            sys.executable,
+            str(TOOLS / "prepare_bl616_firmware.py"),
+            "--revision",
+            self.revision.get(),
+            "--profile",
+            self.firmware_mode.get(),
+            "--flash",
+            "--port",
+            port,
+            "--yes",
+        ]
+        self._run(command, "Programming BL616 firmware")
 
     def _open_flashcube(self) -> None:
         config = self._selected_config()
@@ -367,6 +625,10 @@ class NanoQLSetup(tk.Tk):
         ]
         if self.qsound_rom_path.get():
             command.extend(["--qsound-rom", self.qsound_rom_path.get()])
+        if self.ipc_path.get():
+            command.extend(["--ipc-rom", self.ipc_path.get()])
+        if self.hermes_ipc_path.get():
+            command.extend(["--hermes-ipc-rom", self.hermes_ipc_path.get()])
         if self.mdv_folder.get():
             command.extend([
                 "--mdv-folder", self.mdv_folder.get(),
@@ -386,26 +648,10 @@ class NanoQLSetup(tk.Tk):
         ])
         self._run(command, "Synchronizing MDV1")
 
-    def prepare_ipc(self) -> None:
-        if not self.ipc_path.get():
-            messagebox.showerror(
-                "Missing field",
-                "Select the standard Sinclair ipc8049.hex firmware.",
-            )
-            return
-        self._run(
-            [sys.executable, str(TOOLS / "prepare_ql_ipc_rom.py"), self.ipc_path.get()],
-            "Converting IPC firmware",
-        )
-
     def build_fpga(self) -> None:
         gowin = self.gowin_path.get()
         if not gowin or not Path(gowin).is_file():
             messagebox.showerror("Gowin not found", "Select a valid gw_sh executable.")
-            return
-        ipc = REPOSITORY / "src" / "ipc" / "ql_ipc_rom.hex"
-        if not ipc.is_file():
-            messagebox.showerror("Missing IPC firmware", "Convert the IPC firmware first.")
             return
         self._run([gowin, BUILD_SCRIPT], "Building NanoQL")
 
@@ -417,19 +663,15 @@ class NanoQLSetup(tk.Tk):
         if not self.rom_path.get() or not self.sd_path.get():
             messagebox.showerror("Missing fields", "Select the ROM and microSD root.")
             return
-        ipc_output = REPOSITORY / "src" / "ipc" / "ql_ipc_rom.hex"
+        ipc_output = Path(self.sd_path.get()) / "IPC.rom"
         if not self.ipc_path.get() and not ipc_output.is_file():
             messagebox.showerror(
                 "Missing IPC firmware",
-                "Select the standard Sinclair ipc8049.hex firmware on first use.",
+                "Select a standard or Hermes IPC firmware on first use.",
             )
             return
 
         commands: list[list[str]] = []
-        if self.ipc_path.get():
-            commands.append(
-                [sys.executable, str(TOOLS / "prepare_ql_ipc_rom.py"), self.ipc_path.get()]
-            )
         prepare_sd_command = [
             sys.executable,
             str(TOOLS / "prepare_sd_card.py"),
@@ -439,6 +681,12 @@ class NanoQLSetup(tk.Tk):
         if self.qsound_rom_path.get():
             prepare_sd_command.extend([
                 "--qsound-rom", self.qsound_rom_path.get()
+            ])
+        if self.ipc_path.get():
+            prepare_sd_command.extend(["--ipc-rom", self.ipc_path.get()])
+        if self.hermes_ipc_path.get():
+            prepare_sd_command.extend([
+                "--hermes-ipc-rom", self.hermes_ipc_path.get()
             ])
         if self.mdv_folder.get():
             prepare_sd_command.extend([
