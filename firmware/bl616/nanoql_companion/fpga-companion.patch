@@ -225,10 +225,10 @@ index bf062aa..21409f7 100644
  
  #endif // GOWIN_H
 diff --git a/src/inifile.c b/src/inifile.c
-index 5f5fb8e..efbe294 100644
+index 5f5fb8e..5d78bfd 100644
 --- a/src/inifile.c
 +++ b/src/inifile.c
-@@ -214,6 +214,13 @@ void inifile_write(char *name) {
+@@ -214,6 +214,14 @@ void inifile_write(char *name) {
        char *cwd = sdc_get_cwd(drive);
        char *image = sdc_get_image_name(drive);
  
@@ -342,10 +342,10 @@ index 7880ac8..9ed8b21 100644
    mcu_hw_main_loop();
  
 diff --git a/src/mcu_hw.h b/src/mcu_hw.h
-index ce608d5..c5648fe 100644
+index a53cf9f..777a0de 100644
 --- a/src/mcu_hw.h
 +++ b/src/mcu_hw.h
-@@ -41,7 +41,7 @@ bool mcu_hw_tcp_data(unsigned char byte);
+@@ -50,7 +50,7 @@ char mcu_hw_wifi_scan_start(mcu_hw_wifi_scan_cb_func);
  #define PIN_TF_SDIO_SEL GPIO_PIN_16
  #define DIRECT_SDC_SUPPORTED
  #endif
@@ -439,7 +439,7 @@ index 5b8883d..281c9d1 100644
    if(entry->is_dir) {
      if(entry->name[0] == '/') {
 diff --git a/src/sdc.c b/src/sdc.c
-index 1964d93..b103b89 100644
+index 1964d93..bb73e3f 100644
 --- a/src/sdc.c
 +++ b/src/sdc.c
 @@ -31,6 +31,7 @@
@@ -519,7 +519,7 @@ index 1964d93..b103b89 100644
      sdc_debugf("%s %d: closing file '%s'", (drive < MAX_DRIVES)?"DRV":"IMG",
  	       (drive < MAX_DRIVES)?drive:(drive-MAX_DRIVES),
  	       image_name[drive]?image_name[drive]:"<unknown>");
-@@ -718,4 +762,9 @@ int sdc_image_open(int drive, char *name) {
+@@ -717,4 +761,9 @@ int sdc_image_open(int drive, char *name) {
 -    if(f_open(&fil[drive], fname, FA_OPEN_EXISTING | FA_READ) != 0) {
 +    BYTE open_mode = FA_OPEN_EXISTING | FA_READ;
 +#ifdef NANOQL_COMPANION
@@ -530,7 +530,7 @@ index 1964d93..b103b89 100644
        sdc_debugf("DRV %d: file open failed", drive);
        sdc_unlock();
        return -1;
-@@ -978,6 +1022,7 @@ sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *ext) {
+@@ -978,6 +1027,7 @@ sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *ext) {
  
  int sdc_init(void) {
    sdc_sem = xSemaphoreCreateMutex();
@@ -538,7 +538,7 @@ index 1964d93..b103b89 100644
  
    sdc_debugf("---- SDC init ----");
  
-@@ -1001,6 +1046,10 @@ int sdc_init(void) {
+@@ -1001,6 +1051,10 @@ int sdc_init(void) {
   return 0;
  }
  
@@ -549,7 +549,7 @@ index 1964d93..b103b89 100644
  void sdc_set_cwd(int drive, char *path) {
    sdc_debugf("Setting cwd[%d] to %s", drive, path);
    
-@@ -1014,6 +1063,14 @@ void sdc_mount_defaults(void) {
+@@ -1014,6 +1068,14 @@ void sdc_mount_defaults(void) {
    // try to mount (default) images
    for(int drive=0;drive<MAX_DRIVES+MAX_IMAGES;drive++) {
      char *name = sdc_get_image_name(drive);

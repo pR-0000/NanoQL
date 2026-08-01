@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import os
+import importlib.util
 import platform
 import queue
 import shutil
@@ -13,6 +13,25 @@ import threading
 import webbrowser
 from pathlib import Path
 
+
+def install_python_packages(*packages: str) -> None:
+    command = [sys.executable, "-m", "pip", "install", *packages]
+    try:
+        subprocess.check_call(command)
+    except subprocess.CalledProcessError:
+        if platform.system() != "Darwin" or "--break-system-packages" in command:
+            raise
+        subprocess.check_call([
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--user",
+            "--break-system-packages",
+            *packages,
+        ])
+
+
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -20,6 +39,12 @@ except ImportError as error:
     raise SystemExit(
         "Tkinter is required. On Linux install your distribution's python3-tk package."
     ) from error
+
+try:
+    from serial.tools import list_ports
+except ImportError:
+    install_python_packages("pyserial")
+    from serial.tools import list_ports
 
 
 REPOSITORY = Path(__file__).resolve().parent.parent
@@ -29,11 +54,13 @@ BUILD_SCRIPT = "build_sd_rom.tcl"
 OPENFPGA_INSTALL_URL = (
     "https://trabucayre.github.io/openFPGALoader/guide/install.html"
 )
-FLASHCUBE_URL = "https://dev.bouffalolab.com/download"
 QL_ROM_URL = "https://sinclairql.net/djw/qlrom/index.html"
 IPC_ROM_URL = "https://github.com/MiSTer-devel/QL_MiSTer/tree/master/rtl"
 HERMES_URL = "http://firshman.co.uk/ql/hermes.htm"
 PYTHON_URL = "https://www.python.org/downloads/"
+HOMEBREW_URL = "https://brew.sh/"
+AUTO_PORT = "Automatic detection"
+SELECT_PORT = "Select a serial port"
 
 
 def find_gowin() -> str:
@@ -56,6 +83,8 @@ def find_openfpgaloader() -> str:
     if command:
         return command
     candidates = (
+        Path("/opt/homebrew/bin/openFPGALoader"),
+        Path("/usr/local/bin/openFPGALoader"),
         Path("C:/msys64/ucrt64/bin/openFPGALoader.exe"),
         Path("C:/msys64/mingw64/bin/openFPGALoader.exe"),
         Path("C:/Program Files/openFPGALoader/bin/openFPGALoader.exe"),
@@ -63,6 +92,33 @@ def find_openfpgaloader() -> str:
         Path.home() / "scoop/apps/openfpgaloader/current/openFPGALoader.exe",
     )
     return next((str(path) for path in candidates if path.is_file()), "")
+
+
+def find_homebrew() -> str:
+    command = shutil.which("brew")
+    if command:
+        return command
+    return next(
+        (str(path) for path in (
+            Path("/opt/homebrew/bin/brew"),
+            Path("/usr/local/bin/brew"),
+        ) if path.is_file()),
+        "",
+    )
+
+
+def find_precompiled_bitstream() -> str:
+    preferred = REPOSITORY / "impl" / "pnr" / "NanoQL_sd_rom.fs"
+    if preferred.is_file():
+        return str(preferred)
+    candidates: list[Path] = []
+    for folder in (REPOSITORY, Path.cwd(), Path.home() / "Downloads"):
+        if folder.is_dir():
+            candidates.extend(folder.glob("NanoQL*-FPGA.fs"))
+            candidates.extend(folder.glob("NanoQL*/NanoQL*-FPGA.fs"))
+    if candidates:
+        return str(max(candidates, key=lambda path: path.stat().st_mtime))
+    return str(preferred)
 
 
 class NanoQLSetup(tk.Tk):
@@ -76,24 +132,23 @@ class NanoQLSetup(tk.Tk):
 
         self.revision = tk.StringVar(value="3923")
         self.firmware_mode = tk.StringVar(value="nanoql")
-        self.bl616_port = tk.StringVar()
+        self.bl616_port = tk.StringVar(value=SELECT_PORT)
         self.rom_path = tk.StringVar()
         self.qsound_rom_path = tk.StringVar()
         self.sd_path = tk.StringVar()
         self.ipc_path = tk.StringVar()
-        self.hermes_ipc_path = tk.StringVar()
         self.mdv_folder = tk.StringVar()
         self.mdv_name = tk.StringVar(value="NANOQL")
-        self.link_port = tk.StringVar()
+        self.link_port = tk.StringVar(value=AUTO_PORT)
         self.ql_layout = tk.StringVar(value="auto")
         self.gowin_path = tk.StringVar(value=find_gowin())
         self.loader_path = tk.StringVar(value=find_openfpgaloader())
-        self.bitstream_path = tk.StringVar(
-            value=str(REPOSITORY / "impl" / "pnr" / "NanoQL_sd_rom.fs")
-        )
+        self.bitstream_path = tk.StringVar(value=find_precompiled_bitstream())
+        self.port_devices: dict[str, str] = {}
         self.status = tk.StringVar(value="Ready")
 
         self._build_ui()
+        self.refresh_ports()
         self.after(100, self._poll_events)
 
     def _build_ui(self) -> None:
@@ -184,7 +239,7 @@ class NanoQLSetup(tk.Tk):
         ttk.Button(
             actions,
             text="Install openFPGALoader",
-            command=lambda: self._open_url(OPENFPGA_INSTALL_URL),
+            command=self.install_openfpgaloader,
         ).pack(side="left", padx=(0, 8))
         ttk.Button(
             actions,
@@ -193,8 +248,8 @@ class NanoQLSetup(tk.Tk):
         ).pack(side="left", padx=(0, 8))
         ttk.Button(
             actions,
-            text="BL616 tools",
-            command=lambda: self._open_url(FLASHCUBE_URL),
+            text="Install BL616 tool",
+            command=self.install_bl616_tool,
         ).pack(side="left")
 
         sources = ttk.LabelFrame(parent, text="ROM sources", padding=12)
@@ -261,8 +316,12 @@ class NanoQLSetup(tk.Tk):
         ttk.Label(parent, text="BL616 bootloader port", style="Section.TLabel").grid(
             row=2, column=0, sticky="w", pady=8
         )
-        ttk.Entry(parent, textvariable=self.bl616_port, width=28).grid(
-            row=2, column=1, sticky="w", pady=8
+        self.bl616_port_combo = ttk.Combobox(
+            parent, textvariable=self.bl616_port, state="readonly", width=62
+        )
+        self.bl616_port_combo.grid(row=2, column=1, sticky="ew", pady=8)
+        ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
+            row=2, column=2, padx=(8, 0), pady=8
         )
 
         actions = ttk.Frame(parent)
@@ -290,20 +349,16 @@ class NanoQLSetup(tk.Tk):
 
     def _build_storage_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
-        self._path_row(parent, 0, "48/64 KiB QL ROM", self.rom_path, self._browse_rom)
-        self._path_row(parent, 1, "Optional 8 KiB QSound ROM", self.qsound_rom_path, self._browse_qsound_rom)
-        self._path_row(parent, 2, "microSD root", self.sd_path, self._browse_sd)
+        self._path_row(parent, 0, "microSD root", self.sd_path, self._browse_sd)
+        self._path_row(parent, 1, "48/64 KiB QL ROM", self.rom_path, self._browse_rom)
         self._path_row(
-            parent, 3, "Primary IPC firmware (2 KiB after decoding)",
+            parent, 2, "IPC firmware: original OR Hermes",
             self.ipc_path, self._browse_ipc,
         )
-        self._path_row(
-            parent, 4, "Optional Hermes IPC firmware",
-            self.hermes_ipc_path, self._browse_hermes_ipc,
-        )
+        self._path_row(parent, 3, "Optional 8 KiB QSound ROM", self.qsound_rom_path, self._browse_qsound_rom)
 
         actions = ttk.Frame(parent)
-        actions.grid(row=5, column=0, columnspan=3, sticky="w", pady=(18, 8))
+        actions.grid(row=4, column=0, columnspan=3, sticky="w", pady=(18, 8))
         self._button(actions, "Prepare microSD", self.prepare_sd).pack(
             side="left", padx=(0, 8)
         )
@@ -316,20 +371,24 @@ class NanoQLSetup(tk.Tk):
                 "selected later from the F12 overlay."
             ),
             wraplength=760,
-        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
     def _build_fpga_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
-        self._path_row(parent, 0, "Gowin gw_sh", self.gowin_path, self._browse_gowin)
+        ttk.Label(parent, text="Bitstream", style="Section.TLabel").grid(
+            row=0, column=0, sticky="w", pady=8
+        )
+        ttk.Entry(parent, textvariable=self.bitstream_path).grid(
+            row=0, column=1, sticky="ew", padx=8, pady=8
+        )
+        ttk.Button(parent, text="Browse...", command=self._browse_bitstream).grid(
+            row=0, column=2, pady=8
+        )
         self._path_row(
             parent, 1, "openFPGALoader", self.loader_path, self._browse_loader
         )
-
-        ttk.Label(parent, text="Bitstream", style="Section.TLabel").grid(
-            row=2, column=0, sticky="w", pady=8
-        )
-        ttk.Entry(parent, textvariable=self.bitstream_path, state="readonly").grid(
-            row=2, column=1, columnspan=2, sticky="ew", pady=8
+        self._path_row(
+            parent, 2, "Optional Gowin compiler", self.gowin_path, self._browse_gowin
         )
 
         actions = ttk.Frame(parent)
@@ -349,7 +408,8 @@ class NanoQLSetup(tk.Tk):
             parent,
             text=(
                 "Program Flash before replacing the original BL616 firmware. SRAM is "
-                "temporary and lost at power-off; Flash is persistent."
+                "temporary and lost at power-off; Flash is persistent. Release users "
+                "should select NanoQL-*-FPGA.fs and do not need to click Build."
             ),
             wraplength=760,
         ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
@@ -359,8 +419,12 @@ class NanoQLSetup(tk.Tk):
         ttk.Label(parent, text="NanoQL Link port", style="Section.TLabel").grid(
             row=0, column=0, sticky="w", pady=8
         )
-        ttk.Entry(parent, textvariable=self.link_port, width=18).grid(
-            row=0, column=1, sticky="w", padx=8, pady=8
+        self.link_port_combo = ttk.Combobox(
+            parent, textvariable=self.link_port, state="readonly", width=62
+        )
+        self.link_port_combo.grid(row=0, column=1, sticky="ew", padx=8, pady=8)
+        ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
+            row=0, column=2, pady=8
         )
         ttk.Label(parent, text="QL keyboard layout", style="Section.TLabel").grid(
             row=1, column=0, sticky="w", pady=8
@@ -385,8 +449,9 @@ class NanoQLSetup(tk.Tk):
             parent,
             text=(
                 "Connect NanoQL to the computer with a USB data cable, let the FPGA "
-                "start, then briefly press S1. Leave the port blank for automatic "
-                "detection. Remote keyboard mode is currently available on Windows; "
+                "start, then briefly press S1. Keep Automatic detection selected or "
+                "choose the NanoQL Link port after clicking Refresh. "
+                "Remote keyboard mode is currently available on Windows; "
                 "press F6 to return control to this assistant."
             ),
             wraplength=760,
@@ -407,8 +472,12 @@ class NanoQLSetup(tk.Tk):
         ttk.Label(parent, text="NanoQL Link port", style="Section.TLabel").grid(
             row=2, column=0, sticky="w", pady=8
         )
-        ttk.Entry(parent, textvariable=self.link_port, width=16).grid(
-            row=2, column=1, sticky="w", padx=8, pady=8
+        self.mdv_port_combo = ttk.Combobox(
+            parent, textvariable=self.link_port, state="readonly", width=62
+        )
+        self.mdv_port_combo.grid(row=2, column=1, sticky="ew", padx=8, pady=8)
+        ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
+            row=2, column=2, pady=8
         )
         self._button(parent, "Synchronize and restart QL", self.sync_microdrive).grid(
             row=3, column=0, columnspan=3, sticky="w", pady=(18, 8)
@@ -476,17 +545,6 @@ class NanoQLSetup(tk.Tk):
         if path:
             self.ipc_path.set(path)
 
-    def _browse_hermes_ipc(self) -> None:
-        path = filedialog.askopenfilename(
-            title="Select optional Hermes IPC firmware",
-            filetypes=(
-                ("IPC firmware", "*.hex *.rom *.bin"),
-                ("All files", "*"),
-            ),
-        )
-        if path:
-            self.hermes_ipc_path.set(path)
-
     def _browse_mdv_folder(self) -> None:
         path = filedialog.askdirectory(title="Select the folder exposed as MDV1")
         if path:
@@ -502,8 +560,100 @@ class NanoQLSetup(tk.Tk):
         if path:
             self.loader_path.set(path)
 
+    def _browse_bitstream(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Select a precompiled NanoQL FPGA bitstream",
+            filetypes=(
+                ("Gowin bitstreams", "*.fs *.bin"),
+                ("All files", "*"),
+            ),
+        )
+        if path:
+            self.bitstream_path.set(path)
+
     def _open_url(self, url: str) -> None:
         webbrowser.open(url)
+
+    def refresh_ports(self) -> None:
+        selected_devices = {
+            "link": self._selected_port(self.link_port, allow_auto=True),
+            "bl616": self._selected_port(self.bl616_port, allow_auto=False),
+        }
+        ports = sorted(
+            list_ports.comports(),
+            key=lambda port: (
+                not any(word in (port.description or "").lower()
+                        for word in ("nanoql", "bouffalo", "usb", "serial")),
+                port.device.lower(),
+            ),
+        )
+        self.port_devices = {}
+        labels: list[str] = []
+        for port in ports:
+            name = port.name or Path(port.device).name
+            description = port.description or "Serial port"
+            label = f"{name} | {port.device} | {description}"
+            self.port_devices[label] = port.device
+            labels.append(label)
+
+        link_values = (AUTO_PORT, *labels)
+        bl616_values = (SELECT_PORT, *labels)
+        self.link_port_combo.configure(values=link_values)
+        self.mdv_port_combo.configure(values=link_values)
+        self.bl616_port_combo.configure(values=bl616_values)
+
+        self.link_port.set(next(
+            (label for label, device in self.port_devices.items()
+             if device == selected_devices["link"]),
+            AUTO_PORT,
+        ))
+        self.bl616_port.set(next(
+            (label for label, device in self.port_devices.items()
+             if device == selected_devices["bl616"]),
+            SELECT_PORT,
+        ))
+        self._append_log(
+            f"Serial ports refreshed: {len(labels)} detected.\n"
+        )
+
+    def _selected_port(self, variable: tk.StringVar, allow_auto: bool) -> str:
+        value = variable.get().strip()
+        if not value or value == SELECT_PORT or (allow_auto and value == AUTO_PORT):
+            return ""
+        return self.port_devices.get(value, value)
+
+    def install_openfpgaloader(self) -> None:
+        if find_openfpgaloader():
+            messagebox.showinfo("openFPGALoader", "openFPGALoader is already installed.")
+            self.check_requirements()
+            return
+        if platform.system() == "Darwin":
+            brew = find_homebrew()
+            if not brew:
+                messagebox.showinfo(
+                    "Homebrew required",
+                    "Install Homebrew first, then click Install openFPGALoader again.",
+                )
+                self._open_url(HOMEBREW_URL)
+                return
+            self._run(
+                [brew, "install", "openfpgaloader"],
+                "Installing openFPGALoader",
+                self.check_requirements,
+            )
+            return
+        self._open_url(OPENFPGA_INSTALL_URL)
+
+    def install_bl616_tool(self) -> None:
+        self._run(
+            [
+                sys.executable,
+                str(TOOLS / "prepare_bl616_firmware.py"),
+                "--install-tools",
+            ],
+            "Installing the BL616 flashing tool",
+            self.check_requirements,
+        )
 
     def check_requirements(self) -> None:
         loader = find_openfpgaloader()
@@ -515,8 +665,9 @@ class NanoQLSetup(tk.Tk):
             f"openFPGALoader: {loader}" if loader else "openFPGALoader: not found"
         )
         flash_state = (
-            "BL616: native cross-platform flashing available; FlashCube fallback "
-            + ("available" if system == "Windows" else "is Windows-only")
+            "BL616 tool: "
+            + ("installed" if importlib.util.find_spec("bflb_mcu_tool") else "not installed")
+            + "; native UART flashing is supported on Windows, macOS, and Linux"
         )
         self.requirements_text.set(
             f"Operating system: {system}\n{python_state}\n{loader_state}\n{flash_state}"
@@ -524,7 +675,7 @@ class NanoQLSetup(tk.Tk):
 
     def _link_command(self, command: str) -> list[str]:
         result = [sys.executable, str(TOOLS / "nanoql_link.py")]
-        port = self.link_port.get().strip()
+        port = self._selected_port(self.link_port, allow_auto=True)
         if port:
             result.extend(["--port", port])
         result.extend(["--ql-layout", self.ql_layout.get(), command])
@@ -571,7 +722,7 @@ class NanoQLSetup(tk.Tk):
         self.prepare_firmware(self._open_flashcube)
 
     def flash_bl616(self) -> None:
-        port = self.bl616_port.get().strip()
+        port = self._selected_port(self.bl616_port, allow_auto=False)
         if not port:
             messagebox.showerror(
                 "Missing port",
@@ -593,6 +744,8 @@ class NanoQLSetup(tk.Tk):
             "--flash",
             "--port",
             port,
+            "--baudrate",
+            "230400" if platform.system() == "Darwin" else "2000000",
             "--yes",
         ]
         self._run(command, "Programming BL616 firmware")
@@ -627,8 +780,6 @@ class NanoQLSetup(tk.Tk):
             command.extend(["--qsound-rom", self.qsound_rom_path.get()])
         if self.ipc_path.get():
             command.extend(["--ipc-rom", self.ipc_path.get()])
-        if self.hermes_ipc_path.get():
-            command.extend(["--hermes-ipc-rom", self.hermes_ipc_path.get()])
         if self.mdv_folder.get():
             command.extend([
                 "--mdv-folder", self.mdv_folder.get(),
@@ -641,8 +792,9 @@ class NanoQLSetup(tk.Tk):
             messagebox.showerror("Missing folder", "Select the PC folder exposed as MDV1.")
             return
         command = [sys.executable, str(TOOLS / "nanoql_link.py")]
-        if self.link_port.get().strip():
-            command.extend(["--port", self.link_port.get().strip()])
+        port = self._selected_port(self.link_port, allow_auto=True)
+        if port:
+            command.extend(["--port", port])
         command.extend([
             "mdv-sync", self.mdv_folder.get(), "--name", self.mdv_name.get()
         ])
@@ -684,10 +836,6 @@ class NanoQLSetup(tk.Tk):
             ])
         if self.ipc_path.get():
             prepare_sd_command.extend(["--ipc-rom", self.ipc_path.get()])
-        if self.hermes_ipc_path.get():
-            prepare_sd_command.extend([
-                "--hermes-ipc-rom", self.hermes_ipc_path.get()
-            ])
         if self.mdv_folder.get():
             prepare_sd_command.extend([
                 "--mdv-folder", self.mdv_folder.get(),
@@ -706,7 +854,11 @@ class NanoQLSetup(tk.Tk):
             )
             return
         if not bitstream.is_file():
-            messagebox.showerror("Missing bitstream", "Build this variant first.")
+            messagebox.showerror(
+                "Missing bitstream",
+                "The selected bitstream does not exist. Select the precompiled "
+                "NanoQL-*-FPGA.fs file from the release, or build NanoQL first.",
+            )
             return
         command = [loader, "-b", "tangnano20k"]
         if persistent:

@@ -374,7 +374,10 @@ module nanoql_top(
     ql_sdram_router sdram_router (
         .clk(clk_pixel),
         .reset(video_reset),
-        .host_req(host_cpu_hold && host_mem_req),
+        // Live diagnostics use the same SDRAM arbitration as the CPU. A host
+        // read therefore stretches the current CPU bus cycle through DTACK
+        // instead of stopping or resetting the 68000.
+        .host_req(host_mem_req),
         .host_we(host_mem_we),
         .host_addr(host_mem_addr),
         .host_ds(host_mem_ds),

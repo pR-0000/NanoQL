@@ -462,7 +462,7 @@ module ql_host_link (
                             4'd2: packet_addr[7:0] <= data_in;
                             4'd3: begin
                                 packet_length <= data_in[3:0];
-                                if (!cpu_hold || busy || !sdram_ready ||
+                                if (busy || !sdram_ready ||
                                     !address_valid || (data_in == 8'd0) ||
                                     (data_in > 8'd8) ||
                                     ({1'b0, packet_addr} + data_in >

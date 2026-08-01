@@ -365,6 +365,38 @@ def parse_number(value: str) -> int:
     return int(value, 0)
 
 
+QDOS_SYSVARS_BASE = 0x028000
+QDOS_SYSVARS = (
+    ("SV_CHEAP", 0x04, "common heap start"),
+    ("SV_CHPFR", 0x08, "first free common-heap block"),
+    ("SV_FREE",  0x0C, "filing-system free-memory boundary"),
+    ("SV_BASIC", 0x10, "SuperBASIC area"),
+    ("SV_TRNSP", 0x14, "transient-program area"),
+    ("SV_TRNFR", 0x18, "first free transient block"),
+    ("SV_RESPR", 0x1C, "resident-procedure area"),
+    ("SV_RAMT",  0x20, "end of RAM plus one"),
+)
+
+
+def decode_qdos_memory_map(data: bytes) -> dict[str, int]:
+    if len(data) < 0x24:
+        raise ValueError("The QDOS system-variable snapshot is incomplete.")
+    ident = int.from_bytes(data[0:4], "big")
+    if ident != 0xD2540000:
+        raise RuntimeError(
+            f"No standard QDOS system variables were found at "
+            f"0x{QDOS_SYSVARS_BASE:06x} (identifier=0x{ident:08x})."
+        )
+    result = {"SV_IDENT": ident}
+    for name, offset, _description in QDOS_SYSVARS:
+        result[name] = int.from_bytes(data[offset:offset + 4], "big")
+    return result
+
+
+def kib(value: int) -> str:
+    return f"{value} bytes ({value / 1024:.1f} KiB)"
+
+
 def remote_path_bytes(value: str, *, allow_empty: bool = False) -> bytes:
     normalized = value.replace("\\", "/").strip("/")
     if not normalized:
@@ -837,7 +869,7 @@ class NanoQLLink:
             self.transact(request)
             self.wait_idle(expect_hold=True)
 
-    def read(self, address: int, length: int) -> bytes:
+    def read(self, address: int, length: int, *, live: bool = False) -> bytes:
         if length < 0 or address < 0x020000 or address + length > 0x040000:
             raise ValueError("The block must remain within QL RAM 0x020000-0x03ffff.")
         result = bytearray()
@@ -847,12 +879,26 @@ class NanoQLLink:
             request = (bytes((CMD_READ,)) + block_address.to_bytes(3, "big") +
                        bytes((block_length,)))
             self.transact(request)
-            self.wait_idle(expect_hold=True)
+            self.wait_idle(expect_hold=not live)
             response = self.transact(bytes((CMD_READ_RESULT,)) + bytes(8))
             if len(response) < block_length:
                 raise RuntimeError("Incomplete RAM read response.")
             result.extend(response[-8:][:block_length])
         return bytes(result)
+
+    def qdos_memory_map(self) -> dict[str, int]:
+        # A live host read is arbitrated between normal CPU SDRAM cycles. Read
+        # twice so that moving QDOS boundaries cannot produce a torn snapshot.
+        previous = self.read(QDOS_SYSVARS_BASE, 0x24, live=True)
+        for _attempt in range(4):
+            current = self.read(QDOS_SYSVARS_BASE, 0x24, live=True)
+            if current == previous:
+                return decode_qdos_memory_map(current)
+            previous = current
+        raise RuntimeError(
+            "QDOS memory boundaries changed throughout the snapshot; "
+            "retry at an idle SuperBASIC prompt."
+        )
 
     def execute(self, stack_pointer: int, program_counter: int) -> int:
         payload = bytes((CMD_EXEC,)) + struct.pack(">II", stack_pointer, program_counter)
@@ -1393,6 +1439,10 @@ def main() -> int:
 
     subparsers.add_parser("status", help="read the link status")
     subparsers.add_parser("cpu-status", help="measure the active FPGA CPU rate")
+    subparsers.add_parser(
+        "qdos-memory",
+        help="snapshot the live QDOS memory map without resetting the QL",
+    )
     subparsers.add_parser("qlsd-status", help="read the last QL-SD sector diagnostic")
     subparsers.add_parser("mdv-status", help="read the live Microdrive diagnostic")
     subparsers.add_parser("qdos", help="leave the injected program and restart QDOS")
@@ -1574,6 +1624,50 @@ def main() -> int:
             print(f"FPGA CPU mode: {cpu_label}")
             print(f"Measured phase rate: {cpu_rate / 1_000_000:.3f} MHz")
             print(f"QL ROM keyboard: {'French' if link.ql_layout == 'fr' else 'English'}")
+        elif args.command == "qdos-memory":
+            memory = link.qdos_memory_map()
+            print("QDOS memory map (live, non-resetting snapshot):")
+            print(f"  SV_IDENT = 0x{memory['SV_IDENT']:08x} (QDOS)")
+            descriptions = {name: description for name, _offset, description
+                            in QDOS_SYSVARS}
+            for name, _offset, _description in QDOS_SYSVARS:
+                print(
+                    f"  {name:8s} = 0x{memory[name]:06x}  "
+                    f"{descriptions[name]}"
+                )
+
+            ordered = ("SV_CHEAP", "SV_FREE", "SV_BASIC",
+                       "SV_TRNSP", "SV_RESPR", "SV_RAMT")
+            monotonic = all(
+                memory[left] <= memory[right]
+                for left, right in zip(ordered, ordered[1:])
+            )
+            print("Derived regions:")
+            print(f"  Physical QL RAM:       {kib(memory['SV_RAMT'] - 0x020000)}")
+            print(
+                f"  Common heap span:      "
+                f"{kib(max(0, memory['SV_FREE'] - memory['SV_CHEAP']))}"
+            )
+            print(
+                f"  Free/slave-block span: "
+                f"{kib(max(0, memory['SV_BASIC'] - memory['SV_FREE']))}"
+            )
+            print(
+                f"  SuperBASIC span:       "
+                f"{kib(max(0, memory['SV_TRNSP'] - memory['SV_BASIC']))}"
+            )
+            print(
+                f"  Transient span:        "
+                f"{kib(max(0, memory['SV_RESPR'] - memory['SV_TRNSP']))}"
+            )
+            print(
+                f"  Resident space used:   "
+                f"{kib(max(0, memory['SV_RAMT'] - memory['SV_RESPR']))}"
+            )
+            print(
+                "  Boundary order:         "
+                + ("valid" if monotonic else "UNUSUAL - report these values")
+            )
         elif args.command == "qlsd-status":
             flags, lba, header, byte_count, crc32, sample = link.qlsd_status()
             print(f"QL-SD flags: 0x{flags:02x}")

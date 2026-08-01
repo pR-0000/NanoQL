@@ -23,7 +23,7 @@ L'IPC peut être un fichier brut `.bin`/`.rom` de 2 048 octets, un fichier Intel
 
 ### Logiciels
 
-Installez [Python 3](https://www.python.org/downloads/). Sous Windows, activez **Add Python to PATH**. Sous Debian/Ubuntu, installez aussi Tkinter :
+Installez [Python 3](https://www.python.org/downloads/). Sous Windows, activez **Add Python to PATH**. L'installeur Python officiel pour macOS contient Tkinter. Avec Python installé par Homebrew, installez également la formule `python-tk` correspondant à sa version. Sous Debian/Ubuntu, installez aussi Tkinter :
 
 ```sh
 sudo apt install python3 python3-tk
@@ -36,7 +36,9 @@ Pour programmer le FPGA, utilisez au choix :
 
 Gowin Programmer et Gowin EDA ne sont pas nécessaires pour installer une version compilée si openFPGALoader fonctionne. Gowin EDA reste nécessaire pour recompiler le cœur FPGA.
 
-Installation d'openFPGALoader :
+Le bouton **Install openFPGALoader** de l'assistant effectue directement l'installation avec Homebrew sous macOS. Il détecte `/opt/homebrew/bin` sur Apple Silicon et `/usr/local/bin` sur les Mac Intel, même lorsque l'assistant n'a pas hérité du `PATH` du Terminal.
+
+Installation manuelle d'openFPGALoader :
 
 ```sh
 # macOS
@@ -63,7 +65,7 @@ Depuis le dossier NanoQL :
 python tools/nanoql_setup.py
 ```
 
-Sous macOS/Linux, utilisez `python3` si nécessaire. L'assistant vérifie les outils, prépare la microSD, programme le FPGA, prépare le firmware BL616 et donne accès au clavier distant.
+Sous macOS/Linux, utilisez `python3` si nécessaire. L'assistant installe automatiquement PySerial, affiche les ports série dans des listes détaillées, vérifie les outils, prépare la microSD, programme le FPGA et prépare le firmware BL616.
 
 ### Ordre de première installation
 
@@ -71,7 +73,7 @@ Respectez cet ordre. Il évite de perdre temporairement l'accès JTAG :
 
 1. Préparez la microSD dans **1. ROMs and microSD**.
 2. Laissez le BL616 avec son firmware Sipeed **FPGA Partner**.
-3. Programmez `impl/pnr/NanoQL_sd_rom.fs` en Flash persistante depuis **2. FPGA**.
+3. Dans **2. FPGA**, sélectionnez le fichier précompilé `NanoQL-*-FPGA.fs` de la release et programmez-le en Flash persistante.
 4. Installez seulement ensuite le profil BL616 **NanoQL** depuis **3. BL616**.
 5. Insérez la microSD et redémarrez la carte.
 
@@ -81,20 +83,20 @@ FPGA Partner expose les canaux JTAG utilisés par Gowin Programmer et openFPGALo
 
 Dans **1. ROMs and microSD** :
 
-1. choisissez la ROM QL ;
-2. choisissez le firmware IPC principal ;
-3. choisissez la racine de la microSD ;
-4. ajoutez éventuellement Hermes et QSound ;
+1. choisissez d'abord la racine de la microSD ;
+2. choisissez la ROM QL ;
+3. choisissez un seul firmware IPC, soit l'original, soit Hermes ;
+4. ajoutez éventuellement QSound ;
 5. cliquez sur **Prepare microSD**.
 
 Les noms `QL.rom`, `IPC.rom` et `QSound.rom` sont de simples valeurs par défaut. Vous pouvez copier d'autres ROM directement sur la carte et les choisir avec l'overlay `F12`.
 
 ### Programmer le FPGA
 
-Tant que FPGA Partner est installé, l'assistant peut appeler openFPGALoader. Équivalent manuel :
+Dans **2. FPGA**, utilisez **Browse** pour sélectionner `NanoQL-*-FPGA.fs`. Une release précompilée ne nécessite ni Gowin EDA ni le bouton **Build**. Tant que FPGA Partner est installé, l'assistant peut appeler openFPGALoader. Équivalent manuel :
 
 ```sh
-openFPGALoader -b tangnano20k -f impl/pnr/NanoQL_sd_rom.fs
+openFPGALoader -b tangnano20k -f /chemin/vers/NanoQL-vX.Y.Z-FPGA.fs
 ```
 
 Avec Gowin Programmer, utilisez `USB Debugger A/1`, **External Flash Mode**, une opération d'effacement/programmation et **Generic Flash**.
@@ -109,10 +111,10 @@ Cette opération vient après le FPGA. Dans **3. BL616** :
 2. sélectionnez le profil **NanoQL** ;
 3. débranchez la carte ;
 4. maintenez **UPDATE**, reconnectez l'USB puis relâchez **UPDATE** ;
-5. indiquez le nouveau port série du bootloader ;
+5. cliquez sur **Refresh**, puis choisissez le nouveau port série du bootloader dans la liste ;
 6. cliquez sur **Flash selected firmware**.
 
-L'assistant installe automatiquement `bflb-mcu-tool-uart`, l'outil UART multiplateforme de Bouffalo Lab. Commande équivalente :
+L'assistant installe automatiquement `bflb-mcu-tool-uart`, l'outil UART multiplateforme de Bouffalo Lab. Avec Python 3.13 ou plus récent, il installe aussi le module de compatibilité requis depuis la suppression de `telnetlib`. Sur macOS, le débit prudent par défaut est de 230400 bauds. Commande équivalente :
 
 ```sh
 python3 tools/prepare_bl616_firmware.py --revision 3923 --profile nanoql --flash --port PORT --yes
@@ -169,7 +171,7 @@ IPC firmware may be a raw 2,048-byte `.bin`/`.rom`, complete Intel HEX, or a tex
 
 ### Software
 
-Install [Python 3](https://www.python.org/downloads/). Enable **Add Python to PATH** on Windows. On Debian/Ubuntu, also install Tkinter:
+Install [Python 3](https://www.python.org/downloads/). Enable **Add Python to PATH** on Windows. The official Python macOS installer includes Tkinter. If Python came from Homebrew, also install the matching `python-tk` formula. On Debian/Ubuntu, install Tkinter too:
 
 ```sh
 sudo apt install python3 python3-tk
@@ -182,7 +184,9 @@ Program the FPGA with either:
 
 Gowin Programmer and Gowin EDA are not required to install a compiled release when openFPGALoader works. Gowin EDA is still required to compile the FPGA core.
 
-Install openFPGALoader:
+The assistant's **Install openFPGALoader** button installs it directly through Homebrew on macOS. It checks `/opt/homebrew/bin` on Apple Silicon and `/usr/local/bin` on Intel Macs even when the GUI did not inherit Terminal's `PATH`.
+
+Manual openFPGALoader installation:
 
 ```sh
 # macOS
@@ -209,7 +213,7 @@ Run from the NanoQL directory:
 python tools/nanoql_setup.py
 ```
 
-Use `python3` on macOS/Linux when needed. The assistant checks tools, prepares the microSD, programs the FPGA, prepares BL616 firmware, and provides remote keyboard controls.
+Use `python3` on macOS/Linux when needed. The assistant installs PySerial automatically, presents detailed serial-port lists, checks tools, prepares the microSD, programs the FPGA, and prepares BL616 firmware.
 
 ### First-install order
 
@@ -217,7 +221,7 @@ Follow this order to avoid temporarily losing JTAG access:
 
 1. Prepare the microSD in **1. ROMs and microSD**.
 2. Keep Sipeed's **FPGA Partner** BL616 firmware installed.
-3. Program `impl/pnr/NanoQL_sd_rom.fs` into persistent Flash from **2. FPGA**.
+3. In **2. FPGA**, select the release's precompiled `NanoQL-*-FPGA.fs` and program it into persistent Flash.
 4. Only then install the **NanoQL** BL616 profile from **3. BL616**.
 5. Insert the microSD and restart the board.
 
@@ -227,20 +231,20 @@ FPGA Partner exposes the JTAG channels used by Gowin Programmer and openFPGALoad
 
 In **1. ROMs and microSD**:
 
-1. select the QL ROM;
-2. select the primary IPC firmware;
-3. select the microSD root;
-4. optionally add Hermes and QSound;
+1. select the microSD root first;
+2. select the QL ROM;
+3. select one IPC firmware, either original or Hermes;
+4. optionally add QSound;
 5. click **Prepare microSD**.
 
 `QL.rom`, `IPC.rom`, and `QSound.rom` are convenient defaults. Other ROMs may be copied directly to the card and selected through the `F12` overlay.
 
 ### Program the FPGA
 
-While FPGA Partner remains installed, the assistant can call openFPGALoader. Manual equivalent:
+In **2. FPGA**, use **Browse** to select `NanoQL-*-FPGA.fs`. A precompiled release does not require Gowin EDA or the **Build** button. While FPGA Partner remains installed, the assistant can call openFPGALoader. Manual equivalent:
 
 ```sh
-openFPGALoader -b tangnano20k -f impl/pnr/NanoQL_sd_rom.fs
+openFPGALoader -b tangnano20k -f /path/to/NanoQL-vX.Y.Z-FPGA.fs
 ```
 
 With Gowin Programmer, select `USB Debugger A/1`, **External Flash Mode**, an erase/program operation, and **Generic Flash**.
@@ -255,10 +259,10 @@ Do this after programming the FPGA. In **3. BL616**:
 2. select the **NanoQL** profile;
 3. disconnect the board;
 4. hold **UPDATE**, reconnect USB, then release **UPDATE**;
-5. enter the new bootloader serial port;
+5. click **Refresh**, then select the new bootloader serial port from the list;
 6. click **Flash selected firmware**.
 
-The assistant automatically installs Bouffalo Lab's cross-platform `bflb-mcu-tool-uart` loader. Command-line equivalent:
+The assistant automatically installs Bouffalo Lab's cross-platform `bflb-mcu-tool-uart` loader. On Python 3.13 or newer it also installs the compatibility module needed since `telnetlib` was removed. macOS uses a conservative default rate of 230400 baud. Command-line equivalent:
 
 ```sh
 python3 tools/prepare_bl616_firmware.py --revision 3923 --profile nanoql --flash --port PORT --yes

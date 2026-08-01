@@ -42,9 +42,9 @@ module ql_companion_hid (
                         if (host_keyboard_azerty && !rom_keyboard_french) begin
                             if (usage == 7'h20)
                                 // AZERTY key 3 is quote without Shift and 3
-                                // with Shift. The English QL follows the UK
-                                // layout and produces quote from Shift+2.
-                                translated_usage = shifted ? 7'h20 : 7'h1f;
+                                // with Shift. On the English QL hardware,
+                                // double quote is the shifted 9 contact.
+                                translated_usage = shifted ? 7'h20 : 7'h26;
                             else if (usage == 7'h33)
                                 translated_usage = 7'h10; // AZERTY M -> QL M
                             else if (usage == 7'h10)

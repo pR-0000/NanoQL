@@ -74,7 +74,7 @@ module tb_ql_companion_hid;
         check_key(7'h10, 63, 1'b0); // AZERTY comma
         check_key(7'h36, 31, 1'b0); // AZERTY semicolon
         check_key(7'h37, 31, 1'b1); // AZERTY colon
-        check_key(7'h20, 49, 1'b1); // AZERTY quote -> English QL Shift+2
+        check_key(7'h20, 40, 1'b1); // AZERTY quote -> English QL Shift+9
 
         // Shift+3 on AZERTY is the digit 3. Suppress the host Shift contact
         // while presenting the English QL 3 matrix position.

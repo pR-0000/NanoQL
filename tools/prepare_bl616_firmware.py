@@ -56,7 +56,26 @@ FLASHCUBE_SHA256 = (
 )
 BFLB_MCU_TOOL_PACKAGE = "bflb-mcu-tool-uart"
 BFLB_MCU_TOOL_VERSION = "1.10.1"
+TELNETLIB_BACKPORT_PACKAGE = "standard-telnetlib==3.13.0"
 BL616_APPLICATION_OFFSET = 0x20000
+
+
+def install_python_packages(*packages: str) -> None:
+    command = [sys.executable, "-m", "pip", "install", *packages]
+    try:
+        subprocess.check_call(command)
+    except subprocess.CalledProcessError:
+        if platform.system() != "Darwin":
+            raise
+        subprocess.check_call([
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--user",
+            "--break-system-packages",
+            *packages,
+        ])
 
 
 def sha256(path: Path) -> str:
@@ -91,16 +110,18 @@ def verified_download(url: str, destination: Path, expected: str, force: bool) -
 
 
 def ensure_bflb_mcu_tool() -> None:
+    if sys.version_info >= (3, 13):
+        try:
+            import telnetlib  # noqa: F401
+        except ImportError:
+            install_python_packages(TELNETLIB_BACKPORT_PACKAGE)
+            import telnetlib  # noqa: F401
     try:
         import bflb_mcu_tool  # noqa: F401
     except ImportError:
-        subprocess.check_call([
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            f"{BFLB_MCU_TOOL_PACKAGE}=={BFLB_MCU_TOOL_VERSION}",
-        ])
+        install_python_packages(
+            f"{BFLB_MCU_TOOL_PACKAGE}=={BFLB_MCU_TOOL_VERSION}"
+        )
         import bflb_mcu_tool  # noqa: F401
 
 
@@ -171,6 +192,11 @@ def flash_bl616(image: Path, port: str, baudrate: int) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--launch", action="store_true", help="launch FlashCube on Windows")
+    parser.add_argument(
+        "--install-tools",
+        action="store_true",
+        help="install and validate the cross-platform BL616 UART tool, then exit",
+    )
     parser.add_argument("--force-download", action="store_true")
     parser.add_argument(
         "--revision",
@@ -205,13 +231,23 @@ def main() -> int:
         help="firmware profile used with --flash",
     )
     parser.add_argument("--port", help="BL616 bootloader serial port")
-    parser.add_argument("--baudrate", type=int, default=2_000_000)
+    parser.add_argument(
+        "--baudrate",
+        type=int,
+        default=230_400 if platform.system() == "Darwin" else 2_000_000,
+        help="UART baud rate (default: 230400 on macOS, 2000000 elsewhere)",
+    )
     parser.add_argument(
         "--yes",
         action="store_true",
         help="confirm the destructive BL616 Flash operation",
     )
     args = parser.parse_args()
+
+    if args.install_tools:
+        ensure_bflb_mcu_tool()
+        print("The cross-platform BL616 UART flashing tool is ready.")
+        return 0
 
     if args.flash:
         if args.revision == "both":

@@ -50,14 +50,15 @@ module tb_ql_host_link;
         .mdv_data_trace(128'hfd000c10aa55aa55aa55aa55aa55aa55),
         .cpu_speed(2'd1), .cpu_phase_count(32'h12345678),
         .rom_keyboard_french(1'b0),
-        .cpu_hold(cpu_hold), .boot_vectors_active(boot_vectors_active),
+        .cpu_hold(cpu_hold),
+        .boot_vectors_active(boot_vectors_active),
         .boot_ssp(boot_ssp), .boot_pc(boot_pc),
         .restart_pulse(restart_pulse)
     );
 
     always @(posedge clk) begin
         mem_write_done <= mem_req;
-        if (mem_req) begin
+        if (mem_req && mem_we) begin
             case (writes)
                 0: if (mem_addr != 22'h018000 || mem_ds != 2'b01 ||
                        mem_wdata != 16'h1200) $fatal(1, "write 0 mismatch");
@@ -215,6 +216,19 @@ module tb_ql_host_link;
         send_byte(8'h00, 1'b0);
         if (data_out != 8'h00) $fatal(1, "Microdrive data byte 1 mismatch");
 
+        // Live diagnostic reads are legal without resetting or holding the CPU.
+        send_byte(8'h06, 1'b1);
+        send_byte(8'h02, 1'b0);
+        send_byte(8'h80, 1'b0);
+        send_byte(8'h00, 1'b0);
+        send_byte(8'h08, 1'b0);
+        wait (mem_req);
+        if (mem_we || mem_addr != 22'h014000)
+            $fatal(1, "live read request mismatch");
+        reset = 1'b1;
+        repeat (2) @(posedge clk);
+        reset = 1'b0;
+
         send_byte(8'h01, 1'b1);
         if (!cpu_hold) $fatal(1, "HOLD did not stop the CPU");
 
@@ -243,7 +257,7 @@ module tb_ql_host_link;
             boot_ssp != 32'h0003fff0 || boot_pc != 32'h00030000)
             $fatal(1, "EXEC vectors mismatch");
 
-        $display("PASS: NanoQL Link hold/write/execute");
+        $display("PASS: NanoQL Link live read and hold/write/execute");
         $finish;
     end
 endmodule

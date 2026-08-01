@@ -53,6 +53,8 @@ cd NanoQL
 python tools/nanoql_setup.py
 ```
 
+L'assistant accepte directement le fichier FPGA `.fs` précompilé d'une release, détecte les ports USB/série dans des listes déroulantes et peut installer openFPGALoader avec Homebrew sous macOS. Gowin EDA n'est pas requis pour installer une release.
+
 Ordre impératif pour une première installation :
 
 1. préparer la microSD ;
@@ -153,6 +155,8 @@ git clone https://github.com/pR-0000/NanoQL.git
 cd NanoQL
 python tools/nanoql_setup.py
 ```
+
+The assistant accepts a release's precompiled FPGA `.fs` directly, detects USB/serial ports in drop-down lists, and can install openFPGALoader through Homebrew on macOS. Gowin EDA is not required to install a release.
 
 Mandatory first-install order:
 
