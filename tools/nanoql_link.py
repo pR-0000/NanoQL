@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import os
+import queue
 import re
 import shutil
 import struct
@@ -1028,10 +1029,7 @@ class NanoQLLink:
             )
 
 
-def interactive_keyboard(link: NanoQLLink) -> None:
-    if os.name != "nt":
-        raise RuntimeError("The interactive keyboard terminal is currently available on Windows only.")
-
+def interactive_keyboard_windows(link: NanoQLLink) -> None:
     import msvcrt
 
     print(f"NanoQL keyboard active (QL {link.ql_layout.upper()} profile). "
@@ -1159,6 +1157,141 @@ def interactive_keyboard(link: NanoQLLink) -> None:
     finally:
         for usage in tuple(remote_pressed):
             link.key_event(usage, False)
+
+
+def interactive_keyboard_pynput(link: NanoQLLink) -> None:
+    try:
+        from pynput import keyboard
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pynput"])
+        from pynput import keyboard
+
+    def key_named(name: str):
+        return getattr(keyboard.Key, name, None)
+
+    special_usages = {}
+    for name, usage in (
+        ("backspace", 0x2A), ("tab", 0x2B), ("enter", 0x28),
+        ("esc", 0x29), ("space", 0x2C), ("caps_lock", 0x39),
+        ("home", 0x4A), ("page_up", 0x4B), ("delete", 0x4C),
+        ("end", 0x4D), ("page_down", 0x4E), ("right", 0x4F),
+        ("left", 0x50), ("down", 0x51), ("up", 0x52),
+    ):
+        key = key_named(name)
+        if key is not None:
+            special_usages[key] = usage
+    for index in range(1, 13):
+        key = key_named(f"f{index}")
+        if key is not None and index != 6:
+            special_usages[key] = 0x39 + index
+
+    modifier_usages = {}
+    for name, usage in (
+        ("ctrl", 0x68), ("ctrl_l", 0x68), ("ctrl_r", 0x6C),
+        ("shift", 0x69), ("shift_l", 0x69), ("shift_r", 0x6D),
+        ("alt", 0x6A), ("alt_l", 0x6A), ("alt_r", 0x6E),
+        ("alt_gr", 0x6E),
+    ):
+        key = key_named(name)
+        if key is not None:
+            modifier_usages[key] = usage
+
+    input_events: queue.Queue[tuple[bool, object]] = queue.Queue()
+    active_keys: dict[object, tuple[set[int], bool]] = {}
+    active_modifiers: set[int] = set()
+    remote_pressed: set[int] = set()
+    stopping = False
+    f6_key = key_named("f6")
+
+    def on_press(key) -> bool | None:
+        nonlocal stopping
+        if key == f6_key:
+            stopping = True
+            return False
+        input_events.put((True, key))
+        return None
+
+    def on_release(key) -> None:
+        input_events.put((False, key))
+
+    def reconcile() -> None:
+        nonlocal remote_pressed
+        desired: set[int] = set()
+        translated_active = False
+        for usages, translated in active_keys.values():
+            desired.update(usages)
+            translated_active |= translated
+        if not translated_active:
+            desired.update(active_modifiers)
+
+        ql_modifiers = {0x68, 0x69, 0x6A, 0x6C, 0x6D, 0x6E}
+        releases = sorted(remote_pressed - desired,
+                          key=lambda usage: usage in ql_modifiers)
+        presses = sorted(desired - remote_pressed,
+                         key=lambda usage: usage not in ql_modifiers)
+        for usage in releases:
+            link.key_event(usage, False)
+        for usage in presses:
+            link.key_event(usage, True)
+        remote_pressed = desired
+
+    print(f"NanoQL keyboard active (QL {link.ql_layout.upper()} profile). "
+          "Keys are held in real time; press F6 to return to the terminal.")
+    try:
+        listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+        listener.start()
+        while listener.is_alive() or not input_events.empty():
+            try:
+                pressed, key = input_events.get(timeout=0.02)
+            except queue.Empty:
+                if stopping:
+                    break
+                continue
+
+            modifier = modifier_usages.get(key)
+            if modifier is not None:
+                if pressed:
+                    active_modifiers.add(modifier)
+                else:
+                    active_modifiers.discard(modifier)
+            elif pressed:
+                usages: set[int] = set()
+                translated = False
+                character = getattr(key, "char", None)
+                if character:
+                    try:
+                        usage, target_modifiers = link.character_key(character)
+                        usages = {usage, *target_modifiers}
+                        translated = True
+                    except ValueError:
+                        pass
+                if not usages and key in special_usages:
+                    usages = {special_usages[key]}
+                if usages:
+                    active_keys[key] = (usages, translated)
+            else:
+                active_keys.pop(key, None)
+            reconcile()
+        listener.stop()
+        listener.join(timeout=1.0)
+    except Exception as error:
+        if sys.platform == "darwin":
+            raise RuntimeError(
+                "macOS could not capture the keyboard. Allow Terminal or Python "
+                "in System Settings > Privacy & Security > Input Monitoring and "
+                "Accessibility, then restart the command."
+            ) from error
+        raise
+    finally:
+        for usage in tuple(remote_pressed):
+            link.key_event(usage, False)
+
+
+def interactive_keyboard(link: NanoQLLink) -> None:
+    if os.name == "nt":
+        interactive_keyboard_windows(link)
+    else:
+        interactive_keyboard_pynput(link)
 
 
 DEMO_CODE = bytes.fromhex(
@@ -1450,7 +1583,7 @@ def main() -> int:
     subparsers.add_parser(
         "benchmark", help="load and run the included Sinclair QL Basic benchmark"
     )
-    subparsers.add_parser("keyboard", help="use the Windows terminal keyboard")
+    subparsers.add_parser("keyboard", help="use the computer keyboard in real time")
 
     subparsers.add_parser(
         "sd-info", help="check USB access to the NanoQL/Drive1 microSD folder"

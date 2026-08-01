@@ -39,6 +39,10 @@ Par rapport à QL_MiSTer, NanoQL vise une petite machine autonome et accessible 
 
 Le clavier USB et le hub OTG sont facultatifs. Un PC peut fournir un clavier distant en mode développement.
 
+Le clavier distant NanoQL Link fonctionne sous Windows, macOS et Linux. Sur macOS, la capture temps réel peut nécessiter l'autorisation de Terminal ou Python dans les réglages de confidentialité.
+
+Pour un clavier USB autonome, utilisez de préférence un hub OTG simple ou alimenté : reliez la Tang Nano au connecteur hôte du hub, le clavier à un port USB-A et, si nécessaire, le chargeur uniquement à l'entrée d'alimentation PD. Un dock avec lecteur de cartes ou HDMI peut fonctionner, mais sa topologie USB interne est plus complexe. Ne reliez pas simultanément son connecteur hôte à un ordinateur lorsque la Tang Nano doit piloter le clavier.
+
 ### Installation
 
 Le guide explique pas à pas l'installation sous Windows, macOS et Linux, l'ordre sûr de programmation du FPGA et du BL616, les ROM nécessaires et les procédures de récupération :
@@ -143,6 +147,10 @@ Compared with QL_MiSTer, NanoQL targets a small, approachable standalone machine
 - USB-C cable.
 
 A USB keyboard and OTG hub are optional. A computer can provide a remote keyboard in development mode.
+
+The NanoQL Link remote keyboard works on Windows, macOS, and Linux. On macOS, real-time capture may require granting Terminal or Python permission in the privacy settings.
+
+For a standalone USB keyboard, prefer a simple or powered OTG hub: connect the Tang Nano to the hub's host connector, the keyboard to a USB-A port and, when required, the charger only to the PD power input. A dock with a card reader or HDMI may work, but has a more complex internal USB topology. Do not simultaneously connect its host connector to a computer while the Tang Nano is expected to drive the keyboard.
 
 ### Installation
 

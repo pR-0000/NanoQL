@@ -372,19 +372,30 @@ class NanoQLSetup(tk.Tk):
 
     def _build_firmware_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
+        connection = ttk.LabelFrame(parent, text="USB connection required", padding=10)
+        connection.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 14))
+        ttk.Label(
+            connection,
+            text=(
+                "Connect the Tang Nano 20K directly to this computer with a USB-C "
+                "data cable. This step programs the BL616 through USB."
+            ),
+            wraplength=750,
+        ).pack(anchor="w")
+
         ttk.Label(parent, text="Board revision", style="Section.TLabel").grid(
-            row=0, column=0, sticky="w", pady=(0, 8)
+            row=1, column=0, sticky="w", pady=(0, 8)
         )
         revision = ttk.Combobox(
             parent, textvariable=self.revision, values=("3921", "3923"), state="readonly", width=12
         )
-        revision.grid(row=0, column=1, sticky="w", pady=(0, 8))
+        revision.grid(row=1, column=1, sticky="w", pady=(0, 8))
 
         ttk.Label(parent, text="Firmware mode", style="Section.TLabel").grid(
-            row=1, column=0, sticky="nw", pady=8
+            row=2, column=0, sticky="nw", pady=8
         )
         modes = ttk.Frame(parent)
-        modes.grid(row=1, column=1, sticky="w", pady=8)
+        modes.grid(row=2, column=1, sticky="w", pady=8)
         ttk.Radiobutton(
             modes,
             text="NanoQL: normal operation and NanoQL Link",
@@ -399,18 +410,18 @@ class NanoQLSetup(tk.Tk):
         ).pack(anchor="w")
 
         ttk.Label(parent, text="BL616 bootloader port", style="Section.TLabel").grid(
-            row=2, column=0, sticky="w", pady=8
+            row=3, column=0, sticky="w", pady=8
         )
         self.bl616_port_combo = ttk.Combobox(
             parent, textvariable=self.bl616_port, state="readonly", width=62
         )
-        self.bl616_port_combo.grid(row=2, column=1, sticky="ew", pady=8)
+        self.bl616_port_combo.grid(row=3, column=1, sticky="ew", pady=8)
         ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
-            row=2, column=2, padx=(8, 0), pady=8
+            row=3, column=2, padx=(8, 0), pady=8
         )
 
         actions = ttk.Frame(parent)
-        actions.grid(row=3, column=0, columnspan=2, sticky="w", pady=(18, 8))
+        actions.grid(row=4, column=0, columnspan=2, sticky="w", pady=(18, 8))
         self._button(actions, "Prepare files", self.prepare_firmware).pack(
             side="left", padx=(0, 8)
         )
@@ -430,7 +441,7 @@ class NanoQLSetup(tk.Tk):
                 "and Linux. FlashCube remains available as a Windows fallback."
             ),
             wraplength=760,
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(12, 0))
 
     def _build_storage_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -460,35 +471,46 @@ class NanoQLSetup(tk.Tk):
 
     def _build_fpga_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
+        connection = ttk.LabelFrame(parent, text="USB connection required", padding=10)
+        connection.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 14))
+        ttk.Label(
+            connection,
+            text=(
+                "Connect the Tang Nano 20K directly to this computer with a USB-C "
+                "data cable. This step programs the FPGA through USB."
+            ),
+            wraplength=750,
+        ).pack(anchor="w")
+
         ttk.Label(parent, text="Bitstream", style="Section.TLabel").grid(
-            row=0, column=0, sticky="w", pady=8
+            row=1, column=0, sticky="w", pady=8
         )
         ttk.Entry(parent, textvariable=self.bitstream_path).grid(
-            row=0, column=1, sticky="ew", padx=8, pady=8
+            row=1, column=1, sticky="ew", padx=8, pady=8
         )
         ttk.Button(parent, text="Browse...", command=self._browse_bitstream).grid(
-            row=0, column=2, pady=8
+            row=1, column=2, pady=8
         )
         self._path_row(
-            parent, 1, "FPGA programmer", self.loader_path, self._browse_loader
+            parent, 2, "FPGA programmer", self.loader_path, self._browse_loader
         )
         self._path_row(
-            parent, 2, "Optional Gowin compiler", self.gowin_path, self._browse_gowin
+            parent, 3, "Optional Gowin compiler", self.gowin_path, self._browse_gowin
         )
 
         ttk.Label(parent, text="Programmer connection", style="Section.TLabel").grid(
-            row=3, column=0, sticky="w", pady=8
+            row=4, column=0, sticky="w", pady=8
         )
         ttk.Label(
             parent,
             text="Requires the BL616 ORIGINAL / Sipeed FPGA Partner profile",
-        ).grid(row=3, column=1, sticky="w", padx=8, pady=8)
+        ).grid(row=4, column=1, sticky="w", padx=8, pady=8)
         self._button(parent, "Detect programmer", self.detect_fpga).grid(
-            row=3, column=2, pady=8
+            row=4, column=2, pady=8
         )
 
         actions = ttk.Frame(parent)
-        actions.grid(row=4, column=0, columnspan=3, sticky="w", pady=(18, 8))
+        actions.grid(row=5, column=0, columnspan=3, sticky="w", pady=(18, 8))
         self._button(actions, "Build", self.build_fpga).pack(side="left", padx=(0, 8))
         self._button(actions, "Program SRAM", lambda: self.program_fpga(False)).pack(
             side="left", padx=(0, 8)
@@ -508,7 +530,7 @@ class NanoQLSetup(tk.Tk):
                 "should select NanoQL-*-FPGA.fs and do not need to click Build."
             ),
             wraplength=760,
-        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
     def _build_link_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -546,9 +568,10 @@ class NanoQLSetup(tk.Tk):
             text=(
                 "Connect NanoQL to the computer with a USB data cable, let the FPGA "
                 "start, then briefly press S1. Keep Automatic detection selected or "
-                "choose the NanoQL Link port after clicking Refresh. "
-                "Remote keyboard mode is currently available on Windows; "
-                "press F6 to return control to this assistant."
+                "choose the NanoQL Link port after clicking Refresh. The remote "
+                "keyboard works on Windows, macOS, and Linux. macOS may request "
+                "Input Monitoring or Accessibility permission for Terminal or "
+                "Python. Press F6 to return control to this assistant."
             ),
             wraplength=760,
         ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
@@ -791,12 +814,6 @@ class NanoQLSetup(tk.Tk):
         self._run(self._link_command("status"), "Checking NanoQL Link")
 
     def start_remote_keyboard(self) -> None:
-        if platform.system() != "Windows":
-            messagebox.showinfo(
-                "Remote keyboard",
-                "The low-latency remote keyboard is currently available on Windows only.",
-            )
-            return
         self._run(self._link_command("keyboard"), "Remote keyboard active; press F6 to stop")
 
     def link_stress(self) -> None:

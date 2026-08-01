@@ -95,6 +95,8 @@ Les noms `QL.rom`, `IPC.rom` et `QSound.rom` sont de simples valeurs par défaut
 
 Dans **2. FPGA**, utilisez **Browse** pour sélectionner `NanoQL-*-FPGA.fs`. Une release précompilée ne nécessite ni Gowin EDA ni le bouton **Build**. Tant que FPGA Partner est installé, l'assistant peut appeler openFPGALoader. Équivalent manuel :
 
+Reliez directement la Tang Nano 20K à l'ordinateur avec un câble USB-C de données pendant cette étape : le fichier FPGA est programmé par cette connexion USB, indépendamment de la microSD.
+
 Sous Windows, l'assistant préfère Gowin Programmer lorsqu'il est installé, car il utilise directement le pilote Sipeed/Gowin existant. openFPGALoader reste disponible comme solution de repli. Sous macOS et Linux, openFPGALoader est utilisé par défaut. Cliquez sur **Detect programmer** avant la programmation ; si aucune interface n'est trouvée, restaurez le profil BL616 ORIGINAL, débranchez et rebranchez la carte, puis recommencez.
 
 ```sh
@@ -109,12 +111,13 @@ Dans Gowin EDA, laissez **Use JTAG as regular IO** décoché.
 
 Cette opération vient après le FPGA. Dans **3. BL616** :
 
-1. sélectionnez la révision 3921 ou 3923 ;
-2. sélectionnez le profil **NanoQL** ;
-3. débranchez la carte ;
-4. maintenez **UPDATE**, reconnectez l'USB puis relâchez **UPDATE** ;
-5. cliquez sur **Refresh**, puis choisissez le nouveau port série du bootloader dans la liste ;
-6. cliquez sur **Flash selected firmware**.
+1. reliez la Tang Nano 20K à l'ordinateur avec un câble USB-C de données ; cette étape programme le BL616 par USB ;
+2. sélectionnez la révision 3921 ou 3923 ;
+3. sélectionnez le profil **NanoQL** ;
+4. débranchez la carte ;
+5. maintenez **UPDATE**, reconnectez l'USB puis relâchez **UPDATE** ;
+6. cliquez sur **Refresh**, puis choisissez le nouveau port série du bootloader dans la liste ;
+7. cliquez sur **Flash selected firmware**.
 
 L'assistant installe automatiquement `bflb-mcu-tool-uart`, l'outil UART multiplateforme de Bouffalo Lab. Avec Python 3.13 ou plus récent, il installe aussi le module de compatibilité requis depuis la suppression de `telnetlib`. Sur macOS, le débit prudent par défaut est de 230400 bauds. Commande équivalente :
 
@@ -148,7 +151,7 @@ Pour un essai temporaire sans changer le BL616, NanoQL Link peut charger le fich
 4. Alimentez par USB-C.
 5. Si NanoQL demande des ROM, ouvrez `F12`, choisissez **QL ROM** et **IPC ROM**, puis redémarrez le QL.
 
-Le QL doit démarrer sans clavier ni hub. Pour le développement, connectez la carte au PC, attendez le démarrage du FPGA, appuyez brièvement sur S1 et utilisez l'onglet **4. USB keyboard**.
+Le QL doit démarrer sans clavier ni hub. Pour le développement, connectez la carte à l'ordinateur, attendez le démarrage du FPGA, appuyez brièvement sur S1 et utilisez l'onglet **4. USB keyboard**. Le clavier distant fonctionne sous Windows, macOS et Linux. Sur macOS/Linux, le script installe automatiquement `pynput` lors de la première utilisation. macOS peut demander d'autoriser Terminal ou Python dans **Réglages Système > Confidentialité et sécurité > Surveillance de l'entrée** et **Accessibilité**.
 
 ## English
 
@@ -245,6 +248,8 @@ In **1. ROMs and microSD**:
 
 In **2. FPGA**, use **Browse** to select `NanoQL-*-FPGA.fs`. A precompiled release does not require Gowin EDA or the **Build** button. While FPGA Partner remains installed, the assistant can call openFPGALoader. Manual equivalent:
 
+Connect the Tang Nano 20K directly to the computer with a USB-C data cable during this step: the FPGA file is programmed through this USB connection, independently of the microSD card.
+
 On Windows, the assistant prefers Gowin Programmer when installed because it directly uses the existing Sipeed/Gowin driver. openFPGALoader remains available as a fallback. On macOS and Linux, openFPGALoader is used by default. Click **Detect programmer** before programming; if no interface is found, restore the BL616 ORIGINAL profile, disconnect and reconnect the board, then try again.
 
 ```sh
@@ -259,12 +264,13 @@ Keep Gowin EDA's **Use JTAG as regular IO** option disabled.
 
 Do this after programming the FPGA. In **3. BL616**:
 
-1. select revision 3921 or 3923;
-2. select the **NanoQL** profile;
-3. disconnect the board;
-4. hold **UPDATE**, reconnect USB, then release **UPDATE**;
-5. click **Refresh**, then select the new bootloader serial port from the list;
-6. click **Flash selected firmware**.
+1. connect the Tang Nano 20K to the computer with a USB-C data cable; this step programs the BL616 over USB;
+2. select revision 3921 or 3923;
+3. select the **NanoQL** profile;
+4. disconnect the board;
+5. hold **UPDATE**, reconnect USB, then release **UPDATE**;
+6. click **Refresh**, then select the new bootloader serial port from the list;
+7. click **Flash selected firmware**.
 
 The assistant automatically installs Bouffalo Lab's cross-platform `bflb-mcu-tool-uart` loader. On Python 3.13 or newer it also installs the compatibility module needed since `telnetlib` was removed. macOS uses a conservative default rate of 230400 baud. Command-line equivalent:
 
@@ -298,4 +304,4 @@ For temporary testing without changing BL616 firmware, NanoQL Link can load the 
 4. Power the board through USB-C.
 5. If NanoQL requests ROMs, open `F12`, select **QL ROM** and **IPC ROM**, then restart the QL.
 
-The QL must boot without a keyboard or hub. For development, connect the board to the PC, wait for FPGA startup, briefly press S1, and use the **4. USB keyboard** tab.
+The QL must boot without a keyboard or hub. For development, connect the board to the computer, wait for FPGA startup, briefly press S1, and use the **4. USB keyboard** tab. The remote keyboard works on Windows, macOS, and Linux. On macOS/Linux the script automatically installs `pynput` on first use. macOS may ask you to allow Terminal or Python under **System Settings > Privacy & Security > Input Monitoring** and **Accessibility**.
