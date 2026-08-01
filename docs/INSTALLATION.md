@@ -95,6 +95,8 @@ Les noms `QL.rom`, `IPC.rom` et `QSound.rom` sont de simples valeurs par défaut
 
 Dans **2. FPGA**, utilisez **Browse** pour sélectionner `NanoQL-*-FPGA.fs`. Une release précompilée ne nécessite ni Gowin EDA ni le bouton **Build**. Tant que FPGA Partner est installé, l'assistant peut appeler openFPGALoader. Équivalent manuel :
 
+Sous Windows, l'assistant préfère Gowin Programmer lorsqu'il est installé, car il utilise directement le pilote Sipeed/Gowin existant. openFPGALoader reste disponible comme solution de repli. Sous macOS et Linux, openFPGALoader est utilisé par défaut. Cliquez sur **Detect programmer** avant la programmation ; si aucune interface n'est trouvée, restaurez le profil BL616 ORIGINAL, débranchez et rebranchez la carte, puis recommencez.
+
 ```sh
 openFPGALoader -b tangnano20k -f /chemin/vers/NanoQL-vX.Y.Z-FPGA.fs
 ```
@@ -242,6 +244,8 @@ In **1. ROMs and microSD**:
 ### Program the FPGA
 
 In **2. FPGA**, use **Browse** to select `NanoQL-*-FPGA.fs`. A precompiled release does not require Gowin EDA or the **Build** button. While FPGA Partner remains installed, the assistant can call openFPGALoader. Manual equivalent:
+
+On Windows, the assistant prefers Gowin Programmer when installed because it directly uses the existing Sipeed/Gowin driver. openFPGALoader remains available as a fallback. On macOS and Linux, openFPGALoader is used by default. Click **Detect programmer** before programming; if no interface is found, restore the BL616 ORIGINAL profile, disconnect and reconnect the board, then try again.
 
 ```sh
 openFPGALoader -b tangnano20k -f /path/to/NanoQL-vX.Y.Z-FPGA.fs

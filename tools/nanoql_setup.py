@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import platform
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -94,6 +95,24 @@ def find_openfpgaloader() -> str:
     return next((str(path) for path in candidates if path.is_file()), "")
 
 
+def find_gowin_programmer() -> str:
+    command = shutil.which("programmer_cli") or shutil.which("programmer_cli.exe")
+    if command:
+        return command
+    candidates: list[Path] = []
+    for root in (Path("C:/Gowin"), Path("C:/Program Files/Gowin"),
+                 Path("C:/Program Files (x86)/Gowin")):
+        if root.is_dir():
+            candidates.extend(root.glob("Gowin_*/Programmer/bin/programmer_cli.exe"))
+    return str(sorted(candidates, reverse=True)[0]) if candidates else ""
+
+
+def find_fpga_programmer() -> str:
+    if platform.system() == "Windows":
+        return find_gowin_programmer() or find_openfpgaloader()
+    return find_openfpgaloader() or find_gowin_programmer()
+
+
 def find_homebrew() -> str:
     command = shutil.which("brew")
     if command:
@@ -121,6 +140,72 @@ def find_precompiled_bitstream() -> str:
     return str(preferred)
 
 
+def command_failure_message(command: list[str], output: str, code: int) -> str:
+    executable = Path(command[0]).name.lower()
+    if "openfpgaloader" not in executable:
+        return f"Command failed with exit code {code}"
+
+    lowered = output.lower()
+    if "usb_open() failed" in lowered:
+        if platform.system() == "Windows":
+            return (
+                "openFPGALoader found the Sipeed debugger but its Windows USB "
+                "driver could not be opened. Close every programmer and retry. "
+                "For the simplest Windows setup, select Gowin programmer_cli.exe "
+                "in the FPGA programmer field."
+            )
+        return (
+            "openFPGALoader found the Sipeed debugger but could not access it. "
+            "Close every programmer, reconnect the board, and verify the system "
+            "USB permissions."
+        )
+    if any(marker in lowered for marker in (
+        "device not found",
+        "jtag init failed",
+    )):
+        return (
+            "The Tang Nano programmer was not found. Verify the USB connection and "
+            "the BL616 ORIGINAL (Sipeed FPGA Partner) profile, close every other "
+            "programmer, reconnect the board, then retry detection."
+        )
+    if any(marker in lowered for marker in (
+        "permission denied",
+        "access denied",
+        "libusb_error_access",
+    )):
+        return (
+            "The JTAG USB interface was found but access was denied. Close every "
+            "other programmer. On Linux, install the openFPGALoader udev rules, "
+            "then reconnect the board."
+        )
+    return (
+        f"openFPGALoader failed with exit code {code}. Verify that the BL616 "
+        "ORIGINAL FPGA Partner profile is active and use Detect programmer for details."
+    )
+
+
+def gowin_cable_location(executable: str, channel: int = 1) -> int | None:
+    for scan_mode in ("L", "F"):
+        completed = subprocess.run(
+            [executable, "--scan-cables", scan_mode],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=CREATE_NO_WINDOW,
+        )
+        output = completed.stdout + "\n" + completed.stderr
+        match = re.search(
+            rf"USB Debugger A[^\r\n]*?[/\s]{channel}[/\s]+(\d+)[/\s]",
+            output,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return int(match.group(1))
+    return None
+
+
 class NanoQLSetup(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -142,7 +227,7 @@ class NanoQLSetup(tk.Tk):
         self.link_port = tk.StringVar(value=AUTO_PORT)
         self.ql_layout = tk.StringVar(value="auto")
         self.gowin_path = tk.StringVar(value=find_gowin())
-        self.loader_path = tk.StringVar(value=find_openfpgaloader())
+        self.loader_path = tk.StringVar(value=find_fpga_programmer())
         self.bitstream_path = tk.StringVar(value=find_precompiled_bitstream())
         self.port_devices: dict[str, str] = {}
         self.status = tk.StringVar(value="Ready")
@@ -385,14 +470,25 @@ class NanoQLSetup(tk.Tk):
             row=0, column=2, pady=8
         )
         self._path_row(
-            parent, 1, "openFPGALoader", self.loader_path, self._browse_loader
+            parent, 1, "FPGA programmer", self.loader_path, self._browse_loader
         )
         self._path_row(
             parent, 2, "Optional Gowin compiler", self.gowin_path, self._browse_gowin
         )
 
+        ttk.Label(parent, text="Programmer connection", style="Section.TLabel").grid(
+            row=3, column=0, sticky="w", pady=8
+        )
+        ttk.Label(
+            parent,
+            text="Requires the BL616 ORIGINAL / Sipeed FPGA Partner profile",
+        ).grid(row=3, column=1, sticky="w", padx=8, pady=8)
+        self._button(parent, "Detect programmer", self.detect_fpga).grid(
+            row=3, column=2, pady=8
+        )
+
         actions = ttk.Frame(parent)
-        actions.grid(row=3, column=0, columnspan=3, sticky="w", pady=(18, 8))
+        actions.grid(row=4, column=0, columnspan=3, sticky="w", pady=(18, 8))
         self._button(actions, "Build", self.build_fpga).pack(side="left", padx=(0, 8))
         self._button(actions, "Program SRAM", lambda: self.program_fpga(False)).pack(
             side="left", padx=(0, 8)
@@ -412,7 +508,7 @@ class NanoQLSetup(tk.Tk):
                 "should select NanoQL-*-FPGA.fs and do not need to click Build."
             ),
             wraplength=760,
-        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
     def _build_link_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -556,7 +652,9 @@ class NanoQLSetup(tk.Tk):
             self.gowin_path.set(path)
 
     def _browse_loader(self) -> None:
-        path = filedialog.askopenfilename(title="Select openFPGALoader")
+        path = filedialog.askopenfilename(
+            title="Select Gowin programmer_cli or openFPGALoader"
+        )
         if path:
             self.loader_path.set(path)
 
@@ -656,13 +754,20 @@ class NanoQLSetup(tk.Tk):
         )
 
     def check_requirements(self) -> None:
-        loader = find_openfpgaloader()
-        if loader:
-            self.loader_path.set(loader)
+        programmer = find_fpga_programmer()
+        openfpga = find_openfpgaloader()
+        gowin = find_gowin_programmer()
+        if programmer:
+            self.loader_path.set(programmer)
         system = platform.system()
         python_state = f"Python {platform.python_version()}: ready"
-        loader_state = (
-            f"openFPGALoader: {loader}" if loader else "openFPGALoader: not found"
+        programmer_state = (
+            f"Selected FPGA programmer: {programmer}"
+            if programmer else "FPGA programmer: not found"
+        )
+        alternatives = (
+            f"Gowin Programmer: {gowin or 'not found'}\n"
+            f"openFPGALoader: {openfpga or 'not found'}"
         )
         flash_state = (
             "BL616 tool: "
@@ -670,7 +775,8 @@ class NanoQLSetup(tk.Tk):
             + "; native UART flashing is supported on Windows, macOS, and Linux"
         )
         self.requirements_text.set(
-            f"Operating system: {system}\n{python_state}\n{loader_state}\n{flash_state}"
+            f"Operating system: {system}\n{python_state}\n{programmer_state}\n"
+            f"{alternatives}\n{flash_state}"
         )
 
     def _link_command(self, command: str) -> list[str]:
@@ -850,7 +956,8 @@ class NanoQLSetup(tk.Tk):
         bitstream = Path(self.bitstream_path.get())
         if not loader or not Path(loader).is_file():
             messagebox.showerror(
-                "openFPGALoader not found", "Select a valid openFPGALoader executable."
+                "FPGA programmer not found",
+                "Select a valid Gowin programmer_cli or openFPGALoader executable.",
             )
             return
         if not bitstream.is_file():
@@ -860,11 +967,59 @@ class NanoQLSetup(tk.Tk):
                 "NanoQL-*-FPGA.fs file from the release, or build NanoQL first.",
             )
             return
-        command = [loader, "-b", "tangnano20k"]
-        if persistent:
-            command.append("-f")
-        command.append(str(bitstream))
+        if "openfpgaloader" in Path(loader).name.lower():
+            command = [loader, "-b", "tangnano20k"]
+            if persistent:
+                command.extend(["-f", "--external-flash"])
+            command.append(str(bitstream))
+        else:
+            location = gowin_cable_location(loader)
+            if location is None:
+                messagebox.showerror(
+                    "FPGA programmer not found",
+                    "Gowin Programmer could not detect USB Debugger A/1. Close "
+                    "other programmers, reconnect the board, and verify that the "
+                    "BL616 ORIGINAL profile is running.",
+                )
+                return
+            command = [
+                loader,
+                "--device", "GW2AR-18C",
+                "--operation_index", "8" if persistent else "2",
+                "--fsFile", str(bitstream),
+                "--frequency", "2.5MHz",
+                "--cable-index", "4",
+                "--channel", "1",
+                "--location", str(location),
+            ]
         self._run(command, "Programming Flash" if persistent else "Programming SRAM")
+
+    def detect_fpga(self) -> None:
+        loader = self.loader_path.get()
+        if not loader or not Path(loader).is_file():
+            messagebox.showerror(
+                "FPGA programmer not found",
+                "Select a valid Gowin programmer_cli or openFPGALoader executable.",
+            )
+            return
+        if "openfpgaloader" in Path(loader).name.lower():
+            self._run(
+                [loader, "-b", "tangnano20k", "--detect"],
+                "Detecting programmer",
+            )
+            return
+        location = gowin_cable_location(loader)
+        if location is None:
+            messagebox.showerror(
+                "FPGA programmer not found",
+                "Gowin Programmer could not detect USB Debugger A/1. Close other "
+                "programmers, reconnect the board, and verify the BL616 ORIGINAL profile.",
+            )
+            return
+        self._append_log(
+            f"Gowin USB Debugger A/1/{location}/null detected.\n"
+        )
+        self.status.set("Programmer detected")
 
     def _run(self, command: list[str], title: str, callback=None) -> None:
         self._run_commands([command], title, callback)
@@ -880,6 +1035,7 @@ class NanoQLSetup(tk.Tk):
             try:
                 for command in commands:
                     self.events.put(("log", f"\n> {' '.join(command)}\n"))
+                    output_lines: list[str] = []
                     process = subprocess.Popen(
                         command,
                         cwd=REPOSITORY,
@@ -892,10 +1048,13 @@ class NanoQLSetup(tk.Tk):
                     )
                     assert process.stdout is not None
                     for line in process.stdout:
+                        output_lines.append(line)
                         self.events.put(("log", line))
                     code = process.wait()
                     if code:
-                        raise RuntimeError(f"Command failed with exit code {code}")
+                        raise RuntimeError(
+                            command_failure_message(command, "".join(output_lines), code)
+                        )
                 self.events.put(("done", (title, callback)))
             except Exception as error:
                 self.events.put(("error", (title, str(error))))

@@ -63,6 +63,8 @@ Ordre impératif pour une première installation :
 
 Gowin Programmer n'est pas obligatoire : openFPGALoader peut programmer le FPGA. Gowin EDA est uniquement nécessaire pour compiler le cœur depuis les sources.
 
+Sous Windows, l'assistant préfère automatiquement Gowin Programmer lorsqu'il est installé et conserve openFPGALoader comme solution de repli. Sous macOS et Linux, il utilise openFPGALoader. Le bouton **Detect programmer** vérifie la connexion avant la programmation.
+
 NanoQL ne redistribue aucune ROM. L'utilisateur doit fournir légalement une ROM QL de 48 ou 64 Kio et un firmware IPC de 2 Kio.
 
 ### Dossiers Microdrive
@@ -165,6 +167,8 @@ Mandatory first-install order:
 3. install NanoQL BL616 firmware last.
 
 Gowin Programmer is optional because openFPGALoader can program the FPGA. Gowin EDA is only needed to compile the core from source.
+
+On Windows, the assistant automatically prefers Gowin Programmer when installed and keeps openFPGALoader as a fallback. On macOS and Linux, it uses openFPGALoader. **Detect programmer** checks the connection before programming.
 
 NanoQL does not redistribute ROMs. Users must legally supply a 48 or 64 KiB QL ROM and a 2 KiB IPC firmware.
 
