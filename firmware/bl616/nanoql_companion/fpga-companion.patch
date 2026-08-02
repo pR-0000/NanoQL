@@ -225,10 +225,23 @@ index bf062aa..21409f7 100644
  
  #endif // GOWIN_H
 diff --git a/src/inifile.c b/src/inifile.c
-index 5f5fb8e..ac0732e 100644
+index 5f5fb8e..98d87db 100644
 --- a/src/inifile.c
 +++ b/src/inifile.c
-@@ -52,6 +52,21 @@ int inifile_read(char *name) {
+@@ -12,6 +12,12 @@
+ #include "config.h"
+ #include "debug.h"
+ 
++#ifdef NANOQL_COMPANION
++#include <FreeRTOS.h>
++#include <queue.h>
++#include <task.h>
++#endif
++
+ static int iswhite(char c) {
+   return c == ' ' || c == '\r' || c == '\n' || c == '\t';
+ }
+@@ -52,6 +58,21 @@ int inifile_read(char *name) {
  
    sdc_lock();  // get exclusive access to the file system
  
@@ -250,7 +263,7 @@ index 5f5fb8e..ac0732e 100644
    FIL fil;
    if(f_open(&fil, filename, FA_OPEN_EXISTING | FA_READ) == FR_OK) {
      char buffer[FF_LFN_BUF+10];
-@@ -180,10 +195,32 @@ void inifile_write(char *name) {
+@@ -180,10 +201,32 @@ void inifile_write(char *name) {
    ini_debugf("Write settings to %s", filename);
    
    sdc_lock();  // get exclusive access to the file system
@@ -284,7 +297,7 @@ index 5f5fb8e..ac0732e 100644
      f_puts("; FPGA Companion settings\n", &file);
  
      // write variable values
-@@ -214,6 +251,14 @@ void inifile_write(char *name) {
+@@ -214,6 +257,14 @@ void inifile_write(char *name) {
        char *cwd = sdc_get_cwd(drive);
        char *image = sdc_get_image_name(drive);
  
@@ -299,7 +312,7 @@ index 5f5fb8e..ac0732e 100644
        if(cwd && image) {
  	char str[strlen(cwd) + strlen(image) + 12];
  #ifdef INIFILE_PREFIX
-@@ -230,9 +275,36 @@ void inifile_write(char *name) {
+@@ -230,10 +281,91 @@ void inifile_write(char *name) {
  
      f_puts("\n", &file);
      
@@ -338,6 +351,74 @@ index 5f5fb8e..ac0732e 100644
    vPortFree(filename);
    sdc_unlock();
  }
++
++#ifdef NANOQL_COMPANION
++#define INIFILE_ASYNC_NAME_LENGTH 64
++
++typedef struct {
++  char name[INIFILE_ASYNC_NAME_LENGTH];
++} inifile_async_request_t;
++
++static QueueHandle_t inifile_async_queue;
++static TaskHandle_t inifile_async_task_handle;
++
++static void inifile_async_task(void *parameter) {
++  (void)parameter;
++  inifile_async_request_t request;
++
++  for(;;) {
++    if(xQueueReceive(inifile_async_queue, &request, portMAX_DELAY) == pdTRUE) {
++      // Keep only the latest menu state if several key presses arrived while
++      // the card was busy. The synchronous writer takes the filesystem lock.
++      inifile_async_request_t newer;
++      while(xQueueReceive(inifile_async_queue, &newer, 0) == pdTRUE)
++        request = newer;
++      inifile_write(request.name);
++    }
++  }
++}
++
++void inifile_write_async(const char *name) {
++  if(!name || strlen(name) >= INIFILE_ASYNC_NAME_LENGTH) {
++    ini_debugf("Unable to queue settings write");
++    return;
++  }
++
++  if(!inifile_async_queue) {
++    inifile_async_queue = xQueueCreate(1, sizeof(inifile_async_request_t));
++    if(!inifile_async_queue ||
++       xTaskCreate(inifile_async_task, "INI save", 2048, NULL,
++                   configMAX_PRIORITIES - 5,
++                   &inifile_async_task_handle) != pdPASS) {
++      if(inifile_async_queue) {
++        vQueueDelete(inifile_async_queue);
++        inifile_async_queue = NULL;
++      }
++      inifile_async_task_handle = NULL;
++      ini_debugf("Unable to start settings writer");
++      return;
++    }
++  }
++
++  inifile_async_request_t request;
++  strcpy(request.name, name);
++  (void)xQueueOverwrite(inifile_async_queue, &request);
++}
++#endif
+diff --git a/src/inifile.h b/src/inifile.h
+index 736d105..7bbfdce 100644
+--- a/src/inifile.h
++++ b/src/inifile.h
+@@ -10,6 +10,9 @@
+ 
+ int inifile_read(char *);
+ void inifile_write(char *);
++#ifdef NANOQL_COMPANION
++void inifile_write_async(const char *);
++#endif
+ int inifile_option_get(int id);
+ 
+ #endif // INIFILE_H
 diff --git a/src/jtag.c b/src/jtag.c
 index ff136f6..6ee5216 100644
 --- a/src/jtag.c
@@ -614,7 +695,10 @@ index 1964d93..bb73e3f 100644
      sdc_debugf("%s %d: closing file '%s'", (drive < MAX_DRIVES)?"DRV":"IMG",
  	       (drive < MAX_DRIVES)?drive:(drive-MAX_DRIVES),
  	       image_name[drive]?image_name[drive]:"<unknown>");
-@@ -717,4 +761,9 @@ int sdc_image_open(int drive, char *name) {
+@@ -714,7 +758,12 @@ int sdc_image_open(int drive, char *name) {
+     
+     sdc_debugf("DRV %d: Mounting %s", drive, fname);
+     
 -    if(f_open(&fil[drive], fname, FA_OPEN_EXISTING | FA_READ) != 0) {
 +    BYTE open_mode = FA_OPEN_EXISTING | FA_READ;
 +#ifdef NANOQL_COMPANION
@@ -672,7 +756,7 @@ index 3e1ba7f..b87d955 100644
  sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *exts);
  int sdc_handle_event(void);
 diff --git a/src/sysctrl.c b/src/sysctrl.c
-index 8a1d83e..2d57e93 100644
+index 8a1d83e..0c79a1f 100644
 --- a/src/sysctrl.c
 +++ b/src/sysctrl.c
 @@ -269,7 +269,7 @@ static void sys_handle_event(bool ignore_coldboot) {
@@ -693,3 +777,15 @@ index 8a1d83e..2d57e93 100644
        // Check for USB-JTAG activity and don't reset (and thus break
        // the JTAG activity)
        if(mcu_hw_jtag_is_active()) {
+@@ -379,7 +379,11 @@ void sys_run_action(config_action_t *action) {
+       
+     case CONFIG_ACTION_COMMAND_SAVE:
+       sys_debugf("SAVE %s", command->filename);
++#ifdef NANOQL_COMPANION
++      inifile_write_async(command->filename);
++#else
+       inifile_write(command->filename);
++#endif
+       break;
+       
+     case CONFIG_ACTION_COMMAND_HIDE:

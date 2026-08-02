@@ -767,49 +767,62 @@ class NanoQLLink:
             + checksum.to_bytes(4, "big")
             + path
         )
-        self.transact(begin)
-        sent = 0
+        # Some microSD cards pause for several seconds while allocating or
+        # erasing an internal flash block. The normal two-second interactive
+        # timeout is too short for filesystem writes, especially through the
+        # macOS CDC driver. Reads still complete as soon as data is available.
+        normal_timeout = self.serial.timeout
+        self.serial.timeout = max(float(normal_timeout or 0), 15.0)
         try:
-            with source.open("rb") as stream:
-                while True:
-                    block = stream.read(240)
-                    if not block:
-                        break
-                    response = self.transact(
-                        bytes((CMD_FS_PUT_DATA,))
-                        + sent.to_bytes(4, "big")
-                        + block
-                    )
-                    acknowledged = int.from_bytes(response, "big")
-                    sent += len(block)
-                    if len(response) != 4 or acknowledged != sent:
-                        raise RuntimeError("NanoQL Drive1 acknowledged an invalid offset.")
-                    percent = 100 if size == 0 else sent * 100 // size
-                    print(f"\rDrive1 upload: {percent:3d}%", end="", flush=True)
-            print("\nVerifying the upload on microSD...", flush=True)
-            # Commit closes, reopens, and CRC-checks the file on microSD.
-            # A full MDV image can take longer than the normal link timeout.
-            previous_timeout = self.serial.timeout
-            self.serial.timeout = 30.0
+            self.transact(begin)
+            sent = 0
             try:
+                with source.open("rb") as stream:
+                    while True:
+                        block = stream.read(240)
+                        if not block:
+                            break
+                        response = self.transact(
+                            bytes((CMD_FS_PUT_DATA,))
+                            + sent.to_bytes(4, "big")
+                            + block
+                        )
+                        acknowledged = int.from_bytes(response, "big")
+                        sent += len(block)
+                        if len(response) != 4 or acknowledged != sent:
+                            raise RuntimeError(
+                                "NanoQL Drive1 acknowledged an invalid offset."
+                            )
+                        percent = 100 if size == 0 else sent * 100 // size
+                        print(
+                            f"\rDrive1 upload: {percent:3d}%",
+                            end="", flush=True,
+                        )
+                print("\nVerifying the upload on microSD...", flush=True)
+                # Commit closes, reopens, and CRC-checks the complete file.
+                self.serial.timeout = max(self.serial.timeout, 60.0)
                 response = self.transact(bytes((CMD_FS_PUT_COMMIT,)))
-            finally:
-                self.serial.timeout = previous_timeout
-            if len(response) != 8:
-                raise RuntimeError("Invalid NanoQL Drive1 upload verification response.")
-            remote_size = int.from_bytes(response[:4], "big")
-            remote_crc = int.from_bytes(response[4:8], "big")
-            if remote_size != size or remote_crc != checksum:
-                raise RuntimeError("NanoQL Drive1 returned a different size or CRC32.")
-            if size == 0:
-                print("\rDrive1 upload: 100%", end="", flush=True)
-            print()
-        except Exception:
-            try:
-                self.filesystem_cancel()
+                if len(response) != 8:
+                    raise RuntimeError(
+                        "Invalid NanoQL Drive1 upload verification response."
+                    )
+                remote_size = int.from_bytes(response[:4], "big")
+                remote_crc = int.from_bytes(response[4:8], "big")
+                if remote_size != size or remote_crc != checksum:
+                    raise RuntimeError(
+                        "NanoQL Drive1 returned a different size or CRC32."
+                    )
+                if size == 0:
+                    print("\rDrive1 upload: 100%", end="", flush=True)
+                print()
             except Exception:
-                pass
-            raise
+                try:
+                    self.filesystem_cancel()
+                except Exception:
+                    pass
+                raise
+        finally:
+            self.serial.timeout = normal_timeout
 
     def filesystem_get(self, remote_path: str, destination: Path) -> None:
         path = remote_path_bytes(remote_path)

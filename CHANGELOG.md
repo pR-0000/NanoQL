@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.4 - 2026-08-02
+
+- Queues overlay configuration saves in a dedicated BL616 task so slow microSD synchronization cannot block menu input or trap a held Enter key.
+- Coalesces repeated option changes while a previous settings write is still running.
+- Allows slow microSD allocation and erase pauses during NanoQL Link uploads without treating them as a missing BL616 response on macOS.
+- Updates the visible overlay title to `NanoQL v0.2.4`, making stale persistent FPGA installations immediately identifiable.
+
 ## v0.2.3 - 2026-08-02
 
 - Saves overlay settings through an atomic `nanoql.ini.tmp` replacement instead of truncating the active configuration in place.
