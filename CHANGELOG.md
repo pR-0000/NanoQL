@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.6 - 2026-08-02
+
+- Stops Gowin `programmer_cli` after its final status when affected versions remain resident and would lock USB Debugger A/1 for subsequent attempts.
+- Reports stale programmer processes, a changed cable location, and the required BL616 ORIGINAL profile directly in the setup assistant.
+- Probes the FPGA external Flash before erasing it and bounds Gowin detection/programming time so a failed SPI handover cannot hang indefinitely.
+- Keeps macOS Terminal echo enabled so Secure Keyboard Entry cannot block `pynput`, while still flushing buffered input when the remote keyboard exits.
+- Reconciles macOS remote-keyboard state with Quartz so a missed key-release event cannot leave a repeating key or modifier stuck in the QL matrix.
+- Resets only the QL after `mdv-sync`, keeping NanoQL Link and the remote keyboard active on the same serial port.
+
 ## v0.2.5 - 2026-08-02
 
 - Returns the BL616 automatically to normal Companion mode after `mdv-sync`, avoiding a QL left on the `BL616 IS HOLDING RESET` startup screen.

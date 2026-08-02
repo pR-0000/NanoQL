@@ -814,10 +814,8 @@ static uint8_t fs_command(
                 return 25;
             }
             inifile_write("nanoql.ini");
-            /* Return to autonomous Companion mode after process_frame() has
-               acknowledged the command. Reboot initialization remounts the
-               image and performs a clean QL reset; an XML reset action from
-               the CDC task could leave the FPGA reset asserted. */
+            /* Pulse the QL reset only after process_frame() has acknowledged
+               the command. Keep NanoQL Link active for the remote keyboard. */
             microdrive_reset_pending = true;
         } else {
             return 3;
@@ -1159,9 +1157,14 @@ static void link_task(void *argument)
                 microdrive_reset_pending = false;
                 while (usb_ready && usb_tx_busy)
                     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
+                debugf("NanoQL: MDV1 synchronized, resetting QL");
+                sys_set_val('R', 1);
                 vTaskDelay(pdMS_TO_TICKS(50));
-                debugf("NanoQL: MDV1 synchronized, returning to Companion");
-                mcu_hw_reset();
+                sys_set_val('R', 0);
+                vTaskDelay(pdMS_TO_TICKS(10));
+                /* An idempotent release protects against a transient SPI
+                   arbitration delay while the new image is mounted. */
+                sys_set_val('R', 0);
             }
             break;
         }

@@ -142,10 +142,24 @@ def find_precompiled_bitstream() -> str:
 
 def command_failure_message(command: list[str], output: str, code: int) -> str:
     executable = Path(command[0]).name.lower()
+    lowered = output.lower()
+    if "programmer_cli" in executable:
+        if "cable failed to open via the location" in lowered:
+            return (
+                "Gowin found USB Debugger A/1 but could not open it. Close any "
+                "Gowin Programmer or stale programmer_cli process, reconnect the "
+                "Tang Nano, click Detect programmer again, and retry. Also verify "
+                "that the BL616 ORIGINAL / Sipeed FPGA Partner profile is active; "
+                "the NanoQL profile does not expose JTAG."
+            )
+        return (
+            f"Gowin Programmer failed with exit code {code}. Close every programmer, "
+            "reconnect the board, verify the BL616 ORIGINAL profile, then click "
+            "Detect programmer before retrying."
+        )
     if "openfpgaloader" not in executable:
         return f"Command failed with exit code {code}"
 
-    lowered = output.lower()
     if "usb_open() failed" in lowered:
         if platform.system() == "Windows":
             return (
@@ -186,15 +200,19 @@ def command_failure_message(command: list[str], output: str, code: int) -> str:
 
 def gowin_cable_location(executable: str, channel: int = 1) -> int | None:
     for scan_mode in ("L", "F"):
-        completed = subprocess.run(
-            [executable, "--scan-cables", scan_mode],
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            creationflags=CREATE_NO_WINDOW,
-        )
+        try:
+            completed = subprocess.run(
+                [executable, "--scan-cables", scan_mode],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=CREATE_NO_WINDOW,
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            continue
         output = completed.stdout + "\n" + completed.stderr
         match = re.search(
             rf"USB Debugger A[^\r\n]*?[/\s]{channel}[/\s]+(\d+)[/\s]",
@@ -614,8 +632,8 @@ class NanoQLSetup(tk.Tk):
                 "Optional developer workflow: start NanoQL, briefly press S1 to expose "
                 "NanoQL Link, then synchronize. Normal users can instead copy folders to "
                 "NanoQL/Microdrives on the microSD and select Build MDV1 from: in the F12 "
-                "overlay. After synchronization, the BL616 automatically returns to "
-                "normal Companion mode; the serial port disappears while the QL restarts."
+                "overlay. After synchronization, only the QL restarts; NanoQL Link and "
+                "the remote keyboard remain available on the same serial port."
             ),
             wraplength=760,
         ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
@@ -1017,6 +1035,18 @@ class NanoQLSetup(tk.Tk):
                 "--channel", "1",
                 "--location", str(location),
             ]
+            if persistent:
+                probe = [
+                    loader,
+                    "--device", "GW2AR-18C",
+                    "--operation_index", "51",
+                    "--frequency", "2.5MHz",
+                    "--cable-index", "4",
+                    "--channel", "1",
+                    "--location", str(location),
+                ]
+                self._run_commands([probe, command], "Programming Flash")
+                return
         self._run(command, "Programming Flash" if persistent else "Programming SRAM")
 
     def detect_fpga(self) -> None:
@@ -1072,13 +1102,57 @@ class NanoQLSetup(tk.Tk):
                         creationflags=CREATE_NO_WINDOW,
                     )
                     assert process.stdout is not None
+                    is_gowin_cli = "programmer_cli" in Path(command[0]).name.lower()
+                    timed_out = threading.Event()
+                    watchdog = None
+                    if is_gowin_cli:
+                        try:
+                            operation_at = command.index("--operation_index")
+                            operation = command[operation_at + 1]
+                        except (ValueError, IndexError):
+                            operation = "unknown"
+                        timeout_seconds = 20.0 if operation == "51" else 120.0
+
+                        def stop_stalled_programmer() -> None:
+                            if process.poll() is None:
+                                timed_out.set()
+                                process.kill()
+
+                        watchdog = threading.Timer(
+                            timeout_seconds, stop_stalled_programmer
+                        )
+                        watchdog.daemon = True
+                        watchdog.start()
                     for line in process.stdout:
                         output_lines.append(line)
                         self.events.put(("log", line))
+                        if is_gowin_cli and re.search(
+                            r"\bCost\s+[0-9.]+\s+second\(s\)", line
+                        ):
+                            try:
+                                process.wait(timeout=2.0)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                            break
+                    if watchdog is not None:
+                        watchdog.cancel()
                     code = process.wait()
+                    output = "".join(output_lines)
+                    if timed_out.is_set():
+                        raise RuntimeError(
+                            f"Gowin operation {operation} did not terminate after "
+                            f"{int(timeout_seconds)} seconds. It was stopped so it "
+                            "cannot lock the USB cable. Power-cycle the Tang Nano, "
+                            "verify the BL616 ORIGINAL profile, and retry detection."
+                        )
+                    if is_gowin_cli and code and "error:" not in output.lower():
+                        # Some Gowin CLI versions print their final Cost line but
+                        # remain alive. Killing that already-finished process is
+                        # not a programming failure when no error was reported.
+                        code = 0
                     if code:
                         raise RuntimeError(
-                            command_failure_message(command, "".join(output_lines), code)
+                            command_failure_message(command, output, code)
                         )
                 self.events.put(("done", (title, callback)))
             except Exception as error:

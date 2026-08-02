@@ -1203,10 +1203,16 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
 
     if sys.platform == "darwin":
         try:
-            from Quartz import AXIsProcessTrusted
+            from Quartz import (
+                AXIsProcessTrusted,
+                CGEventSourceKeyState,
+                kCGEventSourceStateCombinedSessionState,
+            )
             trusted = bool(AXIsProcessTrusted())
         except ImportError:
             trusted = True
+            CGEventSourceKeyState = None
+            kCGEventSourceStateCombinedSessionState = None
         if not trusted:
             raise RuntimeError(
                 "macOS has not authorized keyboard monitoring for this process. "
@@ -1247,7 +1253,7 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
 
     input_events: queue.Queue[tuple[bool, object]] = queue.Queue()
     active_keys: dict[object, tuple[set[int], bool, float]] = {}
-    active_modifiers: set[int] = set()
+    active_modifiers: dict[object, tuple[int, float]] = {}
     pending_releases: dict[object, float] = {}
     remote_pressed: set[int] = set()
     stopping = False
@@ -1257,6 +1263,7 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
     terminal_fd: int | None = None
     terminal_attributes = None
     terminal_module = None
+    terminal_echo_changed = False
     if sys.stdin.isatty():
         try:
             import termios
@@ -1264,10 +1271,12 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
             terminal_fd = sys.stdin.fileno()
             terminal_module = termios
             terminal_attributes = termios.tcgetattr(terminal_fd)
-            quiet_attributes = list(terminal_attributes)
-            quiet_attributes[3] &= ~(termios.ECHO | termios.ECHONL)
             termios.tcflush(terminal_fd, termios.TCIFLUSH)
-            termios.tcsetattr(terminal_fd, termios.TCSANOW, quiet_attributes)
+            if sys.platform != "darwin":
+                quiet_attributes = list(terminal_attributes)
+                quiet_attributes[3] &= ~(termios.ECHO | termios.ECHONL)
+                termios.tcsetattr(terminal_fd, termios.TCSANOW, quiet_attributes)
+                terminal_echo_changed = True
         except (ImportError, OSError):
             terminal_fd = None
             terminal_attributes = None
@@ -1292,7 +1301,7 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
             desired.update(usages)
             translated_active |= translated
         if not translated_active:
-            desired.update(active_modifiers)
+            desired.update(usage for usage, _pressed_at in active_modifiers.values())
 
         ql_modifiers = {0x68, 0x69, 0x6A, 0x6C, 0x6D, 0x6E}
         releases = remote_pressed - desired
@@ -1332,6 +1341,47 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
             return True
         return False
 
+    def mac_virtual_key(key) -> int | None:
+        value = getattr(key, "value", key)
+        virtual_key = getattr(value, "vk", None)
+        return virtual_key if isinstance(virtual_key, int) else None
+
+    def release_lost_macos_keys() -> bool:
+        if sys.platform != "darwin" or CGEventSourceKeyState is None:
+            return False
+        now = time.monotonic()
+        changed = False
+        for key, (_usages, _translated, pressed_at) in tuple(active_keys.items()):
+            virtual_key = mac_virtual_key(key)
+            if virtual_key is None or now - pressed_at < 0.15:
+                continue
+            try:
+                physically_pressed = bool(CGEventSourceKeyState(
+                    kCGEventSourceStateCombinedSessionState, virtual_key
+                ))
+            except Exception:
+                return False
+            if not physically_pressed:
+                pending_releases.pop(key, None)
+                active_keys.pop(key, None)
+                changed = True
+        for key, (_usage, pressed_at) in tuple(active_modifiers.items()):
+            virtual_key = mac_virtual_key(key)
+            if virtual_key is None or now - pressed_at < 0.15:
+                continue
+            try:
+                physically_pressed = bool(CGEventSourceKeyState(
+                    kCGEventSourceStateCombinedSessionState, virtual_key
+                ))
+            except Exception:
+                return False
+            if not physically_pressed:
+                active_modifiers.pop(key, None)
+                changed = True
+        if changed:
+            reconcile()
+        return changed
+
     print(f"NanoQL keyboard active (QL {link.ql_layout.upper()} profile). "
           "Keys are held in real time; press F6 to return to the terminal.")
     try:
@@ -1339,6 +1389,7 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
         listener.start()
         while listener.is_alive() or not input_events.empty() or pending_releases:
             finish_due_releases()
+            release_lost_macos_keys()
             try:
                 pressed, key = input_events.get(timeout=0.005)
             except queue.Empty:
@@ -1349,9 +1400,9 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
             modifier = modifier_usages.get(key)
             if modifier is not None:
                 if pressed:
-                    active_modifiers.add(modifier)
+                    active_modifiers[key] = (modifier, time.monotonic())
                 else:
-                    active_modifiers.discard(modifier)
+                    active_modifiers.pop(key, None)
             elif pressed:
                 pending_releases.pop(key, None)
                 if key in active_keys:
@@ -1390,16 +1441,20 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
             ) from error
         raise
     finally:
-        for usage in tuple(remote_pressed):
-            link.key_event(usage, False)
         if terminal_fd is not None and terminal_attributes is not None:
             try:
                 terminal_module.tcflush(terminal_fd, terminal_module.TCIFLUSH)
-                terminal_module.tcsetattr(
-                    terminal_fd, terminal_module.TCSANOW, terminal_attributes
-                )
+                if terminal_echo_changed:
+                    terminal_module.tcsetattr(
+                        terminal_fd, terminal_module.TCSANOW, terminal_attributes
+                    )
             except (OSError, terminal_module.error):
                 pass
+        for usage in tuple(remote_pressed):
+            try:
+                link.key_event(usage, False)
+            except (OSError, RuntimeError, TimeoutError):
+                break
 
 
 def interactive_keyboard(link: NanoQLLink) -> None:
@@ -1604,10 +1659,13 @@ def find_native_programmer(explicit: Path | None) -> tuple[str, Path]:
 
 def detect_gowin_location(executable: Path, channel: int) -> int | None:
     for scan_mode in ("L", "F"):
-        completed = subprocess.run(
-            [str(executable), "--scan-cables", scan_mode],
-            check=False, capture_output=True, text=True,
-        )
+        try:
+            completed = subprocess.run(
+                [str(executable), "--scan-cables", scan_mode],
+                check=False, capture_output=True, text=True, timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            continue
         output = completed.stdout + "\n" + completed.stderr
         match = re.search(
             rf"USB Debugger A[^\r\n]*?[/\s]{channel}[/\s]+(\d+)[/\s]",
@@ -1640,15 +1698,19 @@ def program_fpga_flash_native(bitstream: Path, tool: Path | None,
                 "--location, for example --location 82977."
             )
         output_file = Path(tempfile.gettempdir()) / "nanoql_gowin_programmer.txt"
-        command = [
+        common = [
             str(executable),
             "--device", "GW2AR-18C",
-            "--operation_index", "8",
-            "--fsFile", str(bitstream),
             "--frequency", frequency,
             "--cable-index", "4",
             "--channel", str(channel),
             "--location", str(location),
+        ]
+        probe = common + ["--operation_index", "51"]
+        command = [
+            *common,
+            "--operation_index", "8",
+            "--fsFile", str(bitstream),
             "--output", str(output_file),
         ]
     else:
@@ -1660,8 +1722,29 @@ def program_fpga_flash_native(bitstream: Path, tool: Path | None,
     print(f"Native programmer: {executable}")
     if backend == "gowin":
         print(f"Target cable: USB Debugger A/{channel}/{location}/null")
+        print("Checking the external FPGA Flash...")
+        try:
+            probe_result = subprocess.run(probe, check=False, timeout=20)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(
+                "Gowin could not detect the external FPGA Flash within 20 seconds. "
+                "Power-cycle the board and verify the BL616 ORIGINAL profile."
+            ) from error
+        if probe_result.returncode:
+            raise RuntimeError(
+                "Gowin could not detect the external FPGA Flash. Power-cycle the "
+                "board, close every programmer, and verify the BL616 ORIGINAL profile."
+            )
     print(f"Programming {bitstream.name}...")
-    completed = subprocess.run(command, check=False)
+    try:
+        completed = subprocess.run(
+            command, check=False, timeout=120 if backend == "gowin" else None
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(
+            "Gowin external-Flash programming did not start within 120 seconds. "
+            "The stalled programmer was stopped; power-cycle the board before retrying."
+        ) from error
     if completed.returncode:
         if output_file is not None and output_file.is_file():
             print(output_file.read_text(encoding="utf-8", errors="replace"))
@@ -2053,8 +2136,7 @@ def main() -> int:
                 link.microdrive_sync_control(True)
             print(
                 "MDV1 synchronized, mounted, and saved for future boots. "
-                "The BL616 is returning to normal Companion mode and will "
-                "restart the QL; the NanoQL Link port will disconnect."
+                "The QL has been restarted and NanoQL Link remains active."
             )
         elif args.command == "mdv-extract":
             remote_path_bytes(args.source)
