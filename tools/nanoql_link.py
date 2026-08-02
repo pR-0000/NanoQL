@@ -1166,6 +1166,20 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pynput"])
         from pynput import keyboard
 
+    if sys.platform == "darwin":
+        try:
+            from Quartz import AXIsProcessTrusted
+            trusted = bool(AXIsProcessTrusted())
+        except ImportError:
+            trusted = True
+        if not trusted:
+            raise RuntimeError(
+                "macOS has not authorized keyboard monitoring for this process. "
+                "Allow Terminal and, if listed separately, the Python executable "
+                f"{sys.executable!r} in System Settings > Privacy & Security > "
+                "Input Monitoring and Accessibility, then restart Terminal."
+            )
+
     def key_named(name: str):
         return getattr(keyboard.Key, name, None)
 
@@ -1197,11 +1211,13 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
             modifier_usages[key] = usage
 
     input_events: queue.Queue[tuple[bool, object]] = queue.Queue()
-    active_keys: dict[object, tuple[set[int], bool]] = {}
+    active_keys: dict[object, tuple[set[int], bool, float]] = {}
     active_modifiers: set[int] = set()
+    pending_releases: dict[object, float] = {}
     remote_pressed: set[int] = set()
     stopping = False
     f6_key = key_named("f6")
+    minimum_hold_time = 0.085
 
     def on_press(key) -> bool | None:
         nonlocal stopping
@@ -1218,33 +1234,61 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
         nonlocal remote_pressed
         desired: set[int] = set()
         translated_active = False
-        for usages, translated in active_keys.values():
+        for usages, translated, _pressed_at in active_keys.values():
             desired.update(usages)
             translated_active |= translated
         if not translated_active:
             desired.update(active_modifiers)
 
         ql_modifiers = {0x68, 0x69, 0x6A, 0x6C, 0x6D, 0x6E}
-        releases = sorted(remote_pressed - desired,
-                          key=lambda usage: usage in ql_modifiers)
-        presses = sorted(desired - remote_pressed,
-                         key=lambda usage: usage not in ql_modifiers)
-        for usage in releases:
+        releases = remote_pressed - desired
+        presses = desired - remote_pressed
+        ordinary_releases = sorted(releases - ql_modifiers)
+        modifier_releases = sorted(releases & ql_modifiers)
+        modifier_presses = sorted(presses & ql_modifiers)
+        ordinary_presses = sorted(presses - ql_modifiers)
+        for usage in ordinary_releases:
             link.key_event(usage, False)
-        for usage in presses:
+        if ordinary_releases and modifier_releases:
+            time.sleep(0.005)
+        for usage in modifier_releases:
+            link.key_event(usage, False)
+        # On AZERTY, typing a number can mean releasing the physical host
+        # Shift while pressing an unshifted QL digit. Let the IPC matrix see
+        # that modifier transition before the ordinary key arrives.
+        if modifier_releases and ordinary_presses:
+            time.sleep(0.012)
+        for usage in modifier_presses:
+            link.key_event(usage, True)
+        if modifier_presses and ordinary_presses:
+            time.sleep(0.012)
+        for usage in ordinary_presses:
             link.key_event(usage, True)
         remote_pressed = desired
+
+    def finish_due_releases() -> bool:
+        now = time.monotonic()
+        due = [key for key, deadline in pending_releases.items()
+               if deadline <= now]
+        for key in due:
+            pending_releases.pop(key, None)
+            active_keys.pop(key, None)
+        if due:
+            reconcile()
+            return True
+        return False
 
     print(f"NanoQL keyboard active (QL {link.ql_layout.upper()} profile). "
           "Keys are held in real time; press F6 to return to the terminal.")
     try:
         listener = keyboard.Listener(on_press=on_press, on_release=on_release)
         listener.start()
-        while listener.is_alive() or not input_events.empty():
+        while listener.is_alive() or not input_events.empty() or pending_releases:
+            finish_due_releases()
             try:
-                pressed, key = input_events.get(timeout=0.02)
+                pressed, key = input_events.get(timeout=0.005)
             except queue.Empty:
-                if stopping:
+                if stopping and not pending_releases:
                     break
                 continue
 
@@ -1255,6 +1299,9 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
                 else:
                     active_modifiers.discard(modifier)
             elif pressed:
+                pending_releases.pop(key, None)
+                if key in active_keys:
+                    continue
                 usages: set[int] = set()
                 translated = False
                 character = getattr(key, "char", None)
@@ -1268,9 +1315,15 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
                 if not usages and key in special_usages:
                     usages = {special_usages[key]}
                 if usages:
-                    active_keys[key] = (usages, translated)
+                    active_keys[key] = (usages, translated, time.monotonic())
             else:
-                active_keys.pop(key, None)
+                binding = active_keys.get(key)
+                if binding is not None:
+                    deadline = binding[2] + minimum_hold_time
+                    if deadline > time.monotonic():
+                        pending_releases[key] = deadline
+                    else:
+                        active_keys.pop(key, None)
             reconcile()
         listener.stop()
         listener.join(timeout=1.0)

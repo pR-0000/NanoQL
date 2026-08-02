@@ -1629,8 +1629,11 @@ module nanoql_top(
                                     keyboard_diag_value ? 24'h20e060 :
                                                           24'h000000;
 
+    // Keep the corner diagnostic visible only for a real hardware/load
+    // failure. A successful boot must expose a clean HDMI border.
     wire [23:0] hdmi_rgb = dynamic_rom_wait ? companion_diag_rgb :
-                           memory_status_area ? memory_status_rgb : rgb;
+                           (memory_failure && memory_status_area) ?
+                           memory_status_rgb : rgb;
     wire [23:0] osd_rgb;
 
     ql_companion_osd companion_osd (

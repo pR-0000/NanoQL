@@ -10,10 +10,10 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 14 927 / 20 736 cellules logiques utilisées (72 %), dont 13 939 LUT.
+- FPGA : 15 065 / 20 736 cellules logiques utilisées (73 %), dont 14 077 LUT.
 - BSRAM : 21 / 46 blocs utilisés (46 %), dont les tampons sectoriels QL-SD et Microdrive et la ROM QSound optionnelle.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
-- Domaine système : 31,8 MHz, avec une Fmax mesurée de 68,037 MHz.
+- Domaine système : 31,8 MHz, avec une Fmax mesurée de 66,804 MHz.
 - HDMI : 720p50 avec audio PCM 48 kHz fonctionnel.
 
 Le pourcentage de LUT restant ne suffit pas à garantir toutes les extensions. La migration de la ROM QL dynamique vers une zone réservée de la SDRAM a toutefois libéré 32 blocs BSRAM pour les ROM et tampons des fonctions suivantes. La fréquence du domaine système devient maintenant la contrainte principale pour les modes CPU rapides.
@@ -133,10 +133,10 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 14,927 / 20,736 logic cells used (72%), including 13,939 LUTs.
+- FPGA: 15,065 / 20,736 logic cells used (73%), including 14,077 LUTs.
 - BSRAM: 21 / 46 blocks used (46%), including QL-SD and Microdrive sector buffers and the optional QSound ROM.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
-- System domain: 31.8 MHz, with a measured Fmax of 61.539 MHz.
+- System domain: 31.8 MHz, with a measured Fmax of 66.804 MHz.
 - HDMI: working 720p50 output with 48 kHz PCM audio.
 
 The remaining LUT percentage alone does not guarantee that every extension will fit. Moving the dynamic QL ROM to a reserved SDRAM area has nevertheless freed 32 BSRAM blocks for future ROMs and buffers. System-domain timing is now the main constraint for faster CPU modes.

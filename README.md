@@ -105,13 +105,13 @@ Sur le QL original de 128 Kio, `RESPR(65536)` peut normalement produire `Out of 
 
 | Ressource |            Utilisation |
 | --------- | ---------------------: |
-| Logique   | 14 927 / 20 736 (72 %) |
-| LUT       |                 13 939 |
-| Registres |                  7 169 |
+| Logique   | 15 065 / 20 736 (73 %) |
+| LUT       |                 14 077 |
+| Registres |                  7 170 |
 | BSRAM     |         21 / 46 (46 %) |
 | DSP       |               0,5 / 24 |
 
-Le domaine système fonctionne à 31,8 MHz avec un Fmax mesuré de 61,539 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax mesuré de 75,298 MHz.
+Le domaine système fonctionne à 31,8 MHz avec un Fmax mesuré de 66,804 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax mesuré de 84,651 MHz.
 
 ## English
 
@@ -214,13 +214,13 @@ On an original 128 KiB QL, `RESPR(65536)` can normally report `Out of Memory`: Q
 
 | Resource  |                 Usage |
 | --------- | --------------------: |
-| Logic     | 14,927 / 20,736 (72%) |
-| LUT       |                13,939 |
-| Registers |                 7,169 |
+| Logic     | 15,065 / 20,736 (73%) |
+| LUT       |                14,077 |
+| Registers |                 7,170 |
 | BSRAM     |         21 / 46 (46%) |
 | DSP       |              0.5 / 24 |
 
-The system domain runs at 31.8 MHz with a measured Fmax of 61.539 MHz. The HDMI domain runs at 74.25 MHz with a measured Fmax of 75.298 MHz.
+The system domain runs at 31.8 MHz with a measured Fmax of 66.804 MHz. The HDMI domain runs at 74.25 MHz with a measured Fmax of 84.651 MHz.
 
 ## Credits and licenses
 
