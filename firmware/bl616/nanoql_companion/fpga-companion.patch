@@ -225,10 +225,66 @@ index bf062aa..21409f7 100644
  
  #endif // GOWIN_H
 diff --git a/src/inifile.c b/src/inifile.c
-index 5f5fb8e..5d78bfd 100644
+index 5f5fb8e..ac0732e 100644
 --- a/src/inifile.c
 +++ b/src/inifile.c
-@@ -214,6 +214,14 @@ void inifile_write(char *name) {
+@@ -52,6 +52,21 @@ int inifile_read(char *name) {
+ 
+   sdc_lock();  // get exclusive access to the file system
+ 
++#ifdef NANOQL_COMPANION
++  // A power loss may occur after the old INI has been renamed but before the
++  // replacement becomes visible. Recover the last complete file on boot.
++  char *backup = pvPortMalloc(strlen(filename) + 5);
++  if(backup) {
++    FILINFO info;
++    strcpy(backup, filename);
++    strcat(backup, ".bak");
++    if(f_stat(filename, &info) != FR_OK &&
++       f_stat(backup, &info) == FR_OK)
++      (void)f_rename(backup, filename);
++    vPortFree(backup);
++  }
++#endif
++
+   FIL fil;
+   if(f_open(&fil, filename, FA_OPEN_EXISTING | FA_READ) == FR_OK) {
+     char buffer[FF_LFN_BUF+10];
+@@ -180,10 +195,32 @@ void inifile_write(char *name) {
+   ini_debugf("Write settings to %s", filename);
+   
+   sdc_lock();  // get exclusive access to the file system
++
++#ifdef NANOQL_COMPANION
++  // Never truncate the active configuration. Build and sync a complete
++  // replacement first, then swap it into place with a recoverable backup.
++  char *temporary = pvPortMalloc(strlen(filename) + 5);
++  char *backup = pvPortMalloc(strlen(filename) + 5);
++  if(!temporary || !backup) {
++    if(temporary) vPortFree(temporary);
++    if(backup) vPortFree(backup);
++    vPortFree(filename);
++    sdc_unlock();
++    return;
++  }
++  strcpy(temporary, filename);
++  strcat(temporary, ".tmp");
++  strcpy(backup, filename);
++  strcat(backup, ".bak");
++  (void)f_unlink(temporary);
++  const char *write_filename = temporary;
++#else
++  const char *write_filename = filename;
++#endif
+   
+   // saving does not work, yet, as there is no SD card write support by now
+   FIL file;
+-  if(f_open(&file, filename, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {    
++  if(f_open(&file, write_filename, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {
+     f_puts("; FPGA Companion settings\n", &file);
+ 
+     // write variable values
+@@ -214,6 +251,14 @@ void inifile_write(char *name) {
        char *cwd = sdc_get_cwd(drive);
        char *image = sdc_get_image_name(drive);
  
@@ -243,6 +299,45 @@ index 5f5fb8e..5d78bfd 100644
        if(cwd && image) {
  	char str[strlen(cwd) + strlen(image) + 12];
  #ifdef INIFILE_PREFIX
+@@ -230,9 +275,36 @@ void inifile_write(char *name) {
+ 
+     f_puts("\n", &file);
+     
+-    f_close(&file);  
++    FRESULT sync_result = f_sync(&file);
++    int write_error = f_error(&file);
++    FRESULT close_result = f_close(&file);
++
++#ifdef NANOQL_COMPANION
++    if(sync_result == FR_OK && !write_error && close_result == FR_OK) {
++      FILINFO info;
++      int had_original = f_stat(filename, &info) == FR_OK;
++      (void)f_unlink(backup);
++      if((!had_original || f_rename(filename, backup) == FR_OK) &&
++         f_rename(temporary, filename) == FR_OK) {
++        (void)f_unlink(backup);
++      } else {
++        (void)f_unlink(temporary);
++        if(had_original && f_stat(filename, &info) != FR_OK)
++          (void)f_rename(backup, filename);
++        ini_debugf("Atomic settings replacement failed");
++      }
++    } else {
++      (void)f_unlink(temporary);
++      ini_debugf("Error syncing settings file");
++    }
++#endif
+   } else
+     ini_debugf("Error opening file");
++
++#ifdef NANOQL_COMPANION
++  vPortFree(temporary);
++  vPortFree(backup);
++#endif
+   
+   vPortFree(filename);
+   sdc_unlock();
+ }
 diff --git a/src/jtag.c b/src/jtag.c
 index ff136f6..6ee5216 100644
 --- a/src/jtag.c

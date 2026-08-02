@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.3 - 2026-08-02
+
+- Saves overlay settings through an atomic `nanoql.ini.tmp` replacement instead of truncating the active configuration in place.
+- Preserves a recoverable `nanoql.ini.bak` while replacing the configuration and restores it automatically after an interrupted save.
+- Prevents keyboard-layout selection, or another saved overlay option, from losing the selected QL and IPC ROM paths after a microSD write failure or power interruption.
+- Keeps the FPGA bitstream unchanged from v0.2.1 and v0.2.2; this release updates the BL616 firmware for both supported board revisions.
+
 ## v0.2.2 - 2026-08-02
 
 - Completes the French QL ROM keyboard mapping for punctuation, national characters, brackets, braces, and common programming symbols.
