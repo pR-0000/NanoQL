@@ -37,6 +37,8 @@ Par rapport à QL_MiSTer, NanoQL vise une petite machine autonome et accessible 
 - écran et câble HDMI ;
 - câble USB-C.
 
+Le format recommandé est une partition unique **FAT32 avec une table de partitions MBR**. exFAT reste pris en charge et convient notamment aux cartes de plus de 32 Go. La compatibilité dépend aussi du contrôleur interne de la carte, et pas uniquement de sa marque, capacité, classe ou de son formatage. Une carte apparemment conforme peut provoquer des blocages pendant les écritures tandis qu'une autre fonctionne correctement. Si les réglages de l'overlay, la construction d'un Microdrive ou NanoQL Link se bloquent, essayez une autre carte microSD.
+
 Le clavier USB et le hub OTG sont facultatifs. Un PC peut fournir un clavier distant en mode développement.
 
 Le clavier distant NanoQL Link fonctionne sous Windows, macOS et Linux. Sur macOS, la capture temps réel peut nécessiter l'autorisation de Terminal ou Python dans les réglages de confidentialité.
@@ -145,6 +147,8 @@ Compared with QL_MiSTer, NanoQL targets a small, approachable standalone machine
 - microSD card;
 - HDMI display and cable;
 - USB-C cable.
+
+The preferred format is one **FAT32 partition using an MBR partition table**. exFAT remains supported and is convenient for cards larger than 32 GB. Compatibility also depends on the card's internal controller, not only its brand, capacity, class, or formatting. An apparently valid card may stall during writes while another works correctly. If overlay settings, Microdrive builds, or NanoQL Link operations hang, try another microSD card.
 
 A USB keyboard and OTG hub are optional. A computer can provide a remote keyboard in development mode.
 

@@ -464,7 +464,11 @@ class NanoQLSetup(tk.Tk):
             text=(
                 "The selected files are validated and copied to the card. These "
                 "convenient names are not mandatory: files copied manually can be "
-                "selected later from the F12 overlay."
+                "selected later from the F12 overlay.\n\n"
+                "Preferred format: one FAT32 partition with an MBR partition table. "
+                "exFAT is supported and is convenient for cards larger than 32 GB. "
+                "Compatibility also depends on the card controller, not only its brand, "
+                "capacity, class, or format. If writes stall, try another card."
             ),
             wraplength=760,
         ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
@@ -610,7 +614,8 @@ class NanoQLSetup(tk.Tk):
                 "Optional developer workflow: start NanoQL, briefly press S1 to expose "
                 "NanoQL Link, then synchronize. Normal users can instead copy folders to "
                 "NanoQL/Microdrives on the microSD and select Build MDV1 from: in the F12 "
-                "overlay."
+                "overlay. After synchronization, the BL616 automatically returns to "
+                "normal Companion mode; the serial port disappears while the QL restarts."
             ),
             wraplength=760,
         ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))

@@ -47,6 +47,8 @@ La commande `python tools/nanoql_link.py --port COMx cpu-status` affiche le mode
 
 Le chemin recommandé ne nécessite ni NanoQL Link ni connexion au PC. Sur la microSD, créez un sous-dossier par cartouche dans `NanoQL/Microdrives`, par exemple `NanoQL/Microdrives/Benchmark`, puis placez-y les fichiers QL. Dans l'overlay `F12`, choisissez **Build MDV1 from:** puis `Benchmark`. Le BL616 crée `NanoQL/Generated/Benchmark.mdv`, monte cette image QLAY comme `mdv1_` en lecture/écriture et redémarre uniquement le QL.
 
+La commande de développement `mdv-sync` remplace également `MDV1.mdv`, puis redémarre automatiquement le BL616 en mode Companion normal. La disparition du port NanoQL Link est donc attendue ; le QL redémarre sans intervention ni cycle d'alimentation.
+
 Les sous-dossiers sont aplatis avec `_` ; `tests/README.md` devient `tests_README_md`. Les noms résultants doivent utiliser des caractères ASCII et tenir sur 36 caractères. La conversion accepte au plus 126 fichiers et huit niveaux de sous-dossiers. Une image QLAY mesure toujours 174 930 octets, mais 253 secteurs de 512 octets seulement sont allouables aux en-têtes et aux données. La condition exacte est `ceil((nombre_fichiers + 1) × 64 / 512) + somme(ceil((taille_fichier + 64) / 512)) <= 253` ; un fichier unique peut donc contenir au plus 128 960 octets. À l'invite QDOS, utilisez `DIR mdv1_`, puis par exemple `LRUN mdv1_programme_bas`.
 
 Les commandes matérielles `WRITE` et `ERASE` du ZX8302 sont prises en charge. Les secteurs modifiés par QDOS sont réécrits dans l'image nommée sous `NanoQL/Generated` ; `SAVE`, la relecture et la persistance après reset sont validés physiquement. Le dossier source n'est pas un partage dynamique et n'est pas modifié. Ne relancez donc pas **Build MDV1 from:** après une sauvegarde importante, car la reconstruction remplace l'image et ses modifications. `SAVE mdv1_TEST_mdv` ajoute un fichier QDOS nommé `TEST_mdv` dans la cartouche ; l'extension apparente fait partie du nom QDOS et ne crée pas une seconde image `TEST.mdv`.
@@ -155,6 +157,8 @@ Run `python tools/nanoql_link.py --port COMx cpu-status` to display the selected
 ### Using a folder as a Microdrive
 
 The recommended path requires neither NanoQL Link nor a PC connection. Create one cartridge subfolder under `NanoQL/Microdrives` on the microSD, for example `NanoQL/Microdrives/Benchmark`, and place the QL files inside it. In the `F12` overlay, select **Build MDV1 from:** and then `Benchmark`. The BL616 creates `NanoQL/Generated/Benchmark.mdv`, mounts that QLAY image read/write as `mdv1_`, and resets only the QL.
+
+The development `mdv-sync` command also replaces `MDV1.mdv`, then automatically restarts the BL616 in normal Companion mode. The NanoQL Link port is therefore expected to disappear; the QL restarts without intervention or a power cycle.
 
 Subdirectories are flattened with `_`; for example, `tests/README.md` becomes `tests_README_md`. Resulting names must be ASCII and no longer than 36 characters. Conversion accepts up to 126 files and eight nested directory levels. A QLAY image is always 174,930 bytes, but only 253 512-byte sectors are allocatable to headers and data. The exact condition is `ceil((file_count + 1) × 64 / 512) + sum(ceil((file_size + 64) / 512)) <= 253`; a single file can therefore contain at most 128,960 bytes. At the QDOS prompt, enter `DIR mdv1_`, followed by a command such as `LRUN mdv1_program_bas`.
 

@@ -25,7 +25,7 @@
       <hide/>
     </action>
   </actions>
-  <menu label="NanoQL v0.2.4">
+  <menu label="NanoQL v0.2.5">
     <fileselector label="QL ROM:" ext="rom;bin" index="0" action="save_reset"/>
     <fileselector label="QL-SD image:" ext="win;qxl" index="1" action="save"/>
     <fileselector label="Microdrive 1:" ext="mdv" index="2" action="save"/>

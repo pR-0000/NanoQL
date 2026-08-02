@@ -91,6 +91,8 @@ Dans **1. ROMs and microSD** :
 
 Les noms `QL.rom`, `IPC.rom` et `QSound.rom` sont de simples valeurs par défaut. Vous pouvez copier d'autres ROM directement sur la carte et les choisir avec l'overlay `F12`.
 
+Le format recommandé est une partition unique **FAT32 avec une table de partitions MBR**. Sous macOS, choisissez **MS-DOS (FAT)** et **Master Boot Record** dans Utilitaire de disque. exFAT reste pris en charge et est pratique pour les cartes de plus de 32 Go. La compatibilité dépend toutefois du contrôleur interne de la microSD, pas seulement de sa capacité, de sa classe, de sa marque ou du système de fichiers. Une carte correctement formatée peut néanmoins bloquer lors d'une écriture. Si la sauvegarde des réglages, la création d'un Microdrive ou un transfert NanoQL Link se fige, essayez une autre carte avant de reflasher NanoQL.
+
 ### Programmer le FPGA
 
 Dans **2. FPGA**, utilisez **Browse** pour sélectionner `NanoQL-*-FPGA.fs`. Une release précompilée ne nécessite ni Gowin EDA ni le bouton **Build**. Tant que FPGA Partner est installé, l'assistant peut appeler openFPGALoader. Équivalent manuel :
@@ -151,7 +153,9 @@ Pour un essai temporaire sans changer le BL616, NanoQL Link peut charger le fich
 4. Alimentez par USB-C.
 5. Si NanoQL demande des ROM, ouvrez `F12`, choisissez **QL ROM** et **IPC ROM**, puis redémarrez le QL.
 
-Le QL doit démarrer sans clavier ni hub. Pour le développement, connectez la carte à l'ordinateur, attendez le démarrage du FPGA, appuyez brièvement sur S1 et utilisez l'onglet **4. USB keyboard**. Le clavier distant fonctionne sous Windows, macOS et Linux. Sur macOS/Linux, le script installe automatiquement `pynput` lors de la première utilisation. macOS peut demander d'autoriser Terminal ou Python dans **Réglages Système > Confidentialité et sécurité > Surveillance de l'entrée** et **Accessibilité**. Si la console affiche `This process is not trusted`, ajoutez également l'exécutable Python réellement affiché par la commande, par exemple celui du dossier `venv/bin`, puis quittez complètement et relancez Terminal.
+Le QL doit démarrer sans clavier ni hub. Pour le développement, connectez la carte à l'ordinateur, attendez le démarrage du FPGA, appuyez brièvement sur S1 et utilisez l'onglet **4. USB keyboard**. Le clavier distant fonctionne sous Windows, macOS et Linux. Sur macOS/Linux, le script installe automatiquement `pynput` lors de la première utilisation. macOS peut demander d'autoriser Terminal ou Python dans **Réglages Système > Confidentialité et sécurité > Surveillance de l'entrée** et **Accessibilité**. Si la console affiche `This process is not trusted`, ajoutez également l'exécutable Python réellement affiché par la commande, par exemple celui du dossier `venv/bin`, puis quittez complètement et relancez Terminal. Pendant la capture, NanoQL désactive l'écho local du terminal et vide les séquences de touches en attente avant de rendre la main avec `F6`.
+
+NanoQL émet un signal CEA standard 1280×720p50, mais les téléviseurs et moniteurs n'appliquent pas tous le même overscan, filtre de netteté ou redimensionnement. Pour une image fidèle, choisissez le mode écran `1:1`, `Just Scan`, `Screen Fit` ou `Full Pixel`, puis désactivez l'overscan, la réduction de bruit, l'interpolation de mouvement et les renforcements de netteté. Un défaut fixé à une position de la dalle mais absent sur un autre écran provient probablement de son traitement vidéo ; un défaut qui suit le contenu et apparaît aussi sur une capture HDMI doit être signalé avec le mode vidéo NanoQL utilisé.
 
 ## English
 
@@ -244,6 +248,8 @@ In **1. ROMs and microSD**:
 
 `QL.rom`, `IPC.rom`, and `QSound.rom` are convenient defaults. Other ROMs may be copied directly to the card and selected through the `F12` overlay.
 
+The preferred format is one **FAT32 partition using an MBR partition table**. On macOS, select **MS-DOS (FAT)** and **Master Boot Record** in Disk Utility. exFAT remains supported and is convenient for cards larger than 32 GB. Compatibility still depends on the microSD card's internal controller, not only its capacity, speed class, brand, or filesystem. A correctly formatted card may stall during writes. If saving settings, building a Microdrive, or a NanoQL Link transfer hangs, try another card before reflashing NanoQL.
+
 ### Program the FPGA
 
 In **2. FPGA**, use **Browse** to select `NanoQL-*-FPGA.fs`. A precompiled release does not require Gowin EDA or the **Build** button. While FPGA Partner remains installed, the assistant can call openFPGALoader. Manual equivalent:
@@ -304,4 +310,6 @@ For temporary testing without changing BL616 firmware, NanoQL Link can load the 
 4. Power the board through USB-C.
 5. If NanoQL requests ROMs, open `F12`, select **QL ROM** and **IPC ROM**, then restart the QL.
 
-The QL must boot without a keyboard or hub. For development, connect the board to the computer, wait for FPGA startup, briefly press S1, and use the **4. USB keyboard** tab. The remote keyboard works on Windows, macOS, and Linux. On macOS/Linux the script automatically installs `pynput` on first use. macOS may ask you to allow Terminal or Python under **System Settings > Privacy & Security > Input Monitoring** and **Accessibility**. If the console reports `This process is not trusted`, also add the actual Python executable shown by the command, for example the one under `venv/bin`, then fully quit and restart Terminal.
+The QL must boot without a keyboard or hub. For development, connect the board to the computer, wait for FPGA startup, briefly press S1, and use the **4. USB keyboard** tab. The remote keyboard works on Windows, macOS, and Linux. On macOS/Linux the script automatically installs `pynput` on first use. macOS may ask you to allow Terminal or Python under **System Settings > Privacy & Security > Input Monitoring** and **Accessibility**. If the console reports `This process is not trusted`, also add the actual Python executable shown by the command, for example the one under `venv/bin`, then fully quit and restart Terminal. During capture, NanoQL disables local terminal echo and flushes pending key sequences before `F6` returns control.
+
+NanoQL outputs standard CEA 1280×720p50, but displays do not all apply the same overscan, sharpness filtering, or scaling. For faithful pixels, select the display's `1:1`, `Just Scan`, `Screen Fit`, or `Full Pixel` mode, then disable overscan, noise reduction, motion interpolation, and sharpness enhancement. A defect fixed at one panel position but absent on another display is probably display processing; a defect that follows the content and also appears in an HDMI capture should be reported together with the selected NanoQL video mode.

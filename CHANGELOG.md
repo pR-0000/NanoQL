@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.5 - 2026-08-02
+
+- Returns the BL616 automatically to normal Companion mode after `mdv-sync`, avoiding a QL left on the `BL616 IS HOLDING RESET` startup screen.
+- Documents that microSD controller compatibility can vary independently of brand, capacity, speed class, and formatting.
+- Suppresses terminal echo during the macOS/Linux remote-keyboard session and discards buffered escape sequences before returning control.
+
 ## v0.2.4 - 2026-08-02
 
 - Queues overlay configuration saves in a dedicated BL616 task so slow microSD synchronization cannot block menu input or trap a held Enter key.

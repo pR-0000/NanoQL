@@ -814,9 +814,10 @@ static uint8_t fs_command(
                 return 25;
             }
             inifile_write("nanoql.ini");
-            /* Reset only after process_frame() has returned the acknowledgement
-               to the PC. Mounting fragmented FAT/exFAT files may take longer
-               than the normal CDC transaction timeout. */
+            /* Return to autonomous Companion mode after process_frame() has
+               acknowledged the command. Reboot initialization remounts the
+               image and performs a clean QL reset; an XML reset action from
+               the CDC task could leave the FPGA reset asserted. */
             microdrive_reset_pending = true;
         } else {
             return 3;
@@ -1158,9 +1159,9 @@ static void link_task(void *argument)
                 microdrive_reset_pending = false;
                 while (usb_ready && usb_tx_busy)
                     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
-                sys_run_action_by_name("reset");
-                microdrive_ql_held = false;
-                fpga_upload_resume_companion();
+                vTaskDelay(pdMS_TO_TICKS(50));
+                debugf("NanoQL: MDV1 synchronized, returning to Companion");
+                mcu_hw_reset();
             }
             break;
         }

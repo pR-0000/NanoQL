@@ -525,7 +525,13 @@ class NanoQLLink:
         ) from last_error
 
     def close(self) -> None:
-        self.serial.close()
+        try:
+            self.serial.close()
+        except (serial.SerialException, PermissionError, OSError):
+            # Commands such as FPGA programming and mdv-sync deliberately
+            # reboot the BL616 after their response, so the port may already
+            # have disappeared when the client closes it.
+            pass
 
     def transact(self, spi_payload: bytes) -> bytes:
         if not 1 <= len(spi_payload) <= MAX_LINK_PAYLOAD:
@@ -1248,6 +1254,25 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
     f6_key = key_named("f6")
     minimum_hold_time = 0.085
 
+    terminal_fd: int | None = None
+    terminal_attributes = None
+    terminal_module = None
+    if sys.stdin.isatty():
+        try:
+            import termios
+
+            terminal_fd = sys.stdin.fileno()
+            terminal_module = termios
+            terminal_attributes = termios.tcgetattr(terminal_fd)
+            quiet_attributes = list(terminal_attributes)
+            quiet_attributes[3] &= ~(termios.ECHO | termios.ECHONL)
+            termios.tcflush(terminal_fd, termios.TCIFLUSH)
+            termios.tcsetattr(terminal_fd, termios.TCSANOW, quiet_attributes)
+        except (ImportError, OSError):
+            terminal_fd = None
+            terminal_attributes = None
+            terminal_module = None
+
     def on_press(key) -> bool | None:
         nonlocal stopping
         if key == f6_key:
@@ -1367,6 +1392,14 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
     finally:
         for usage in tuple(remote_pressed):
             link.key_event(usage, False)
+        if terminal_fd is not None and terminal_attributes is not None:
+            try:
+                terminal_module.tcflush(terminal_fd, terminal_module.TCIFLUSH)
+                terminal_module.tcsetattr(
+                    terminal_fd, terminal_module.TCSANOW, terminal_attributes
+                )
+            except (OSError, terminal_module.error):
+                pass
 
 
 def interactive_keyboard(link: NanoQLLink) -> None:
@@ -2020,7 +2053,8 @@ def main() -> int:
                 link.microdrive_sync_control(True)
             print(
                 "MDV1 synchronized, mounted, and saved for future boots. "
-                "The QL has been restarted."
+                "The BL616 is returning to normal Companion mode and will "
+                "restart the QL; the NanoQL Link port will disconnect."
             )
         elif args.command == "mdv-extract":
             remote_path_bytes(args.source)
