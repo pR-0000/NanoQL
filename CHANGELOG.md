@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.1 - 2026-08-02
+
+- Stabilizes the remote keyboard on macOS by preserving QL key-matrix presses long enough for the IPC scanner and sequencing modifier transitions safely.
+- Reports the exact Python executable that requires macOS Input Monitoring and Accessibility permissions.
+- Hides the former green boot-status square after a successful startup while retaining full-screen failure diagnostics.
+- Updates the overlay version and packaged FPGA bitstream to v0.2.1.
+
 ## v0.2.0 - 2026-07-30
 
 - Loads the 2 KiB 8049 IPC firmware dynamically from microSD instead of embedding it in the FPGA bitstream.
