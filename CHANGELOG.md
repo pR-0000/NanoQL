@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.2 - 2026-08-02
+
+- Completes the French QL ROM keyboard mapping for punctuation, national characters, brackets, braces, and common programming symbols.
+- Makes macOS punctuation handling independent from host key names that may be reported using a US layout.
+- Clarifies that the setup assistant's keyboard selector describes the QL ROM layout; the host keyboard layout remains managed by the operating system.
+- Adds regression tests for French ROM letters, punctuation, modifiers, and national characters.
+- Keeps the FPGA bitstream and BL616 firmware unchanged from v0.2.1; existing v0.2.1 installations only need the updated Python tools.
+
 ## v0.2.1 - 2026-08-02
 
 - Stabilizes the remote keyboard on macOS by preserving QL key-matrix presses long enough for the IPC scanner and sequencing modifier transitions safely.

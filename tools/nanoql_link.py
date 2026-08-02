@@ -143,24 +143,40 @@ ASCII_KEYS = {
     "*": (0x25, True), "(": (0x26, True), ")": (0x27, True),
 }
 
-# Fallbacks used when the host OS cannot translate a French character back to
-# its physical scan position. Windows normally uses windows_character_key().
+# Character-to-contact mapping from the MGF French QDOS keyboard table. The
+# values are USB usages for the corresponding original QL matrix contact, not
+# positions on a PC AZERTY keyboard. This also makes macOS independent from
+# pynput's occasionally US-oriented character names for punctuation keys.
 QL_FRENCH_KEYS = {
     "a": (0x14, ()), "A": (0x14, (MOD_LEFT_SHIFT,)),
     "q": (0x04, ()), "Q": (0x04, (MOD_LEFT_SHIFT,)),
     "z": (0x1A, ()), "Z": (0x1A, (MOD_LEFT_SHIFT,)),
     "w": (0x1D, ()), "W": (0x1D, (MOD_LEFT_SHIFT,)),
     "m": (0x33, ()), "M": (0x33, (MOD_LEFT_SHIFT,)),
-    "_": (0x2D, (MOD_LEFT_SHIFT,)),
-    # French QDOS places comma on the physical QL M contact. The M character
-    # itself is on the semicolon contact, as on a conventional AZERTY layout.
     ",": (0x10, ()), ".": (0x36, ()),
-    # The French QDOS keymap expects this HID contact for double quote.
+    ";": (0x37, ()), ":": (0x37, (MOD_LEFT_SHIFT,)),
+    "<": (0x10, (MOD_LEFT_SHIFT,)),
+    ">": (0x36, (MOD_LEFT_SHIFT,)),
+    "'": (0x23, (MOD_LEFT_SHIFT,)),
     '"': (0x1F, (MOD_LEFT_SHIFT,)),
-    "é": (0x2F, ()), "\\": (0x2F, (MOD_LEFT_SHIFT,)),
-    "è": (0x30, ()), "ù": (0x31, ()), "`": (0x31, (MOD_LEFT_SHIFT,)),
-    "à": (0x34, ()), "/": (0x34, (MOD_LEFT_SHIFT,)),
-    "ç": (0x38, ()), "?": (0x38, (MOD_LEFT_SHIFT,)),
+    "@": (0x23, (MOD_LEFT_CTRL,)),
+    "[": (0x26, (MOD_LEFT_CTRL,)),
+    "]": (0x27, (MOD_LEFT_CTRL,)),
+    "{": (0x2D, (MOD_LEFT_CTRL,)),
+    "}": (0x2E, (MOD_LEFT_CTRL,)),
+    "^": (0x32, (MOD_LEFT_CTRL,)),
+    "`": (0x38, (MOD_LEFT_ALT,)),
+    "\\": (0x2F, (MOD_LEFT_SHIFT,)),
+    "|": (0x25, (MOD_LEFT_CTRL,)),
+    "~": (0x31, (MOD_LEFT_CTRL,)),
+    "_": (0x2D, (MOD_LEFT_SHIFT,)),
+    "é": (0x2F, ()), "è": (0x30, ()), "ù": (0x31, ()),
+    "à": (0x34, ()), "ç": (0x38, ()),
+    "§": (0x30, (MOD_LEFT_SHIFT,)),
+    "£": (0x31, (MOD_LEFT_SHIFT,)),
+    "°": (0x24, (MOD_LEFT_CTRL,)),
+    "/": (0x34, (MOD_LEFT_SHIFT,)),
+    "?": (0x38, (MOD_LEFT_SHIFT,)),
 }
 
 WINDOWS_EXTENDED_KEYS = {

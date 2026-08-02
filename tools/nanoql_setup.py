@@ -544,7 +544,7 @@ class NanoQLSetup(tk.Tk):
         ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
             row=0, column=2, pady=8
         )
-        ttk.Label(parent, text="QL keyboard layout", style="Section.TLabel").grid(
+        ttk.Label(parent, text="QL ROM keyboard layout", style="Section.TLabel").grid(
             row=1, column=0, sticky="w", pady=8
         )
         ttk.Combobox(
@@ -571,7 +571,10 @@ class NanoQLSetup(tk.Tk):
                 "choose the NanoQL Link port after clicking Refresh. The remote "
                 "keyboard works on Windows, macOS, and Linux. macOS may request "
                 "Input Monitoring or Accessibility permission for Terminal or "
-                "Python. Press F6 to return control to this assistant."
+                "Python. The layout selector describes the QL ROM; the computer "
+                "keyboard layout is read from the operating system. Keep auto unless "
+                "ROM detection is incorrect. Press F6 to return control to this "
+                "assistant."
             ),
             wraplength=760,
         ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
