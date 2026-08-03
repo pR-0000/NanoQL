@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.7 - 2026-08-03
+
+- Advanced MDV synchronization now restarts QDOS through the FPGA host link and explicitly releases the Companion reset afterward, preventing the BL616 holding-reset startup screen.
+
 ## v0.2.6 - 2026-08-02
 
 - Stops Gowin `programmer_cli` after its final status when affected versions remain resident and would lock USB Debugger A/1 for subsequent attempts.

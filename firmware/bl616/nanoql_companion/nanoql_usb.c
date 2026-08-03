@@ -56,6 +56,7 @@
 #define NANOQL_SPI_TARGET 4
 #define NANOQL_S1_MASK 0x01
 #define NANOQL_CMD_KEY 0x05
+#define NANOQL_CMD_QDOS 0x04
 #define NANOQL_CMD_FS_INFO 0xe0
 #define NANOQL_CMD_FS_LIST_BEGIN 0xe1
 #define NANOQL_CMD_FS_LIST_NEXT 0xe2
@@ -109,7 +110,6 @@ static uint32_t fpga_upload_crc;
 static uint32_t fpga_upload_expected_crc;
 static bool return_to_companion_pending;
 static bool microdrive_reset_pending;
-static bool microdrive_ql_held;
 
 enum nanoql_fs_session {
     NANOQL_FS_IDLE,
@@ -809,7 +809,6 @@ static uint8_t fs_command(
             sdc_set_cwd(2, NANOQL_FS_ROOT);
             if (sdc_image_open(2, image_name) != 0) {
                 sys_set_val('R', 0);
-                microdrive_ql_held = false;
                 fpga_upload_resume_companion();
                 return 25;
             }
@@ -817,6 +816,10 @@ static uint8_t fs_command(
             /* Pulse the QL reset only after process_frame() has acknowledged
                the command. Keep NanoQL Link active for the remote keyboard. */
             microdrive_reset_pending = true;
+        } else if (payload[1] == 2) {
+            /* Final desktop acknowledgement: release any stale reset left by
+               an interrupted older synchronization before returning. */
+            sys_set_val('R', 0);
         } else {
             return 3;
         }
@@ -1091,10 +1094,6 @@ static void link_task(void *argument)
         if (usb_rx_reset_requested) {
             fs_abort_session();
             fpga_upload_abort();
-            if (microdrive_ql_held) {
-                sys_set_val('R', 0);
-                microdrive_ql_held = false;
-            }
             fpga_upload_resume_companion();
             uintptr_t flags = bflb_irq_save();
             rx_tail = rx_head;
@@ -1154,16 +1153,20 @@ static void link_task(void *argument)
                 mcu_hw_reset();
             }
             if (microdrive_reset_pending) {
+                uint8_t qdos_command = NANOQL_CMD_QDOS;
+                uint8_t qdos_response[2];
                 microdrive_reset_pending = false;
                 while (usb_ready && usb_tx_busy)
                     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
                 debugf("NanoQL: MDV1 synchronized, resetting QL");
-                sys_set_val('R', 1);
-                vTaskDelay(pdMS_TO_TICKS(50));
+                /* Never assert the persistent Companion reset here. A task
+                   interruption between R=1 and R=0 used to leave the startup
+                   screen at BL616 IS HOLDING RESET. The host-link QDOS command
+                   creates a bounded reset pulse entirely inside the FPGA. */
                 sys_set_val('R', 0);
                 vTaskDelay(pdMS_TO_TICKS(10));
-                /* An idempotent release protects against a transient SPI
-                   arbitration delay while the new image is mounted. */
+                (void)spi_exchange(&qdos_command, 1, qdos_response);
+                vTaskDelay(pdMS_TO_TICKS(50));
                 sys_set_val('R', 0);
             }
             break;

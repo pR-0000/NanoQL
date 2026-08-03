@@ -718,6 +718,12 @@ class NanoQLLink:
         self.serial.timeout = 30.0
         try:
             self.transact(bytes((CMD_FS_MDV_CONTROL, 1 if mount else 0)))
+            if mount:
+                # The mount acknowledgement precedes the FPGA-local QDOS
+                # restart. Wait for that operation, then force the persistent
+                # Companion reset low and request one final bounded restart.
+                self.transact(bytes((CMD_FS_MDV_CONTROL, 2)))
+                self.qdos()
         finally:
             self.serial.timeout = previous_timeout
 
