@@ -48,7 +48,7 @@ module nanoql_top(
         .clkin(clk_27m)
     );
 
-    Gowin_CLKDIV clk_div_5 (
+    Gowin_CLKDIV #(.DIVIDE_X2(7)) clk_div_3p5 (
         .hclkin(clk_pixel_x5),
         .resetn(pll_lock),
         .clkout(clk_pixel)
@@ -60,7 +60,7 @@ module nanoql_top(
         .clkin(clk_27m)
     );
 
-    Gowin_CLKDIV clk_hdmi_div_5 (
+    Gowin_CLKDIV #(.DIVIDE_X2(10)) clk_hdmi_div_5 (
         .hclkin(clk_hdmi_x5),
         .resetn(pll_hdmi_lock),
         .clkout(clk_hdmi)
@@ -750,9 +750,13 @@ module nanoql_top(
         // Rewind the logical cartridge after QL RESET, once any pending
         // normalized record has safely reached the microSD.
         .core_reset(ql_system_reset),
+        .cpu_speed(companion_cpu_speed),
         .selected(mdv_selected),
-        .status_read_ack(zx8302_rd && (zx8302_addr == 2'b10) &&
-                         !zx8302_ds[1]),
+        // The ZX8302 has already latched the byte on RX-ready. Acknowledging
+        // the status read prevents an accelerated CPU from observing the same
+        // receive-ready state twice before its following data-register read.
+        .receive_ack(zx8302_rd && (zx8302_addr == 2'b10) &&
+                     !zx8302_ds[1]),
         .write_enable(mdv_write_enable),
         .erase_enable(mdv_erase_enable),
         .tx_write(mdv_tx_write),
@@ -998,9 +1002,9 @@ module nanoql_top(
             cpu_phase_count <= cpu_phase_count + 32'd1;
     end
 
-    // 31.8 MHz * 22668 / 65536 = 11.0002 MHz. QL_MiSTer uses the same
+    // 48 MHz * 15019 / 65536 = 11.0002 MHz. QL_MiSTer uses the same
     // fractional-enable scheme for the 8049 rather than a coarse divider.
-    wire [16:0] ipc_ce_sum = {1'b0, ipc_ce_accumulator} + 17'd22668;
+    wire [16:0] ipc_ce_sum = {1'b0, ipc_ce_accumulator} + 17'd15019;
     // Register the IPC enable one cycle before the T48 consumes it. This keeps
     // MiSTer's phase separation while remaining in Gowin's primary domain.
     always @(posedge clk_pixel) begin

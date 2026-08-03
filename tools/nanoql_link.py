@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import zlib
 from pathlib import Path
 
@@ -202,6 +203,22 @@ SCAN_TO_HID = {
     0x2C: 0x1D, 0x2D: 0x1B, 0x2E: 0x06, 0x2F: 0x19, 0x30: 0x05,
     0x31: 0x11, 0x32: 0x10, 0x33: 0x36, 0x34: 0x37, 0x35: 0x38,
     0x39: 0x2C, 0x56: 0x64,
+}
+
+# macOS virtual key codes describe physical ANSI/ISO key positions. Preserve
+# those positions for the live keyboard so the FPGA performs the AZERTY/QWERTY
+# conversion exactly once, just as it does for a directly attached USB device.
+MAC_VK_TO_HID = {
+    0: 0x04, 1: 0x16, 2: 0x07, 3: 0x09, 4: 0x0B, 5: 0x0A,
+    6: 0x1D, 7: 0x1B, 8: 0x06, 9: 0x19, 11: 0x05,
+    12: 0x14, 13: 0x1A, 14: 0x08, 15: 0x15, 16: 0x1C,
+    17: 0x17, 18: 0x1E, 19: 0x1F, 20: 0x20, 21: 0x21,
+    22: 0x23, 23: 0x22, 24: 0x2E, 25: 0x26, 26: 0x24,
+    27: 0x2D, 28: 0x25, 29: 0x27, 30: 0x30, 31: 0x12,
+    32: 0x18, 33: 0x2F, 34: 0x0C, 35: 0x13, 37: 0x0F,
+    38: 0x0D, 39: 0x34, 40: 0x0E, 41: 0x33, 42: 0x31,
+    43: 0x36, 44: 0x38, 45: 0x11, 46: 0x10, 47: 0x37,
+    50: 0x35,
 }
 
 
@@ -445,6 +462,16 @@ def file_crc32(path: Path) -> int:
     return checksum & 0xFFFFFFFF
 
 
+def is_link_response_error(error: Exception) -> bool:
+    message = str(error)
+    return any(fragment in message for fragment in (
+        "Missing or invalid response",
+        "Incomplete NanoQL Link response",
+        "Invalid NanoQL Link version or sequence",
+        "Invalid NanoQL Link CRC",
+    ))
+
+
 def download_drive1_tree(
     link: "NanoQLLink",
     local_root: Path,
@@ -493,6 +520,7 @@ class NanoQLLink:
         self.serial = self._open_serial()
         self.sequence = 0
         self.reconnect_count = 0
+        self.drive_firmware_build: str | None = None
         self.keyboard_layout = keyboard_layout
         self.ql_layout = ql_layout
 
@@ -525,6 +553,16 @@ class NanoQLLink:
         ) from last_error
 
     def close(self) -> None:
+        if getattr(self, "abandon_serial_on_close", False):
+            # The MDV7 completion acknowledgement is followed immediately by
+            # an FPGA/Companion transition. On Windows, pyserial's CloseHandle
+            # can then block forever on the vanished CDC device. Marking the
+            # object closed lets the process exit; Windows releases the handle.
+            try:
+                self.serial.is_open = False
+            except (AttributeError, serial.SerialException, OSError):
+                pass
+            return
         try:
             self.serial.close()
         except (serial.SerialException, PermissionError, OSError):
@@ -696,20 +734,32 @@ class NanoQLLink:
 
     def filesystem_info(self) -> tuple[int, int]:
         response = self.transact(bytes((CMD_FS_INFO,)))
-        if len(response) != 7 or response[:4] != b"NFS1":
+        if len(response) < 7 or response[:4] != b"NFS1":
             raise RuntimeError(
                 "The installed BL616 firmware does not support NanoQL Drive1."
             )
         version, capabilities, max_path = response[4], response[5], response[6]
         if version != 1:
             raise RuntimeError(f"Unsupported NanoQL Drive1 protocol {version}.")
+        self.drive_firmware_build = (
+            response[7:].decode("ascii", errors="replace")
+            if len(response) > 7 else "legacy"
+        )
         return capabilities, max_path
 
     def filesystem_cancel(self) -> None:
         self.transact(bytes((CMD_FS_CANCEL,)))
 
     def microdrive_sync_control(self, mount: bool) -> None:
+        action = "mount" if mount else "unmount"
+        print(f"[MDV control] Querying firmware before {action}...", flush=True)
         capabilities, _ = self.filesystem_info()
+        firmware_build = getattr(self, "drive_firmware_build", None) or "legacy"
+        print(
+            f"[MDV control] Firmware build: {firmware_build}; "
+            f"capabilities: 0x{capabilities:02x}.",
+            flush=True,
+        )
         if not capabilities & 0x20:
             raise RuntimeError(
                 "The installed BL616 firmware does not support automatic MDV1 mounting."
@@ -717,8 +767,55 @@ class NanoQLLink:
         previous_timeout = self.serial.timeout
         self.serial.timeout = 30.0
         try:
-            self.transact(bytes((CMD_FS_MDV_CONTROL, 1 if mount else 0)))
-            if mount:
+            if not mount:
+                print("[MDV 1/1] Requesting unmount and Companion pause...", flush=True)
+                response = self.transact(bytes((CMD_FS_MDV_CONTROL, 0)))
+                print(f"[MDV 1/1] Unmount acknowledged: {response.hex(' ')}.", flush=True)
+            elif firmware_build in ("MDV7", "MDV8", "MDV9", "MD10"):
+                print("[MDV 1/2] Opening the uploaded MDV1 image...", flush=True)
+                response = self.transact(bytes((CMD_FS_MDV_CONTROL, 3)))
+                print(f"[MDV 1/2] Image open acknowledged: {response.hex(' ')}.", flush=True)
+                completion = (
+                    "Mounting MDV1 and returning SPI to Companion"
+                    if firmware_build == "MD10"
+                    else "Saving settings and returning SPI to Companion"
+                    if firmware_build == "MDV9"
+                    else "Saving settings, restarting QDOS, and returning SPI to Companion"
+                )
+                print(f"[MDV 2/2] {completion}...", flush=True)
+                response = self.transact(bytes((CMD_FS_MDV_CONTROL, 4)))
+                print(
+                    f"[MDV 2/2] Completion acknowledged: {response.hex(' ')}.",
+                    flush=True,
+                )
+                # The firmware now resets QDOS and changes ownership of the
+                # shared SPI service. Do not ask pyserial to synchronously close
+                # a Windows CDC handle while that USB transition is in flight.
+                if firmware_build not in ("MDV9", "MD10"):
+                    self.abandon_serial_on_close = True
+                time.sleep(0.25)
+            elif firmware_build in ("MDV5", "MDV6"):
+                print("[MDV 1/5] Opening the uploaded MDV1 image...", flush=True)
+                response = self.transact(bytes((CMD_FS_MDV_CONTROL, 3)))
+                print(f"[MDV 1/5] Image open acknowledged: {response.hex(' ')}.", flush=True)
+                print("[MDV 2/5] Saving nanoql.ini...", flush=True)
+                response = self.transact(bytes((CMD_FS_MDV_CONTROL, 4)))
+                print(f"[MDV 2/5] Settings save acknowledged: {response.hex(' ')}.", flush=True)
+                # Let CherryUSB deliver the previous IN-completion callback
+                # before the command that hands the SPI task back to Companion.
+                time.sleep(0.1)
+                print("[MDV 3/5] Returning the SPI service to Companion...", flush=True)
+                response = self.transact(bytes((CMD_FS_MDV_CONTROL, 5)))
+                print(f"[MDV 3/5] Resume acknowledged: {response.hex(' ')}.", flush=True)
+                print("[MDV 4/5] Clearing stale reset state...", flush=True)
+                response = self.transact(bytes((CMD_FS_MDV_CONTROL, 2)))
+                print(f"[MDV 4/5] Reset state acknowledged: {response.hex(' ')}.", flush=True)
+                print("[MDV 5/5] Requesting FPGA-local QDOS restart...", flush=True)
+                self.qdos()
+                print("[MDV 5/5] QDOS restart acknowledged.", flush=True)
+            else:
+                print("[MDV legacy] Mounting image and saving settings...", flush=True)
+                self.transact(bytes((CMD_FS_MDV_CONTROL, 1)))
                 # The mount acknowledgement precedes the FPGA-local QDOS
                 # restart. Wait for that operation, then force the persistent
                 # Companion reset low and request one final bounded restart.
@@ -786,9 +883,27 @@ class NanoQLLink:
         normal_timeout = self.serial.timeout
         self.serial.timeout = max(float(normal_timeout or 0), 15.0)
         try:
-            self.transact(begin)
+            print(
+                f"[SD PUT 1/4] Opening /NanoQL/Drive1/{remote_path} "
+                f"({size} bytes, CRC32 0x{checksum:08x})...",
+                flush=True,
+            )
+            begin_response = self.transact(begin)
+            print(
+                f"[SD PUT 1/4] Open acknowledged: "
+                f"{begin_response.hex(' ') or '(empty)' }.",
+                flush=True,
+            )
+            if len(begin_response) >= 2 and begin_response[1] == 1:
+                print(
+                    "microSD mode: direct synchronized update "
+                    "(no temporary rename/delete).",
+                    flush=True,
+                )
             sent = 0
+            inline_verification = None
             try:
+                print("[SD PUT 2/4] Sending file data...", flush=True)
                 with source.open("rb") as stream:
                     while True:
                         block = stream.read(240)
@@ -799,21 +914,79 @@ class NanoQLLink:
                             + sent.to_bytes(4, "big")
                             + block
                         )
-                        acknowledged = int.from_bytes(response, "big")
+                        if len(response) not in (4, 12):
+                            raise RuntimeError(
+                                "NanoQL Drive1 returned an invalid data acknowledgement."
+                            )
+                        acknowledged = int.from_bytes(response[:4], "big")
                         sent += len(block)
-                        if len(response) != 4 or acknowledged != sent:
+                        if acknowledged != sent:
                             raise RuntimeError(
                                 "NanoQL Drive1 acknowledged an invalid offset."
+                            )
+                        if len(response) == 12:
+                            inline_verification = response[4:]
+                            print(
+                                "\n[SD PUT 2/4] Final packet includes "
+                                f"verification: {inline_verification.hex(' ')}.",
+                                flush=True,
                             )
                         percent = 100 if size == 0 else sent * 100 // size
                         print(
                             f"\rDrive1 upload: {percent:3d}%",
                             end="", flush=True,
                         )
-                print("\nVerifying the upload on microSD...", flush=True)
-                # Commit closes, reopens, and CRC-checks the complete file.
-                self.serial.timeout = max(self.serial.timeout, 60.0)
-                response = self.transact(bytes((CMD_FS_PUT_COMMIT,)))
+                print("\n[SD PUT 3/4] Finalizing the file on microSD...", flush=True)
+                # The firmware validates the accumulated size/CRC, closes the
+                # FatFs file once, then atomically installs it.
+                self.serial.timeout = max(self.serial.timeout, 30.0)
+                if inline_verification is not None:
+                    print(
+                        "[SD PUT 3/4] Using verification cached in the final "
+                        "data acknowledgement; no COMMIT command is sent.",
+                        flush=True,
+                    )
+                    response = inline_verification
+                else:
+                    print(
+                        "[SD PUT 3/4] Sending explicit COMMIT command...",
+                        flush=True,
+                    )
+                    try:
+                        response = self.transact(bytes((CMD_FS_PUT_COMMIT,)))
+                    except RuntimeError as first_error:
+                        if not is_link_response_error(first_error):
+                            raise
+                        # A slow card can complete f_sync/rename just as macOS
+                        # resets the CDC read. Retrying COMMIT is safe while the
+                        # upload session is still open. If the first request did
+                        # complete, the second one reports an idle session and we
+                        # validate the installed file directly instead.
+                        time.sleep(0.25)
+                        try:
+                            response = self.transact(bytes((CMD_FS_PUT_COMMIT,)))
+                        except RuntimeError:
+                            remote_size, remote_crc = self.filesystem_crc32(remote_path)
+                            if remote_size != size or remote_crc != checksum:
+                                raise first_error
+                            response = (
+                                remote_size.to_bytes(4, "big")
+                                + remote_crc.to_bytes(4, "big")
+                            )
+                commit_steps = {
+                    1: "Preparing the existing destination...",
+                    2: "Installing the uploaded file...",
+                    3: "Removing the previous backup...",
+                }
+                while len(response) == 2 and response[0] == 0xFE:
+                    phase = response[1]
+                    print(
+                        commit_steps.get(
+                            phase, "Completing the microSD update..."
+                        ),
+                        flush=True,
+                    )
+                    response = self.transact(bytes((CMD_FS_PUT_COMMIT,)))
                 if len(response) != 8:
                     raise RuntimeError(
                         "Invalid NanoQL Drive1 upload verification response."
@@ -826,7 +999,7 @@ class NanoQLLink:
                     )
                 if size == 0:
                     print("\rDrive1 upload: 100%", end="", flush=True)
-                print()
+                print("[SD PUT 4/4] Size and CRC32 verified.", flush=True)
             except Exception:
                 try:
                     self.filesystem_cancel()
@@ -835,6 +1008,39 @@ class NanoQLLink:
                 raise
         finally:
             self.serial.timeout = normal_timeout
+
+    def filesystem_crc32(self, remote_path: str) -> tuple[int, int]:
+        """Read a Drive1 file without storing it and return size and CRC32."""
+        path = remote_path_bytes(remote_path)
+        response = self.transact(bytes((CMD_FS_GET_BEGIN,)) + path)
+        if len(response) != 4:
+            raise RuntimeError("Invalid NanoQL Drive1 file verification response.")
+        size = int.from_bytes(response, "big")
+        received = 0
+        checksum = 0
+        try:
+            while received < size:
+                requested = min(240, size - received)
+                response = self.transact(
+                    bytes((CMD_FS_GET_DATA,))
+                    + received.to_bytes(4, "big")
+                    + bytes((requested,))
+                )
+                if not response or response[0] != len(response) - 1:
+                    raise RuntimeError("Invalid NanoQL Drive1 verification data.")
+                block = response[1:]
+                if not block or len(block) > requested:
+                    raise RuntimeError("Invalid NanoQL Drive1 verification block.")
+                checksum = zlib.crc32(block, checksum)
+                received += len(block)
+            self.transact(bytes((CMD_FS_GET_END,)))
+        except Exception:
+            try:
+                self.filesystem_cancel()
+            except Exception:
+                pass
+            raise
+        return size, checksum & 0xFFFFFFFF
 
     def filesystem_get(self, remote_path: str, destination: Path) -> None:
         path = remote_path_bytes(remote_path)
@@ -980,7 +1186,16 @@ class NanoQLLink:
         if not 0 <= usage <= 0x7F:
             raise ValueError("HID key code is out of range.")
         event = usage if pressed else usage | 0x80
-        self.transact(bytes((CMD_KEY, event)))
+        try:
+            self.transact(bytes((CMD_KEY, event)))
+        except RuntimeError as error:
+            if not is_link_response_error(error):
+                raise
+            # Keyboard reports set an absolute pressed/released state, so a
+            # single retry cannot duplicate text even if only the reply was
+            # lost by the host CDC driver.
+            time.sleep(0.02)
+            self.transact(bytes((CMD_KEY, event)))
 
     def tap_key(self, usage: int, hold_time: float = 0.05,
                 release_time: float = 0.03, wait_consumed: bool = False,
@@ -1004,6 +1219,19 @@ class NanoQLLink:
     def character_key(self, character: str) -> tuple[int, tuple[int, ...]]:
         if self.ql_layout == "fr" and character in QL_FRENCH_KEYS:
             return QL_FRENCH_KEYS[character]
+        if self.ql_layout != "fr" and len(character) == 1:
+            # English QL ROMs do not provide accented Latin letters. Preserve
+            # the letter rather than interpreting the PC key's physical number
+            # row position (for example AZERTY e-acute becoming "2").
+            folded = "".join(
+                value for value in unicodedata.normalize("NFKD", character)
+                if not unicodedata.combining(value)
+            )
+            folded = {"ø": "o", "Ø": "O", "ł": "l", "Ł": "L",
+                      "đ": "d", "Đ": "D", "ð": "d", "Ð": "D",
+                      "þ": "t", "Þ": "T"}.get(folded, folded)
+            if len(folded) == 1 and folded.isascii() and folded.isalpha():
+                character = folded
         if "A" <= character <= "Z":
             return ASCII_KEYS[character.lower()][0], (MOD_LEFT_SHIFT,)
         if character in ASCII_KEYS:
@@ -1070,7 +1298,12 @@ class NanoQLLink:
             )
 
 
-def interactive_keyboard_windows(link: NanoQLLink) -> None:
+def stop_requested(stop_file: Path | None) -> bool:
+    return stop_file is not None and stop_file.exists()
+
+
+def interactive_keyboard_windows(link: NanoQLLink,
+                                 stop_file: Path | None = None) -> None:
     import msvcrt
 
     print(f"NanoQL keyboard active (QL {link.ql_layout.upper()} profile). "
@@ -1100,6 +1333,8 @@ def interactive_keyboard_windows(link: NanoQLLink) -> None:
 
     try:
         while True:
+            if stop_requested(stop_file):
+                break
             f6_pressed = bool(get_async_key_state(0x75) & 0x8000)
             if f6_pressed and not f6_previous:
                 break
@@ -1118,16 +1353,16 @@ def interactive_keyboard_windows(link: NanoQLLink) -> None:
                 for virtual_key in current_keys:
                     fallback_usage = ordinary_keymap[virtual_key]
                     character = windows_virtual_key_character(virtual_key)
-                    translated = False
-                    usages = {fallback_usage}
-                    if character is not None and character >= " ":
+                    if character:
                         try:
                             usage, target_modifiers = link.character_key(character)
-                            usages = {usage, *target_modifiers}
-                            translated = True
+                            active_bindings[virtual_key] = (
+                                {usage, *target_modifiers}, True
+                            )
+                            continue
                         except ValueError:
                             pass
-                    active_bindings[virtual_key] = (usages, translated)
+                    active_bindings[virtual_key] = ({fallback_usage}, False)
 
                 desired: set[int] = set()
                 translated_active = False
@@ -1200,7 +1435,8 @@ def interactive_keyboard_windows(link: NanoQLLink) -> None:
             link.key_event(usage, False)
 
 
-def interactive_keyboard_pynput(link: NanoQLLink) -> None:
+def interactive_keyboard_pynput(link: NanoQLLink,
+                                stop_file: Path | None = None) -> None:
     try:
         from pynput import keyboard
     except ImportError:
@@ -1217,6 +1453,7 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
             trusted = bool(AXIsProcessTrusted())
         except ImportError:
             trusted = True
+            AXIsProcessTrusted = lambda: True
             CGEventSourceKeyState = None
             kCGEventSourceStateCombinedSessionState = None
         if not trusted:
@@ -1390,10 +1627,20 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
 
     print(f"NanoQL keyboard active (QL {link.ql_layout.upper()} profile). "
           "Keys are held in real time; press F6 to return to the terminal.")
+    listener = None
     try:
-        listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+        listener = keyboard.Listener(
+            on_press=on_press,
+            on_release=on_release,
+            # On macOS this uses the authorized Quartz event tap. It prevents
+            # Terminal from receiving escape sequences without changing tty
+            # echo, which would enable Secure Keyboard Entry and block pynput.
+            suppress=sys.platform == "darwin",
+        )
         listener.start()
         while listener.is_alive() or not input_events.empty() or pending_releases:
+            if stop_requested(stop_file):
+                break
             finish_due_releases()
             release_lost_macos_keys()
             try:
@@ -1439,7 +1686,7 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
         listener.stop()
         listener.join(timeout=1.0)
     except Exception as error:
-        if sys.platform == "darwin":
+        if sys.platform == "darwin" and not bool(AXIsProcessTrusted()):
             raise RuntimeError(
                 "macOS could not capture the keyboard. Allow Terminal or Python "
                 "in System Settings > Privacy & Security > Input Monitoring and "
@@ -1447,6 +1694,9 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
             ) from error
         raise
     finally:
+        if listener is not None and listener.is_alive():
+            listener.stop()
+            listener.join(timeout=1.0)
         if terminal_fd is not None and terminal_attributes is not None:
             try:
                 terminal_module.tcflush(terminal_fd, terminal_module.TCIFLUSH)
@@ -1463,11 +1713,12 @@ def interactive_keyboard_pynput(link: NanoQLLink) -> None:
                 break
 
 
-def interactive_keyboard(link: NanoQLLink) -> None:
+def interactive_keyboard(link: NanoQLLink,
+                         stop_file: Path | None = None) -> None:
     if os.name == "nt":
-        interactive_keyboard_windows(link)
+        interactive_keyboard_windows(link, stop_file)
     else:
-        interactive_keyboard_pynput(link)
+        interactive_keyboard_pynput(link, stop_file)
 
 
 DEMO_CODE = bytes.fromhex(
@@ -1577,7 +1828,8 @@ def load_basic_program(link: NanoQLLink, path: Path, run: bool,
     print(f"Loading {len(lines)} SuperBASIC lines from {path} into QDOS RAM...")
     print("Keep the QL at the SuperBASIC prompt until the transfer completes.")
     cpu_speed, cpu_rate = link.measure_cpu_rate()
-    cpu_label = "QL" if cpu_speed == 0 else "16 MHz" if cpu_speed == 1 else f"mode {cpu_speed}"
+    cpu_labels = {0: "QL", 1: "16 MHz", 2: "24 MHz"}
+    cpu_label = cpu_labels.get(cpu_speed, f"mode {cpu_speed}")
     print(f"FPGA CPU mode: {cpu_label}; measured phase rate: {cpu_rate / 1_000_000:.2f} MHz.")
 
     # Lowercase keeps the transfer independent of host Shift/AZERTY handling.
@@ -1629,6 +1881,22 @@ def find_native_programmer(explicit: Path | None) -> tuple[str, Path]:
         backend = "openfpgaloader" if "openfpgaloader" in tool.name.lower() else "gowin"
         return backend, tool
 
+    openfpga = shutil.which("openFPGALoader") or shutil.which("openfpgaloader")
+    openfpga_candidates = (
+        Path("C:/msys64/ucrt64/bin/openFPGALoader.exe"),
+        Path("C:/Program Files/openFPGALoader/bin/openFPGALoader.exe"),
+        Path("C:/Program Files/openFPGALoader/openFPGALoader.exe"),
+        Path("C:/msys64/mingw64/bin/openFPGALoader.exe"),
+        Path("C:/ProgramData/chocolatey/bin/openFPGALoader.exe"),
+        Path.home() / "scoop/apps/openfpgaloader/current/bin/openFPGALoader.exe",
+        Path.home() / "scoop/apps/openfpgaloader/current/openFPGALoader.exe",
+    )
+    if openfpga:
+        return "openfpgaloader", Path(openfpga)
+    for candidate in openfpga_candidates:
+        if candidate.is_file():
+            return "openfpgaloader", candidate
+
     gowin = shutil.which("programmer_cli") or shutil.which("programmer_cli.exe")
     if gowin:
         return "gowin", Path(gowin)
@@ -1641,26 +1909,26 @@ def find_native_programmer(explicit: Path | None) -> tuple[str, Path]:
     if candidates:
         return "gowin", sorted(candidates, reverse=True)[0]
 
-    openfpga = shutil.which("openFPGALoader") or shutil.which("openfpgaloader")
-    if openfpga:
-        return "openfpgaloader", Path(openfpga)
-
-    openfpga_candidates = (
-        Path("C:/Program Files/openFPGALoader/bin/openFPGALoader.exe"),
-        Path("C:/Program Files/openFPGALoader/openFPGALoader.exe"),
-        Path("C:/msys64/mingw64/bin/openFPGALoader.exe"),
-        Path("C:/ProgramData/chocolatey/bin/openFPGALoader.exe"),
-        Path.home() / "scoop/apps/openfpgaloader/current/bin/openFPGALoader.exe",
-        Path.home() / "scoop/apps/openfpgaloader/current/openFPGALoader.exe",
-    )
-    for candidate in openfpga_candidates:
-        if candidate.is_file():
-            return "openfpgaloader", candidate
-
     raise RuntimeError(
         "No native FPGA programmer was found. Install Gowin Programmer or "
         "openFPGALoader, or specify --tool."
     )
+
+
+def native_openfpgaloader_version(executable: Path) -> tuple[int, int, int]:
+    try:
+        completed = subprocess.run(
+            [str(executable), "-V"], check=False, capture_output=True,
+            text=True, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return (0, 0, 0)
+    match = re.search(
+        r"openFPGALoader\s+v(\d+)\.(\d+)\.(\d+)",
+        completed.stdout + completed.stderr,
+        flags=re.IGNORECASE,
+    )
+    return tuple(map(int, match.groups())) if match else (0, 0, 0)
 
 
 def detect_gowin_location(executable: Path, channel: int) -> int | None:
@@ -1693,67 +1961,28 @@ def program_fpga_flash_native(bitstream: Path, tool: Path | None,
         raise ValueError("Native persistent programming requires Gowin's .fs file.")
 
     backend, executable = find_native_programmer(tool)
-    output_file: Path | None = None
     if backend == "gowin":
-        if location is None:
-            location = detect_gowin_location(executable, channel)
-        if location is None:
-            raise RuntimeError(
-                "The USB Debugger A location could not be detected. Close Gowin "
-                "Programmer and specify the value shown by its cable selector with "
-                "--location, for example --location 82977."
-            )
-        output_file = Path(tempfile.gettempdir()) / "nanoql_gowin_programmer.txt"
-        common = [
-            str(executable),
-            "--device", "GW2AR-18C",
-            "--frequency", frequency,
-            "--cable-index", "4",
-            "--channel", str(channel),
-            "--location", str(location),
-        ]
-        probe = common + ["--operation_index", "51"]
-        command = [
-            *common,
-            "--operation_index", "8",
-            "--fsFile", str(bitstream),
-            "--output", str(output_file),
-        ]
-    else:
-        command = [
-            str(executable), "-b", "tangnano20k", "-f",
-            "--external-flash", str(bitstream),
-        ]
+        raise RuntimeError(
+            "Gowin's command-line tools cannot program USB Debugger A reliably. "
+            "Select openFPGALoader v1.1.1 or newer, or use the Gowin Programmer "
+            "graphical application manually."
+        )
+
+    version = native_openfpgaloader_version(executable)
+    if version < (1, 1, 1):
+        raise RuntimeError(
+            "Tang Nano 20K BL616 programming requires openFPGALoader v1.1.1 "
+            f"or newer; detected {'.'.join(map(str, version))}."
+        )
+    command = [
+        str(executable), "-b", "tangnano20k", "-f",
+        "--external-flash", str(bitstream),
+    ]
 
     print(f"Native programmer: {executable}")
-    if backend == "gowin":
-        print(f"Target cable: USB Debugger A/{channel}/{location}/null")
-        print("Checking the external FPGA Flash...")
-        try:
-            probe_result = subprocess.run(probe, check=False, timeout=20)
-        except subprocess.TimeoutExpired as error:
-            raise RuntimeError(
-                "Gowin could not detect the external FPGA Flash within 20 seconds. "
-                "Power-cycle the board and verify the BL616 ORIGINAL profile."
-            ) from error
-        if probe_result.returncode:
-            raise RuntimeError(
-                "Gowin could not detect the external FPGA Flash. Power-cycle the "
-                "board, close every programmer, and verify the BL616 ORIGINAL profile."
-            )
     print(f"Programming {bitstream.name}...")
-    try:
-        completed = subprocess.run(
-            command, check=False, timeout=120 if backend == "gowin" else None
-        )
-    except subprocess.TimeoutExpired as error:
-        raise RuntimeError(
-            "Gowin external-Flash programming did not start within 120 seconds. "
-            "The stalled programmer was stopped; power-cycle the board before retrying."
-        ) from error
+    completed = subprocess.run(command, check=False)
     if completed.returncode:
-        if output_file is not None and output_file.is_file():
-            print(output_file.read_text(encoding="utf-8", errors="replace"))
         raise RuntimeError(
             "Native FPGA programming failed. Ensure that the BL616 is running "
             "the official FPGA Partner firmware and that no other programmer is open."
@@ -1787,7 +2016,13 @@ def main() -> int:
     subparsers.add_parser(
         "benchmark", help="load and run the included Sinclair QL Basic benchmark"
     )
-    subparsers.add_parser("keyboard", help="use the computer keyboard in real time")
+    keyboard_parser = subparsers.add_parser(
+        "keyboard", help="use the computer keyboard in real time"
+    )
+    keyboard_parser.add_argument(
+        "--stop-file", type=Path,
+        help=argparse.SUPPRESS,
+    )
 
     subparsers.add_parser(
         "sd-info", help="check USB access to the NanoQL/Drive1 microSD folder"
@@ -1842,7 +2077,7 @@ def main() -> int:
 
     mdv_sync_parser = subparsers.add_parser(
         "mdv-sync",
-        help="synchronize a PC folder with MDV1 and restart the QL",
+        help="synchronize a PC folder with MDV1 and mount it",
     )
     mdv_sync_parser.add_argument("source", type=Path, help="PC folder exposed as MDV1")
     mdv_sync_parser.add_argument(
@@ -1957,7 +2192,8 @@ def main() -> int:
             print(f"NanoQL Link status: 0x{link.status():02x}")
         elif args.command == "cpu-status":
             cpu_speed, cpu_rate = link.measure_cpu_rate()
-            cpu_label = "QL" if cpu_speed == 0 else "16 MHz" if cpu_speed == 1 else f"mode {cpu_speed}"
+            cpu_labels = {0: "QL", 1: "16 MHz", 2: "24 MHz"}
+            cpu_label = cpu_labels.get(cpu_speed, f"mode {cpu_speed}")
             print(f"FPGA CPU mode: {cpu_label}")
             print(f"Measured phase rate: {cpu_rate / 1_000_000:.3f} MHz")
             print(f"QL ROM keyboard: {'French' if link.ql_layout == 'fr' else 'English'}")
@@ -2052,7 +2288,9 @@ def main() -> int:
         elif args.command == "basic":
             load_basic_program(link, args.source, run=not args.no_run)
         elif args.command == "keyboard":
-            interactive_keyboard(link)
+            if args.stop_file:
+                args.stop_file.unlink(missing_ok=True)
+            interactive_keyboard(link, args.stop_file)
         elif args.command == "link-stress":
             run_link_stress(link, args.seconds)
         elif args.command == "sd-info":
@@ -2139,10 +2377,12 @@ def main() -> int:
                     except Exception:
                         pass
                     raise
+                print("Upload verified; mounting MDV1...")
                 link.microdrive_sync_control(True)
             print(
-                "MDV1 synchronized, mounted, and saved for future boots. "
-                "The QL has been restarted and NanoQL Link remains active."
+                "MDV1 synchronized and mounted. NanoQL Link remains active; "
+                "use DIR mdv1_ from QDOS.",
+                flush=True,
             )
         elif args.command == "mdv-extract":
             remote_path_bytes(args.source)

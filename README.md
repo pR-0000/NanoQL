@@ -13,7 +13,7 @@ Le projet privilégie la fidélité matérielle : CPU 68000, timings vidéo nati
 ### Fonctions disponibles
 
 - ROM QL et firmware IPC standard ou Hermes sélectionnables sur microSD ;
-- CPU en mode QL fidèle ou 16 MHz, commutable à chaud ;
+- CPU en modes QL fidèle, 16 MHz ou 24 MHz, commutable à chaud ;
 - 128, 640 ou 896 Kio de RAM ;
 - vidéo QL 4/8 couleurs sur HDMI avec modes `Monitor`, `TV` et larges ;
 - son QL et carte QSound optionnelle mixés sur HDMI ;
@@ -28,7 +28,7 @@ Les fonctions annoncées comme validées ont été testées sur une Tang Nano 20
 
 ### Pourquoi NanoQL ?
 
-Par rapport à QL_MiSTer, NanoQL vise une petite machine autonome et accessible : une Tang Nano 20K suffit, sans DE10-Nano, HPS ni système Linux hôte. Son BL616 intégré fournit l'overlay, la microSD et le lien USB de développement. Son Microdrive reproduit un flux physique indépendant du CPU, accepte les écritures QDOS et transforme directement un dossier ordinaire en cartouche. QL_MiSTer reste actuellement plus complet pour Gold Card/SMSQ/E, 4 Mio, RTC et plusieurs périphériques ; ces fonctions figurent dans la feuille de route NanoQL.
+Par rapport à QL_MiSTer, NanoQL vise une petite machine autonome et accessible : une Tang Nano 20K suffit, sans DE10-Nano, HPS ni système Linux hôte. Son BL616 intégré fournit l'overlay, la microSD et le lien USB de développement. Son Microdrive reproduit le flux du ZX8302, suit les modes CPU accélérés comme QL_MiSTer, accepte les écritures QDOS et transforme directement un dossier ordinaire en cartouche. QL_MiSTer reste actuellement plus complet pour Gold Card/SMSQ/E, 4 Mio, RTC et plusieurs périphériques ; ces fonctions figurent dans la feuille de route NanoQL.
 
 ### Matériel minimal
 
@@ -59,6 +59,8 @@ cd NanoQL
 python tools/nanoql_setup.py
 ```
 
+L'assistant mémorise automatiquement les chemins, outils et paramètres de développement dans un fichier INI propre à l'utilisateur. L'onglet **Bare-metal** charge, vérifie et exécute un binaire 68000 brut avec des adresses de chargement, PC et SSP configurables.
+
 L'assistant accepte directement le fichier FPGA `.fs` précompilé d'une release, détecte les ports USB/série dans des listes déroulantes et peut installer openFPGALoader avec Homebrew sous macOS. Gowin EDA n'est pas requis pour installer une release.
 
 Ordre impératif pour une première installation :
@@ -69,7 +71,7 @@ Ordre impératif pour une première installation :
 
 Gowin Programmer n'est pas obligatoire : openFPGALoader peut programmer le FPGA. Gowin EDA est uniquement nécessaire pour compiler le cœur depuis les sources.
 
-Sous Windows, l'assistant préfère automatiquement Gowin Programmer lorsqu'il est installé et conserve openFPGALoader comme solution de repli. Sous macOS et Linux, il utilise openFPGALoader. Le bouton **Detect programmer** vérifie la connexion avant la programmation.
+L'assistant utilise openFPGALoader sous Windows, macOS et Linux. Sous Windows, son bouton **Install Windows JTAG driver** configure avec Zadig l'interface JTAG A en WinUSB ; ne modifiez jamais l'interface série B. Le bouton **Detect programmer** vérifie ensuite la connexion avant la programmation. Gowin Programmer reste une alternative manuelle.
 
 NanoQL ne redistribue aucune ROM. L'utilisateur doit fournir légalement une ROM QL de 48 ou 64 Kio et un firmware IPC de 2 Kio.
 
@@ -107,13 +109,13 @@ Sur le QL original de 128 Kio, `RESPR(65536)` peut normalement produire `Out of 
 
 | Ressource |            Utilisation |
 | --------- | ---------------------: |
-| Logique   | 15 065 / 20 736 (73 %) |
-| LUT       |                 14 077 |
-| Registres |                  7 170 |
+| Logique   | 14 968 / 20 736 (73 %) |
+| LUT       |                 13 961 |
+| Registres |                  7 154 |
 | BSRAM     |         21 / 46 (46 %) |
 | DSP       |               0,5 / 24 |
 
-Le domaine système fonctionne à 31,8 MHz avec un Fmax mesuré de 66,804 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax mesuré de 84,651 MHz.
+Le domaine système fonctionne à 48 MHz avec un Fmax mesuré de 61,663 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax mesuré de 74,276 MHz.
 
 ## English
 
@@ -124,7 +126,7 @@ The project emphasizes hardware fidelity: the 68000 CPU, native video timing, RA
 ### Available features
 
 - microSD-selectable QL ROM and standard or Hermes IPC firmware;
-- faithful QL CPU mode and live-switchable 16 MHz mode;
+- faithful QL, 16 MHz, and 24 MHz CPU modes, live-switchable;
 - 128, 640, or 896 KiB RAM;
 - QL 4/8-colour video over HDMI with `Monitor`, `TV`, and wide modes;
 - QL sound and optional QSound card mixed into HDMI;
@@ -170,6 +172,8 @@ cd NanoQL
 python tools/nanoql_setup.py
 ```
 
+The assistant automatically remembers paths, tools, and development parameters in a per-user INI file. Its **Bare-metal** tab loads, verifies, and executes a raw 68000 binary with configurable load, PC, and SSP addresses.
+
 The assistant accepts a release's precompiled FPGA `.fs` directly, detects USB/serial ports in drop-down lists, and can install openFPGALoader through Homebrew on macOS. Gowin EDA is not required to install a release.
 
 Mandatory first-install order:
@@ -180,7 +184,7 @@ Mandatory first-install order:
 
 Gowin Programmer is optional because openFPGALoader can program the FPGA. Gowin EDA is only needed to compile the core from source.
 
-On Windows, the assistant automatically prefers Gowin Programmer when installed and keeps openFPGALoader as a fallback. On macOS and Linux, it uses openFPGALoader. **Detect programmer** checks the connection before programming.
+The assistant uses openFPGALoader on Windows, macOS, and Linux. On Windows, **Install Windows JTAG driver** uses Zadig to configure JTAG interface A with WinUSB; never modify serial interface B. **Detect programmer** then checks the connection before programming. Gowin Programmer remains a manual alternative.
 
 NanoQL does not redistribute ROMs. Users must legally supply a 48 or 64 KiB QL ROM and a 2 KiB IPC firmware.
 
@@ -218,13 +222,13 @@ On an original 128 KiB QL, `RESPR(65536)` can normally report `Out of Memory`: Q
 
 | Resource  |                 Usage |
 | --------- | --------------------: |
-| Logic     | 15,065 / 20,736 (73%) |
-| LUT       |                14,077 |
-| Registers |                 7,170 |
+| Logic     | 14,968 / 20,736 (73%) |
+| LUT       |                13,961 |
+| Registers |                 7,154 |
 | BSRAM     |         21 / 46 (46%) |
 | DSP       |              0.5 / 24 |
 
-The system domain runs at 31.8 MHz with a measured Fmax of 66.804 MHz. The HDMI domain runs at 74.25 MHz with a measured Fmax of 84.651 MHz.
+The system domain runs at 48 MHz with a measured Fmax of 61.663 MHz. The HDMI domain runs at 74.25 MHz with a measured Fmax of 74.276 MHz.
 
 ## Credits and licenses
 

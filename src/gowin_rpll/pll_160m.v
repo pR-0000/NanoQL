@@ -40,9 +40,11 @@ rPLL rpll_inst (
 
 defparam rpll_inst.FCLKIN = "27";
 defparam rpll_inst.DYN_IDIV_SEL = "false";
+// 27 MHz / 9 * 56 = 168 MHz. The system CLKDIV divides this by 3.5
+// to obtain the 48 MHz domain required by the 24 MHz fx68k mode.
 defparam rpll_inst.IDIV_SEL = 8;
 defparam rpll_inst.DYN_FBDIV_SEL = "false";
-defparam rpll_inst.FBDIV_SEL = 52;
+defparam rpll_inst.FBDIV_SEL = 55;
 defparam rpll_inst.DYN_ODIV_SEL = "false";
 defparam rpll_inst.ODIV_SEL = 4;
 defparam rpll_inst.PSDA_SEL = "0000";

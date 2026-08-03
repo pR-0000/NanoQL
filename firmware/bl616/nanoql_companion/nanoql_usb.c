@@ -84,6 +84,7 @@
 #define NANOQL_FS_FULL_PATH_SIZE \
     (sizeof(NANOQL_FS_ROOT) + NANOQL_FS_MAX_REMOTE_PATH + 1)
 #define NANOQL_FS_CHUNK_SIZE 240
+#define NANOQL_FS_SYNC_INTERVAL 4096u
 
 #define RX_RING_SIZE 2048
 #define USB_CONFIG_SIZE (9 + CDC_ACM_DESCRIPTOR_LEN)
@@ -104,6 +105,8 @@ static volatile bool usb_tx_busy;
 static volatile bool usb_rx_reset_requested;
 static bool fpga_upload_open;
 static bool companion_suspended_for_upload;
+static bool companion_resume_after_tx;
+static bool microdrive_sync_active;
 static uint32_t fpga_upload_size;
 static uint32_t fpga_upload_received;
 static uint32_t fpga_upload_crc;
@@ -126,8 +129,15 @@ static uint32_t fs_expected_size;
 static uint32_t fs_expected_crc;
 static uint32_t fs_received_size;
 static uint32_t fs_received_crc;
+static uint32_t fs_next_sync;
+static bool fs_final_synced;
+static uint8_t fs_commit_phase;
+static bool fs_backup_created;
+static bool fs_direct_update;
+static uint32_t fs_commit_size;
+static uint32_t fs_commit_crc;
 
-static void fpga_upload_suspend_companion(void);
+static bool fpga_upload_suspend_companion(void);
 static void fpga_upload_resume_companion(void);
 
 static const uint8_t device_descriptor[] = {
@@ -492,7 +502,8 @@ static void fs_close_locked(bool remove_partial_upload)
              fs_session == NANOQL_FS_GETTING)
         (void)f_close(&fs_file);
 
-    if (remove_partial_upload && fs_session == NANOQL_FS_PUTTING)
+    if (remove_partial_upload && fs_session == NANOQL_FS_PUTTING &&
+        !fs_direct_update)
         (void)f_unlink(NANOQL_FS_TEMP);
     fs_session = NANOQL_FS_IDLE;
 }
@@ -503,11 +514,18 @@ static void fs_abort_session(void)
         return;
     if (!sdc_is_initialized()) {
         fs_session = NANOQL_FS_IDLE;
+        fpga_upload_resume_companion();
         return;
     }
-    sdc_lock();
-    fs_close_locked(true);
-    sdc_unlock();
+    if (sdc_lock_timeout(1000)) {
+        fs_close_locked(true);
+        sdc_unlock();
+    } else {
+        /* A USB reset must never deadlock NanoQL Link behind a Companion SD
+           transaction. The next filesystem command will reopen its objects. */
+        fs_session = NANOQL_FS_IDLE;
+    }
+    fpga_upload_resume_companion();
 }
 
 static uint8_t fs_command(
@@ -525,7 +543,8 @@ static uint8_t fs_command(
     case NANOQL_CMD_FS_INFO:
         if (length != 1)
             return 3;
-        sdc_lock();
+        if (!sdc_lock_timeout(5000))
+            return 23;
         result = fs_ensure_root_locked();
         sdc_unlock();
         if (result != FR_OK)
@@ -534,7 +553,8 @@ static uint8_t fs_command(
         response[4] = 1;    /* protocol version */
         response[5] = 0x3f; /* files plus automatic MDV1 synchronization */
         response[6] = NANOQL_FS_MAX_REMOTE_PATH;
-        *response_length = 7;
+        memcpy(&response[7], "MD10", 4); /* diagnostic firmware build */
+        *response_length = 11;
         return 0;
 
     case NANOQL_CMD_FS_LIST_BEGIN:
@@ -594,15 +614,60 @@ static uint8_t fs_command(
             return length < 10 ? 3 : 22;
         if (!fs_make_path(&payload[9], (uint8_t)(length - 9), path))
             return 21;
+        /* Reserve the shared filesystem/SPI path before creating the upload
+           file. Keeping the Companion task paused through PUT_DATA and COMMIT
+           prevents QL media traffic from taking the bus between the final
+           data packet and FatFs metadata flush. */
+        if (!fpga_upload_suspend_companion())
+            return 23;
         sdc_lock();
         result = fs_ensure_parent_locked(path);
+        fs_direct_update = false;
+        bool force_direct_update =
+            strcmp(path, NANOQL_FS_ROOT "/MDV1.mdv") == 0;
         if (result == FR_OK) {
+            FILINFO existing;
+            FRESULT exists = f_stat(path, &existing);
+            if (exists == FR_OK && !(existing.fattrib & AM_DIR) &&
+                existing.fsize == read_be32(&payload[1])) {
+                /* MDV images rebuilt from a folder retain their physical
+                   size. Updating the existing cluster chain in place avoids
+                   f_unlink(), which can loop forever on a damaged exFAT/FAT
+                   chain left by an interrupted earlier upload. */
+                result = fs_open_retry_locked(
+                    &fs_file, path, FA_READ | FA_WRITE);
+                fs_direct_update = result == FR_OK;
+            } else if (force_direct_update &&
+                       (exists == FR_NO_FILE || exists == FR_NO_PATH)) {
+                /* A freshly prepared card has no MDV1.mdv yet. Create the
+                   final file directly so it still uses inline verification
+                   and never enters the temporary rename/delete path. */
+                result = fs_open_retry_locked(
+                    &fs_file, path,
+                    FA_CREATE_ALWAYS | FA_READ | FA_WRITE);
+                fs_direct_update = result == FR_OK;
+            } else if (force_direct_update && exists == FR_OK &&
+                       !(existing.fattrib & AM_DIR)) {
+                /* Recover a partial image left by an interrupted older
+                   firmware. This is the only case that changes its chain. */
+                result = fs_open_retry_locked(
+                    &fs_file, path,
+                    FA_CREATE_ALWAYS | FA_READ | FA_WRITE);
+                fs_direct_update = result == FR_OK;
+            } else if (force_direct_update && exists == FR_OK) {
+                result = FR_DENIED;
+            } else if (exists != FR_OK && exists != FR_NO_FILE &&
+                       exists != FR_NO_PATH) {
+                result = exists;
+            }
+        }
+        if (result == FR_OK && !fs_direct_update) {
             FRESULT remove_result = f_unlink(NANOQL_FS_TEMP);
             if (remove_result != FR_OK && remove_result != FR_NO_FILE &&
                 remove_result != FR_NO_PATH)
                 result = remove_result;
         }
-        if (result == FR_OK)
+        if (result == FR_OK && !fs_direct_update)
             result = fs_open_retry_locked(
                 &fs_file, NANOQL_FS_TEMP,
                 FA_CREATE_ALWAYS | FA_READ | FA_WRITE);
@@ -612,13 +677,20 @@ static uint8_t fs_command(
             fs_expected_crc = read_be32(&payload[5]);
             fs_received_size = 0;
             fs_received_crc = UINT32_C(0xffffffff);
+            fs_next_sync = NANOQL_FS_SYNC_INTERVAL;
+            fs_final_synced = false;
+            fs_commit_phase = 0;
+            fs_backup_created = false;
             memcpy(fs_target_path, path, strlen(path) + 1);
         }
         sdc_unlock();
-        if (result != FR_OK)
+        if (result != FR_OK) {
+            fpga_upload_resume_companion();
             return fs_error_from_result(result);
+        }
         response[0] = 0;
-        *response_length = 1;
+        response[1] = fs_direct_update ? 1 : 0;
+        *response_length = 2;
         return 0;
 
     case NANOQL_CMD_FS_PUT_DATA: {
@@ -639,6 +711,19 @@ static uint8_t fs_command(
         result = f_lseek(&fs_file, offset);
         if (result == FR_OK)
             result = f_write(&fs_file, &payload[5], data_length, &written);
+        uint32_t end_offset = offset + data_length;
+        if (result == FR_OK && written == data_length && extends_file &&
+            (end_offset >= fs_next_sync || end_offset == fs_expected_size)) {
+            /* Commit data, FAT and directory metadata progressively. The
+               final PUT_DATA acknowledgement therefore guarantees that
+               f_close() has no deferred microSD transaction left to perform. */
+            result = f_sync(&fs_file);
+            if (result == FR_OK && end_offset == fs_expected_size)
+                fs_final_synced = true;
+            while (fs_next_sync <= end_offset &&
+                   fs_next_sync <= UINT32_MAX - NANOQL_FS_SYNC_INTERVAL)
+                fs_next_sync += NANOQL_FS_SYNC_INTERVAL;
+        }
         sdc_unlock();
         if (result != FR_OK || written != data_length) {
             fs_abort_session();
@@ -648,37 +733,67 @@ static uint8_t fs_command(
             fs_received_crc = crc32_update(
                 fs_received_crc, &payload[5], data_length);
             fs_received_size += data_length;
+            if (fs_direct_update && fs_final_synced &&
+                fs_received_size == fs_expected_size) {
+                uint32_t final_crc =
+                    fs_received_crc ^ UINT32_C(0xffffffff);
+                if (final_crc == fs_expected_crc) {
+                    /* The 100% PUT_DATA reply now certifies the whole update.
+                       PUT_COMMIT only returns these cached values and never
+                       touches FatFs, the SD semaphore, SPI, or the card. */
+                    fs_commit_size = fs_received_size;
+                    fs_commit_crc = final_crc;
+                    fs_file.obj.fs = NULL;
+                    fs_commit_phase = 4;
+                }
+            }
         }
         write_be32(response, offset + data_length);
-        *response_length = 4;
+        if (fs_direct_update && fs_commit_phase == 4) {
+            /* Piggyback final verification on the already reliable last data
+               acknowledgement. The desktop therefore needs no separate
+               COMMIT transaction after displaying 100%. */
+            write_be32(&response[4], fs_commit_size);
+            write_be32(&response[8], fs_commit_crc);
+            *response_length = 12;
+            fs_session = NANOQL_FS_IDLE;
+            if (!microdrive_sync_active)
+                companion_resume_after_tx = true;
+        } else {
+            *response_length = 4;
+        }
         return 0;
     }
 
     case NANOQL_CMD_FS_PUT_COMMIT: {
         if (length != 1 || fs_session != NANOQL_FS_PUTTING)
             return length != 1 ? 3 : 22;
-        uint32_t actual_crc = fs_received_crc ^ UINT32_C(0xffffffff);
-        uint32_t actual_size = 0;
-        sdc_lock();
-        result = f_sync(&fs_file);
-        if (result == FR_OK && f_size(&fs_file) <= UINT32_MAX)
-            actual_size = (uint32_t)f_size(&fs_file);
-        else if (result == FR_OK)
-            result = FR_INVALID_OBJECT;
-        (void)f_close(&fs_file);
-
-        if (result == FR_OK &&
-            (fs_received_size != fs_expected_size ||
-             actual_size != fs_expected_size ||
-             actual_crc != fs_expected_crc)) {
-            (void)f_unlink(NANOQL_FS_TEMP);
-            fs_session = NANOQL_FS_IDLE;
-            sdc_unlock();
-            return 24;
+        bool commit_lock_held = false;
+        if (fs_commit_phase < 4) {
+            if (!sdc_lock_timeout(5000))
+                return 23;
+            commit_lock_held = true;
         }
 
-        bool backup_created = false;
-        if (result == FR_OK) {
+        if (fs_commit_phase == 0) {
+            fs_commit_crc = fs_received_crc ^ UINT32_C(0xffffffff);
+            fs_commit_size = f_size(&fs_file) <= UINT32_MAX ?
+                                 (uint32_t)f_size(&fs_file) : UINT32_MAX;
+            if (!fs_final_synced)
+                result = f_sync(&fs_file);
+            if (result == FR_OK &&
+                (fs_received_size != fs_expected_size ||
+                 fs_commit_size != fs_expected_size ||
+                 fs_commit_crc != fs_expected_crc))
+                result = FR_INT_ERR;
+            if (result == FR_OK) {
+                /* The final f_sync already performed every operation that
+                   f_close would perform. With FF_FS_LOCK and
+                   FF_FS_REENTRANT disabled, only object invalidation remains. */
+                fs_file.obj.fs = NULL;
+                fs_commit_phase = fs_direct_update ? 4 : 1;
+            }
+        } else if (fs_commit_phase == 1) {
             FILINFO existing;
             FRESULT exists = f_stat(fs_target_path, &existing);
             if (exists == FR_OK) {
@@ -687,25 +802,56 @@ static uint8_t fs_command(
                 else {
                     (void)f_unlink(NANOQL_FS_BACKUP);
                     result = f_rename(fs_target_path, NANOQL_FS_BACKUP);
-                    backup_created = result == FR_OK;
+                    fs_backup_created = result == FR_OK;
                 }
             } else if (exists != FR_NO_FILE && exists != FR_NO_PATH) {
                 result = exists;
             }
-        }
-        if (result == FR_OK)
+            if (result == FR_OK)
+                fs_commit_phase = 2;
+        } else if (fs_commit_phase == 2) {
             result = f_rename(NANOQL_FS_TEMP, fs_target_path);
-        if (result != FR_OK && backup_created)
-            (void)f_rename(NANOQL_FS_BACKUP, fs_target_path);
-        else if (result == FR_OK && backup_created)
-            (void)f_unlink(NANOQL_FS_BACKUP);
+            if (result == FR_OK)
+                fs_commit_phase = 3;
+        } else if (fs_commit_phase == 3) {
+            if (fs_backup_created) {
+                FRESULT remove_result = f_unlink(NANOQL_FS_BACKUP);
+                if (remove_result != FR_OK && remove_result != FR_NO_FILE)
+                    result = remove_result;
+            }
+            if (result == FR_OK)
+                fs_commit_phase = 4;
+        }
+
+        if (result != FR_OK) {
+            if (fs_backup_created && !fs_direct_update)
+                (void)f_rename(NANOQL_FS_BACKUP, fs_target_path);
+            fs_session = NANOQL_FS_IDLE;
+            if (commit_lock_held)
+                sdc_unlock();
+            fpga_upload_resume_companion();
+            return result == FR_INT_ERR ? 24 : fs_error_from_result(result);
+        }
+        if (fs_commit_phase < 4) {
+            response[0] = 0xfe;
+            response[1] = fs_commit_phase;
+            *response_length = 2;
+            if (commit_lock_held)
+                sdc_unlock();
+            return 0;
+        }
+
         fs_session = NANOQL_FS_IDLE;
-        sdc_unlock();
-        if (result != FR_OK)
-            return fs_error_from_result(result);
-        write_be32(response, actual_size);
-        write_be32(&response[4], actual_crc);
+        write_be32(response, fs_commit_size);
+        write_be32(&response[4], fs_commit_crc);
         *response_length = 8;
+        if (commit_lock_held)
+            sdc_unlock();
+        /* process_frame() still has to submit this acknowledgement to the
+           USB endpoint. Resuming Companion here used to race that transfer
+           and could strand the CDC task during the following USB reset. */
+        if (!microdrive_sync_active)
+            companion_resume_after_tx = true;
         return 0;
     }
 
@@ -799,16 +945,24 @@ static uint8_t fs_command(
         if (length != 2 || fs_session != NANOQL_FS_IDLE)
             return length != 2 ? 3 : 22;
         if (payload[1] == 0) {
-            /* Release the old file before its atomic replacement. Keep the
-               Companion and QL running so an interrupted desktop upload can
-               never leave the board held in reset. */
-            if (sdc_image_open(2, NULL) != 0)
+            /* Keep Companion stopped across unmount, upload, and remount.
+               Resuming it after PUT_COMMIT used to race sdc_image_open() and
+               inifile_write(), while the host still displayed Finalizing. */
+            if (!fpga_upload_suspend_companion())
+                return 23;
+            microdrive_sync_active = true;
+            if (sdc_image_open(2, NULL) != 0) {
+                microdrive_sync_active = false;
+                fpga_upload_resume_companion();
                 return 25;
+            }
         } else if (payload[1] == 1) {
+            /* Backward-compatible combined mount operation. */
             char image_name[] = "MDV1.mdv";
             sdc_set_cwd(2, NANOQL_FS_ROOT);
             if (sdc_image_open(2, image_name) != 0) {
                 sys_set_val('R', 0);
+                microdrive_sync_active = false;
                 fpga_upload_resume_companion();
                 return 25;
             }
@@ -816,6 +970,32 @@ static uint8_t fs_command(
             /* Pulse the QL reset only after process_frame() has acknowledged
                the command. Keep NanoQL Link active for the remote keyboard. */
             microdrive_reset_pending = true;
+            microdrive_sync_active = false;
+            companion_resume_after_tx = true;
+        } else if (payload[1] == 3) {
+            char image_name[] = "MDV1.mdv";
+            if (!microdrive_sync_active)
+                return 22;
+            sdc_set_cwd(2, NANOQL_FS_ROOT);
+            if (sdc_image_open(2, image_name) != 0)
+                return 25;
+        } else if (payload[1] == 4) {
+            if (!microdrive_sync_active)
+                return 22;
+            /* Do not rewrite nanoql.ini here. Any BL616 filesystem access can
+               delay the FPGA's first direct sectors from the newly inserted
+               cartridge, which stalls QDOS and remote-key events together.
+               NanoQL deliberately treats this developer mount as runtime-only. */
+            microdrive_sync_active = false;
+            companion_resume_after_tx = true;
+        } else if (payload[1] == 5) {
+            if (!microdrive_sync_active)
+                return 22;
+            /* The staged MDV5 host issues the QDOS restart separately after
+               this acknowledgement. Combining USB TX completion, Companion
+               resume, and an FPGA SPI reset here could strand the link task. */
+            microdrive_sync_active = false;
+            companion_resume_after_tx = true;
         } else if (payload[1] == 2) {
             /* Final desktop acknowledgement: release any stale reset left by
                an interrupted older synchronization before returning. */
@@ -824,7 +1004,8 @@ static uint8_t fs_command(
             return 3;
         }
         response[0] = 0;
-        *response_length = 1;
+        response[1] = payload[1];
+        *response_length = 2;
         return 0;
     }
 
@@ -845,22 +1026,27 @@ static void fpga_upload_abort(void)
     }
 }
 
-static void fpga_upload_suspend_companion(void)
+static bool fpga_upload_suspend_companion(void)
 {
     TaskHandle_t task = com_task_handle;
     if (task == NULL || task == xTaskGetCurrentTaskHandle() ||
         companion_suspended_for_upload)
-        return;
+        return true;
 
     /* Wait until the Companion owns neither shared resource before stopping
        it. During JTAG configuration the FPGA SPI endpoint disappears, and a
        concurrent Companion transaction can otherwise starve USB CDC. */
-    sdc_lock();
-    mcu_hw_spi_begin();
+    if (!sdc_lock_timeout(5000))
+        return false;
+    if (!mcu_hw_spi_begin_timeout(5000)) {
+        sdc_unlock();
+        return false;
+    }
     vTaskSuspend(task);
     companion_suspended_for_upload = true;
     mcu_hw_spi_end();
     sdc_unlock();
+    return true;
 }
 
 static void fpga_upload_resume_companion(void)
@@ -887,7 +1073,8 @@ static uint8_t fpga_upload_command(
         fpga_upload_expected_crc = read_be32(&payload[5]);
         if (!fpga_upload_size || fpga_upload_size > NANOQL_FPGA_MAX_SIZE)
             return 4;
-        fpga_upload_suspend_companion();
+        if (!fpga_upload_suspend_companion())
+            return 5;
         if (!gowin_stream_begin()) {
             fpga_upload_resume_companion();
             return 5;
@@ -982,7 +1169,9 @@ static uint8_t spi_exchange(
         }
         mcu_hw_spi_begin();
         response[0] = mcu_hw_spi_tx_u08(SPI_TARGET_HID);
-        response[1] = mcu_hw_spi_tx_u08(SPI_HID_KEYBOARD);
+        /* NanoQL Link sends characters already mapped to the selected QL ROM.
+           HID command 5 bypasses the physical host-layout translation in FPGA. */
+        response[1] = mcu_hw_spi_tx_u08(5);
         response[2] = mcu_hw_spi_tx_u08(payload[1]);
         mcu_hw_spi_end();
         return 3;
@@ -996,16 +1185,32 @@ static uint8_t spi_exchange(
     return (uint8_t)(length + 1);
 }
 
-static void usb_send(const uint8_t *data, uint8_t length)
+static bool usb_wait_for_tx(unsigned attempts)
 {
-    while (usb_ready && usb_tx_busy)
+    while (usb_ready && usb_tx_busy && attempts-- != 0)
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
-    if (!usb_ready)
-        return;
+    return usb_ready && !usb_tx_busy;
+}
+
+static bool usb_send(const uint8_t *data, uint8_t length)
+{
+    if (!usb_wait_for_tx(20)) {
+        /* Never leave the link task sleeping forever if CherryUSB misses an
+           IN completion. A later host retry can recover the transaction. */
+        usb_tx_busy = false;
+        return false;
+    }
 
     memcpy(usb_write_buffer, data, length);
     usb_tx_busy = true;
-    usbd_ep_start_write(USB_BUS_ID, CDC_IN_EP, usb_write_buffer, length);
+    if (usbd_ep_start_write(
+            USB_BUS_ID, CDC_IN_EP, usb_write_buffer, length) != 0) {
+        /* The old code left usb_tx_busy asserted on this error, permanently
+           blocking NanoQL Link, S1 recovery, and every subsequent reply. */
+        usb_tx_busy = false;
+        return false;
+    }
+    return true;
 }
 
 static void send_error(uint8_t sequence, uint8_t code)
@@ -1014,7 +1219,7 @@ static void send_error(uint8_t sequence, uint8_t code)
         'Q', 'N', NANOQL_PROTOCOL_VERSION, sequence, 2, 0xff, code, 0
     };
     frame[7] = crc8(&frame[2], 5);
-    usb_send(frame, sizeof(frame));
+    (void)usb_send(frame, sizeof(frame));
 }
 
 static void process_frame(
@@ -1069,7 +1274,7 @@ static void process_frame(
     memcpy(&frame[5], spi_response, response_length);
     frame[5 + response_length] =
         crc8(&frame[2], (size_t)(3 + response_length));
-    usb_send(frame, (uint8_t)(6 + response_length));
+    (void)usb_send(frame, (uint8_t)(6 + response_length));
 }
 
 static void link_task(void *argument)
@@ -1146,8 +1351,7 @@ static void link_task(void *argument)
             state = WAIT_MAGIC_N;
             if (return_to_companion_pending) {
                 return_to_companion_pending = false;
-                while (usb_ready && usb_tx_busy)
-                    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
+                (void)usb_wait_for_tx(20);
                 vTaskDelay(pdMS_TO_TICKS(50));
                 debugf("NanoQL: FPGA programmed, returning to Companion");
                 mcu_hw_reset();
@@ -1156,8 +1360,7 @@ static void link_task(void *argument)
                 uint8_t qdos_command = NANOQL_CMD_QDOS;
                 uint8_t qdos_response[2];
                 microdrive_reset_pending = false;
-                while (usb_ready && usb_tx_busy)
-                    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
+                (void)usb_wait_for_tx(20);
                 debugf("NanoQL: MDV1 synchronized, resetting QL");
                 /* Never assert the persistent Companion reset here. A task
                    interruption between R=1 and R=0 used to leave the startup
@@ -1168,6 +1371,11 @@ static void link_task(void *argument)
                 (void)spi_exchange(&qdos_command, 1, qdos_response);
                 vTaskDelay(pdMS_TO_TICKS(50));
                 sys_set_val('R', 0);
+            }
+            if (companion_resume_after_tx) {
+                companion_resume_after_tx = false;
+                (void)usb_wait_for_tx(20);
+                fpga_upload_resume_companion();
             }
             break;
         }

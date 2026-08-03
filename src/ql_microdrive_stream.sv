@@ -7,15 +7,16 @@
 module ql_microdrive_stream #(
     // QLAY stores two bytes per 16-bit tape word. The MiSTer model serializes
     // those words at 200 kbit/s, producing one word every 80 us and 2.8 ms
-    // for a 35-word gap. Derive this cadence from the fixed 31.8 MHz clock so
+    // for a 35-word gap. Derive this cadence from the fixed 48 MHz clock so
     // CPU speed changes cannot alter the tape.
-    parameter integer CLOCK_CYCLES_PER_BIT = 159
+    parameter integer CLOCK_CYCLES_PER_BIT = 240
 ) (
     input  wire        clk,
     input  wire        reset,
     input  wire        core_reset,
+    input  wire [1:0]  cpu_speed,
     input  wire        selected,
-    input  wire        status_read_ack,
+    input  wire        receive_ack,
     input  wire        write_enable,
     input  wire        erase_enable,
     input  wire        tx_write,
@@ -61,6 +62,14 @@ module ql_microdrive_stream #(
         (QLAY_IMAGE_SIZE + 511) / 512;
     localparam integer PHASE_DIVIDER_WIDTH =
         $clog2(CLOCK_CYCLES_PER_BIT);
+    // QDOS Microdrive routines contain CPU-timed polling loops. QL_MiSTer
+    // clocks mdv.v from the CPU enable, so accelerated CPU modes accelerate
+    // the virtual tape by the same ratio. Express those ratios in NanoQL's
+    // fixed 48 MHz domain (QL=7.5, then 16, 24 and future 42 MHz modes).
+    wire [PHASE_DIVIDER_WIDTH-1:0] cycles_per_bit =
+        (cpu_speed == 2'd0) ? 8'd240 :
+        (cpu_speed == 2'd1) ? 8'd113 :
+        (cpu_speed == 2'd2) ? 8'd75  : 8'd43;
 
     // Each physical sector is even-sized, so byte pairs can be stored as
     // words. The high address bit selects one of the two rotating buffers.
@@ -151,7 +160,7 @@ module ql_microdrive_stream #(
     wire tx_consume = !core_reset && !stream_restart_pending &&
         stream_started && write_active && tx_full &&
         !read_in_flight &&
-        phase_divider == CLOCK_CYCLES_PER_BIT - 1 &&
+        phase_divider == cycles_per_bit - 1'b1 &&
         (bit_counter == 4'd1 || bit_counter == 4'd9);
     wire incoming_word_write = sd_byte_valid && sd_source == 3'd2 &&
         read_in_flight && sd_byte_addr[0];
@@ -201,10 +210,10 @@ module ql_microdrive_stream #(
                          buffer_sector[0] == 9'd0;
     assign gap = !selected || !current_available || gap_reg;
     assign sd_write_byte = patch_read_byte;
-    // NanoQL's synchronous 68000 bridge cannot reliably observe MiSTer's
-    // narrow combinational pulse. Offer each byte until QDOS acknowledges it
-    // or the following byte arrives. An acknowledged byte drops immediately,
-    // preventing duplicate reads without changing the tape cadence.
+    // The physical RX pulse covers QDOS's status-then-data sequence. NanoQL's
+    // synchronous bridge can take longer, so retain the receive register until
+    // $18022/$18023 is actually read. A following tape byte still overwrites
+    // an unconsumed byte, matching the one-byte ZX8302 receive register.
     wire rx_window = !core_reset && !stream_restart_pending && selected &&
                      current_available && data_valid &&
                      bit_counter[2:0] == 3'd2;
@@ -361,6 +370,11 @@ module ql_microdrive_stream #(
             begin : stream_active
                 previous_core_reset <= core_reset;
                 previous_rx_window <= rx_window;
+                // The ZX8302 receive register must already be stable when
+                // RX ready rises. stream_data selects the same half-word from
+                // bit phases 0 through 7 (or 8 through 15), giving the bridge
+                // several microseconds of setup time before phase 2.
+                data <= stream_data;
                 if (rx_window && !previous_rx_window) begin
                     if (rx_ready)
                         debug_rx_missed_count <=
@@ -368,9 +382,8 @@ module ql_microdrive_stream #(
                     debug_rx_count <= debug_rx_count + 16'd1;
                     debug_rx_xor <= debug_rx_xor ^ stream_data;
                     debug_rx_last <= stream_data;
-                    data <= stream_data;
                     rx_ready <= 1'b1;
-                end else if (status_read_ack && rx_ready) begin
+                end else if (receive_ack && rx_ready) begin
                     rx_ready <= 1'b0;
                 end
 
@@ -604,7 +617,7 @@ module ql_microdrive_stream #(
                 end
 
                 if (!core_reset && !stream_restart_pending && stream_started &&
-                    phase_divider == CLOCK_CYCLES_PER_BIT - 1) begin
+                    phase_divider == cycles_per_bit - 1'b1) begin
                     phase_divider <= {PHASE_DIVIDER_WIDTH{1'b0}};
                     bit_counter <= bit_counter + 4'd1;
 

@@ -22,6 +22,7 @@ firmware/bl616/package/*
 # Private, local, or user-supplied material
 private/
 local/
+nanoql_setup.ini
 roms/
 software/local/
 *.rom

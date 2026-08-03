@@ -47,10 +47,10 @@ index 3dbe4a0..e87f93a 100644
  include $(BL_SDK_BASE)/project.build
  
 diff --git a/src/bl616/mcu_hw.c b/src/bl616/mcu_hw.c
-index f7d5c21..0da1fdd 100644
+index f7d5c21..77cd0c2 100644
 --- a/src/bl616/mcu_hw.c
 +++ b/src/bl616/mcu_hw.c
-@@ -27,6 +27,7 @@
+@@ -27,11 +27,13 @@
  #include "../inifile.h"
  #include "../menu.h"
  #include "../gowin.h"
@@ -58,7 +58,55 @@ index f7d5c21..0da1fdd 100644
  
  #include <bl616_hbn.h>
  #include "bl616_glb.h"
-@@ -1352,9 +1353,23 @@ void mcu_hw_init(void) {
+ #include "bflb_mtimer.h"
+ #include "bflb_spi.h"
++#include "hardware/spi_reg.h"
+ #include "bflb_dma.h"
+ #include "bflb_gpio.h"
+ #include "bflb_wdg.h"
+@@ -1037,10 +1039,41 @@ void mcu_hw_spi_begin(void) {
+   bflb_gpio_reset(gpio, SPI_PIN_CSN);
+ }
+ 
++bool mcu_hw_spi_begin_timeout(unsigned timeout_ms) {
++  if(xSemaphoreTake(spi_sem, pdMS_TO_TICKS(timeout_ms)) != pdTRUE)
++    return false;
++  bflb_gpio_reset(gpio, SPI_PIN_CSN);
++  return true;
++}
++
+ unsigned char mcu_hw_spi_tx_u08(unsigned char b) {
+   return bflb_spi_poll_send(spi_dev, b);
+ }
+ 
++bool mcu_hw_spi_tx_u08_timeout(unsigned char b, unsigned timeout_ms,
++                               unsigned char *received) {
++  uint32_t reg_base = spi_dev->reg_base;
++  uint64_t started = bflb_mtimer_get_time_us();
++
++  putreg32(b, reg_base + SPI_FIFO_WDATA_OFFSET);
++  for(;;) {
++    uint32_t fifo = getreg32(reg_base + SPI_FIFO_CONFIG_1_OFFSET);
++    if(((fifo & SPI_RX_FIFO_CNT_MASK) >> SPI_RX_FIFO_CNT_SHIFT) != 0)
++      break;
++    if(bflb_mtimer_get_time_us() - started >= (uint64_t)timeout_ms * 1000u) {
++      (void)bflb_spi_feature_control(spi_dev, SPI_CMD_CLEAR_TX_FIFO, 0);
++      (void)bflb_spi_feature_control(spi_dev, SPI_CMD_CLEAR_RX_FIFO, 0);
++      return false;
++    }
++  }
++
++  unsigned char value = (unsigned char)getreg32(
++      reg_base + SPI_FIFO_RDATA_OFFSET);
++  if(received)
++    *received = value;
++  return true;
++}
++
+ void mcu_hw_spi_end(void) {
+   bflb_gpio_set(gpio, SPI_PIN_CSN);
+   xSemaphoreGive(spi_sem);
+@@ -1352,9 +1385,23 @@ void mcu_hw_init(void) {
  #ifdef ENABLE_JTAG
    mcu_hw_jtag_init();
  #endif
@@ -84,7 +132,7 @@ index f7d5c21..0da1fdd 100644
  }
  
  void stop_hid(void) {
-@@ -1385,7 +1400,7 @@ void mcu_hw_reset(void) {
+@@ -1385,7 +1432,7 @@ void mcu_hw_reset(void) {
    struct bflb_wdg_config_s wdg_cfg;
    wdg_cfg.clock_source = WDG_CLKSRC_32K;
    wdg_cfg.clock_div = 31;
@@ -93,7 +141,7 @@ index f7d5c21..0da1fdd 100644
    wdg_cfg.mode = WDG_MODE_RESET;
  
    wdg = bflb_device_get_by_name("watchdog0");
-@@ -1393,6 +1408,11 @@ void mcu_hw_reset(void) {
+@@ -1393,6 +1440,11 @@ void mcu_hw_reset(void) {
    bflb_wdg_init(wdg, &wdg_cfg);
    bflb_wdg_start(wdg);
  
@@ -225,7 +273,7 @@ index bf062aa..21409f7 100644
  
  #endif // GOWIN_H
 diff --git a/src/inifile.c b/src/inifile.c
-index 5f5fb8e..98d87db 100644
+index 5f5fb8e..f0ac8a8 100644
 --- a/src/inifile.c
 +++ b/src/inifile.c
 @@ -12,6 +12,12 @@
@@ -263,29 +311,18 @@ index 5f5fb8e..98d87db 100644
    FIL fil;
    if(f_open(&fil, filename, FA_OPEN_EXISTING | FA_READ) == FR_OK) {
      char buffer[FF_LFN_BUF+10];
-@@ -180,10 +201,32 @@ void inifile_write(char *name) {
+@@ -180,10 +201,28 @@ void inifile_write(char *name) {
    ini_debugf("Write settings to %s", filename);
    
    sdc_lock();  // get exclusive access to the file system
 +
 +#ifdef NANOQL_COMPANION
-+  // Never truncate the active configuration. Build and sync a complete
-+  // replacement first, then swap it into place with a recoverable backup.
-+  char *temporary = pvPortMalloc(strlen(filename) + 5);
-+  char *backup = pvPortMalloc(strlen(filename) + 5);
-+  if(!temporary || !backup) {
-+    if(temporary) vPortFree(temporary);
-+    if(backup) vPortFree(backup);
-+    vPortFree(filename);
-+    sdc_unlock();
-+    return;
-+  }
-+  strcpy(temporary, filename);
-+  strcat(temporary, ".tmp");
-+  strcpy(backup, filename);
-+  strcat(backup, ".bak");
-+  (void)f_unlink(temporary);
-+  const char *write_filename = temporary;
++  // Keep the existing cluster chain. Some cards can leave FatFs walking a
++  // damaged chain forever while deleting an old atomic-backup file.
++  FILINFO previous_info;
++  FSIZE_t previous_size =
++      f_stat(filename, &previous_info) == FR_OK ? previous_info.fsize : 0;
++  const char *write_filename = filename;
 +#else
 +  const char *write_filename = filename;
 +#endif
@@ -293,11 +330,18 @@ index 5f5fb8e..98d87db 100644
    // saving does not work, yet, as there is no SD card write support by now
    FIL file;
 -  if(f_open(&file, filename, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {    
-+  if(f_open(&file, write_filename, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {
++  BYTE write_mode = FA_WRITE | FA_CREATE_ALWAYS;
++#ifdef NANOQL_COMPANION
++  write_mode = FA_WRITE | FA_OPEN_ALWAYS;
++#endif
++  if(f_open(&file, write_filename, write_mode) == FR_OK) {
++#ifdef NANOQL_COMPANION
++    (void)f_lseek(&file, 0);
++#endif
      f_puts("; FPGA Companion settings\n", &file);
  
      // write variable values
-@@ -214,6 +257,14 @@ void inifile_write(char *name) {
+@@ -214,6 +253,14 @@ void inifile_write(char *name) {
        char *cwd = sdc_get_cwd(drive);
        char *image = sdc_get_image_name(drive);
  
@@ -312,42 +356,40 @@ index 5f5fb8e..98d87db 100644
        if(cwd && image) {
  	char str[strlen(cwd) + strlen(image) + 12];
  #ifdef INIFILE_PREFIX
-@@ -230,10 +281,91 @@ void inifile_write(char *name) {
+@@ -230,10 +277,88 @@ void inifile_write(char *name) {
  
      f_puts("\n", &file);
      
 -    f_close(&file);  
-+    FRESULT sync_result = f_sync(&file);
++    FRESULT sync_result = FR_OK;
++#ifdef NANOQL_COMPANION
++    // If the new configuration is shorter, overwrite the old tail with
++    // comment-only lines. This prevents stale options without truncating or
++    // freeing any cluster from the active file.
++    static const char padding[] = ";\n";
++    while(f_tell(&file) < previous_size && sync_result == FR_OK) {
++      UINT remaining = (UINT)(previous_size - f_tell(&file));
++      UINT count = remaining < sizeof(padding) - 1 ?
++                       remaining : sizeof(padding) - 1;
++      UINT written = 0;
++      sync_result = f_write(&file, padding, count, &written);
++      if(sync_result == FR_OK && written != count)
++        sync_result = FR_DISK_ERR;
++    }
++#endif
++    if(sync_result == FR_OK)
++      sync_result = f_sync(&file);
 +    int write_error = f_error(&file);
 +    FRESULT close_result = f_close(&file);
 +
 +#ifdef NANOQL_COMPANION
-+    if(sync_result == FR_OK && !write_error && close_result == FR_OK) {
-+      FILINFO info;
-+      int had_original = f_stat(filename, &info) == FR_OK;
-+      (void)f_unlink(backup);
-+      if((!had_original || f_rename(filename, backup) == FR_OK) &&
-+         f_rename(temporary, filename) == FR_OK) {
-+        (void)f_unlink(backup);
-+      } else {
-+        (void)f_unlink(temporary);
-+        if(had_original && f_stat(filename, &info) != FR_OK)
-+          (void)f_rename(backup, filename);
-+        ini_debugf("Atomic settings replacement failed");
-+      }
-+    } else {
-+      (void)f_unlink(temporary);
++    if(sync_result != FR_OK || write_error || close_result != FR_OK)
 +      ini_debugf("Error syncing settings file");
-+    }
 +#endif
    } else
      ini_debugf("Error opening file");
+-  
 +
-+#ifdef NANOQL_COMPANION
-+  vPortFree(temporary);
-+  vPortFree(backup);
-+#endif
-   
    vPortFree(filename);
    sdc_unlock();
  }
@@ -518,10 +560,21 @@ index 7880ac8..9ed8b21 100644
    mcu_hw_main_loop();
  
 diff --git a/src/mcu_hw.h b/src/mcu_hw.h
-index a53cf9f..777a0de 100644
+index a53cf9f..f9513df 100644
 --- a/src/mcu_hw.h
 +++ b/src/mcu_hw.h
-@@ -50,7 +50,7 @@ char mcu_hw_wifi_scan_start(mcu_hw_wifi_scan_cb_func);
+@@ -19,7 +19,10 @@ void mcu_hw_reset(void);
+ 
+ // HW SPI interface
+ void mcu_hw_spi_begin(void);
++bool mcu_hw_spi_begin_timeout(unsigned timeout_ms);
+ unsigned char mcu_hw_spi_tx_u08(unsigned char b);
++bool mcu_hw_spi_tx_u08_timeout(unsigned char b, unsigned timeout_ms,
++                               unsigned char *received);
+ void mcu_hw_spi_end(void);
+ 
+ bool mcu_hw_hid_present(void);
+@@ -50,7 +53,7 @@ char mcu_hw_wifi_scan_start(mcu_hw_wifi_scan_cb_func);
  #define PIN_TF_SDIO_SEL GPIO_PIN_16
  #define DIRECT_SDC_SUPPORTED
  #endif
@@ -615,7 +668,7 @@ index 5b8883d..281c9d1 100644
    if(entry->is_dir) {
      if(entry->name[0] == '/') {
 diff --git a/src/sdc.c b/src/sdc.c
-index 1964d93..bb73e3f 100644
+index 1964d93..5308058 100644
 --- a/src/sdc.c
 +++ b/src/sdc.c
 @@ -31,6 +31,7 @@
@@ -626,7 +679,187 @@ index 1964d93..bb73e3f 100644
  
  static FATFS fs;
  
-@@ -163,10 +164,14 @@ static SDC_RESULT sdc_ioctl(BYTE cmd, void *buff) {
+@@ -46,6 +47,17 @@ static void sdc_spi_begin(void) {
+   mcu_hw_spi_tx_u08(SPI_TARGET_SDC);
+ }
+ 
++static bool sdc_spi_begin_timeout(unsigned timeout_ms) {
++  if(!mcu_hw_spi_begin_timeout(timeout_ms))
++    return false;
++  mcu_hw_spi_tx_u08(SPI_TARGET_SDC);
++  return true;
++}
++
++static bool sdc_spi_byte(unsigned char sent, unsigned char *received) {
++  return mcu_hw_spi_tx_u08_timeout(sent, 100, received);
++}
++
+ static LBA_t clst2sect(DWORD clst) {
+   clst -= 2;
+   if (clst >= fs.n_fatent - 2)   return 0;
+@@ -58,25 +70,52 @@ int sdc_read_sector(unsigned long sector, unsigned char *buffer) {
+   // may change the data direction from core to mcu while
+   // the core is still reading
+   unsigned char status;
++  TickType_t wait_started = xTaskGetTickCount();
+   do {
+-    sdc_spi_begin();  
+-    mcu_hw_spi_tx_u08(SPI_SDC_STATUS);
+-    status = mcu_hw_spi_tx_u08(0);
++    if(!sdc_spi_begin_timeout(3000))
++      return -1;
++    if(!sdc_spi_byte(SPI_SDC_STATUS, NULL) ||
++       !sdc_spi_byte(0, &status)) {
++      mcu_hw_spi_end();
++      return -1;
++    }
+     mcu_hw_spi_end();  
++    if((status & 0x02) &&
++       (TickType_t)(xTaskGetTickCount() - wait_started) >= pdMS_TO_TICKS(3000))
++      return -1;
+   } while(status & 0x02);   // card busy?
+ 
+-  sdc_spi_begin();  
+-  mcu_hw_spi_tx_u08(SPI_SDC_MCU_READ);
+-  mcu_hw_spi_tx_u08((sector >> 24) & 0xff);
+-  mcu_hw_spi_tx_u08((sector >> 16) & 0xff);
+-  mcu_hw_spi_tx_u08((sector >> 8) & 0xff);
+-  mcu_hw_spi_tx_u08(sector & 0xff);
++  if(!sdc_spi_begin_timeout(3000))
++    return -1;
++  if(!sdc_spi_byte(SPI_SDC_MCU_READ, NULL) ||
++     !sdc_spi_byte((sector >> 24) & 0xff, NULL) ||
++     !sdc_spi_byte((sector >> 16) & 0xff, NULL) ||
++     !sdc_spi_byte((sector >> 8) & 0xff, NULL) ||
++     !sdc_spi_byte(sector & 0xff, NULL)) {
++    mcu_hw_spi_end();
++    return -1;
++  }
+ 
+-  // todo: add timeout
+-  while(mcu_hw_spi_tx_u08(0));  // wait for ready
++  wait_started = xTaskGetTickCount();
++  unsigned char ready = 1;
++  while(ready) {  // wait for ready
++    if(!sdc_spi_byte(0, &ready)) {
++      mcu_hw_spi_end();
++      return -1;
++    }
++    if((TickType_t)(xTaskGetTickCount() - wait_started) >= pdMS_TO_TICKS(3000)) {
++      mcu_hw_spi_end();
++      return -1;
++    }
++  }
+ 
+   // read 512 bytes sector data
+-  for(int i=0;i<512;i++) buffer[i] = mcu_hw_spi_tx_u08(0);
++  for(int i=0;i<512;i++) {
++    if(!sdc_spi_byte(0, &buffer[i])) {
++      mcu_hw_spi_end();
++      return -1;
++    }
++  }
+ 
+   mcu_hw_spi_end();
+ 
+@@ -90,25 +129,52 @@ int sdc_write_sector(unsigned long sector, const unsigned char *buffer) {
+   // check if sd card is still busy as it may
+   // be reading a sector for the core.
+   unsigned char status;
++  TickType_t wait_started = xTaskGetTickCount();
+   do {
+-    sdc_spi_begin();  
+-    mcu_hw_spi_tx_u08(SPI_SDC_STATUS);
+-    status = mcu_hw_spi_tx_u08(0);
++    if(!sdc_spi_begin_timeout(3000))
++      return -1;
++    if(!sdc_spi_byte(SPI_SDC_STATUS, NULL) ||
++       !sdc_spi_byte(0, &status)) {
++      mcu_hw_spi_end();
++      return -1;
++    }
+     mcu_hw_spi_end();  
++    if((status & 0x02) &&
++       (TickType_t)(xTaskGetTickCount() - wait_started) >= pdMS_TO_TICKS(3000))
++      return -1;
+   } while(status & 0x02);   // card busy?
+ 
+-  sdc_spi_begin();  
+-  mcu_hw_spi_tx_u08(SPI_SDC_MCU_WRITE);
+-  mcu_hw_spi_tx_u08((sector >> 24) & 0xff);
+-  mcu_hw_spi_tx_u08((sector >> 16) & 0xff);
+-  mcu_hw_spi_tx_u08((sector >> 8) & 0xff);
+-  mcu_hw_spi_tx_u08(sector & 0xff);
++  if(!sdc_spi_begin_timeout(3000))
++    return -1;
++  if(!sdc_spi_byte(SPI_SDC_MCU_WRITE, NULL) ||
++     !sdc_spi_byte((sector >> 24) & 0xff, NULL) ||
++     !sdc_spi_byte((sector >> 16) & 0xff, NULL) ||
++     !sdc_spi_byte((sector >> 8) & 0xff, NULL) ||
++     !sdc_spi_byte(sector & 0xff, NULL)) {
++    mcu_hw_spi_end();
++    return -1;
++  }
+ 
+   // write sector data
+-  for(int i=0;i<512;i++) mcu_hw_spi_tx_u08(buffer[i]);  
++  for(int i=0;i<512;i++) {
++    if(!sdc_spi_byte(buffer[i], NULL)) {
++      mcu_hw_spi_end();
++      return -1;
++    }
++  }
+ 
+-  // todo: add timeout
+-  while(mcu_hw_spi_tx_u08(0));  // wait for ready
++  wait_started = xTaskGetTickCount();
++  unsigned char ready = 1;
++  while(ready) {  // wait for ready
++    if(!sdc_spi_byte(0, &ready)) {
++      mcu_hw_spi_end();
++      return -1;
++    }
++    if((TickType_t)(xTaskGetTickCount() - wait_started) >= pdMS_TO_TICKS(3000)) {
++      mcu_hw_spi_end();
++      return -1;
++    }
++  }
+ 
+   mcu_hw_spi_end();
+ 
+@@ -134,7 +200,14 @@ static SDC_RESULT sdc_read(BYTE *buff, LBA_t sector, UINT count) {
+ #endif
+ 
+   while(count--) {
+-    sdc_read_sector(sector, buff);
++    int attempt;
++    for(attempt=0; attempt<3; attempt++) {
++      if(sdc_read_sector(sector, buff) == 0)
++        break;
++      vTaskDelay(pdMS_TO_TICKS(2));
++    }
++    if(attempt == 3)
++      return RES_ERROR;
+     buff += 512;
+     sector++;
+   }
+@@ -151,7 +224,14 @@ static SDC_RESULT sdc_write(const BYTE *buff, LBA_t sector, UINT count) {
+ #endif
+ 
+   while(count--) {
+-    sdc_write_sector(sector, buff);
++    int attempt;
++    for(attempt=0; attempt<3; attempt++) {
++      if(sdc_write_sector(sector, buff) == 0)
++        break;
++      vTaskDelay(pdMS_TO_TICKS(2));
++    }
++    if(attempt == 3)
++      return RES_ERROR;
+     buff += 512;
+     sector++;
+   }
+@@ -163,10 +243,14 @@ static SDC_RESULT sdc_ioctl(BYTE cmd, void *buff) {
    sdc_debugf("sdc_ioctl(%d,%p)", cmd, buff);
  
    switch(cmd) {
@@ -642,7 +875,7 @@ index 1964d93..bb73e3f 100644
    }
    
    return RES_ERROR;
-@@ -608,6 +613,39 @@ static int sdc_image_inserted(char drive, FSIZE_t size) {
+@@ -608,6 +692,39 @@ static int sdc_image_inserted(char drive, FSIZE_t size) {
    return 0;
  }
  
@@ -682,7 +915,7 @@ index 1964d93..bb73e3f 100644
  static void sdc_rom_image_selected(char image, FSIZE_t size) {
    // ignore de-selection of a deselected image
    if(!fil[MAX_DRIVES+image].flag && !size) return;  
-@@ -668,6 +706,12 @@ int sdc_image_open(int drive, char *name) {
+@@ -668,6 +785,12 @@ int sdc_image_open(int drive, char *name) {
  
    // close any file that may be open for this drive
    if(fil[drive].flag) {
@@ -695,7 +928,7 @@ index 1964d93..bb73e3f 100644
      sdc_debugf("%s %d: closing file '%s'", (drive < MAX_DRIVES)?"DRV":"IMG",
  	       (drive < MAX_DRIVES)?drive:(drive-MAX_DRIVES),
  	       image_name[drive]?image_name[drive]:"<unknown>");
-@@ -714,7 +758,12 @@ int sdc_image_open(int drive, char *name) {
+@@ -714,7 +837,12 @@ int sdc_image_open(int drive, char *name) {
      
      sdc_debugf("DRV %d: Mounting %s", drive, fname);
      
@@ -709,7 +942,7 @@ index 1964d93..bb73e3f 100644
        sdc_debugf("DRV %d: file open failed", drive);
        sdc_unlock();
        return -1;
-@@ -978,6 +1027,7 @@ sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *ext) {
+@@ -978,6 +1106,7 @@ sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *ext) {
  
  int sdc_init(void) {
    sdc_sem = xSemaphoreCreateMutex();
@@ -717,7 +950,7 @@ index 1964d93..bb73e3f 100644
  
    sdc_debugf("---- SDC init ----");
  
-@@ -1001,6 +1051,10 @@ int sdc_init(void) {
+@@ -1001,6 +1130,10 @@ int sdc_init(void) {
   return 0;
  }
  
@@ -728,7 +961,7 @@ index 1964d93..bb73e3f 100644
  void sdc_set_cwd(int drive, char *path) {
    sdc_debugf("Setting cwd[%d] to %s", drive, path);
    
-@@ -1014,6 +1068,14 @@ void sdc_mount_defaults(void) {
+@@ -1014,6 +1147,14 @@ void sdc_mount_defaults(void) {
    // try to mount (default) images
    for(int drive=0;drive<MAX_DRIVES+MAX_IMAGES;drive++) {
      char *name = sdc_get_image_name(drive);
@@ -743,11 +976,22 @@ index 1964d93..bb73e3f 100644
      sdc_debugf("Processing %s %d: %s",
  	       (drive<MAX_DRIVES)?"drive":"image",
  	       (drive<MAX_DRIVES)?drive:(drive-MAX_DRIVES),
+@@ -1039,6 +1180,10 @@ void sdc_lock(void) {
+   xSemaphoreTake(sdc_sem, 0xffffffffUL); // wait forever
+ }
+ 
++bool sdc_lock_timeout(unsigned timeout_ms) {
++  return xSemaphoreTake(sdc_sem, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
++}
++
+ void sdc_unlock(void) {
+   xSemaphoreGive(sdc_sem);
+ }
 diff --git a/src/sdc.h b/src/sdc.h
-index 3e1ba7f..b87d955 100644
+index 3e1ba7f..369fa8a 100644
 --- a/src/sdc.h
 +++ b/src/sdc.h
-@@ -16,6 +16,7 @@ typedef struct sdc_dir {
+@@ -16,10 +16,12 @@ typedef struct sdc_dir {
  } sdc_dir_entry_t;
  
  int sdc_init(void);
@@ -755,6 +999,11 @@ index 3e1ba7f..b87d955 100644
  int sdc_image_open(int drive, char *name);
  sdc_dir_entry_t *sdc_readdir(int drive, char *name, const char *exts);
  int sdc_handle_event(void);
+ void sdc_lock(void);
++bool sdc_lock_timeout(unsigned timeout_ms);
+ void sdc_unlock(void);
+ char *sdc_get_image_name(int drive);
+ char *sdc_get_cwd(int drive);
 diff --git a/src/sysctrl.c b/src/sysctrl.c
 index 8a1d83e..0c79a1f 100644
 --- a/src/sysctrl.c

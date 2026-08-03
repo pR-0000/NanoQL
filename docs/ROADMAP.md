@@ -10,10 +10,10 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 15 065 / 20 736 cellules logiques utilisées (73 %), dont 14 077 LUT.
+- FPGA : 15 020 / 20 736 cellules logiques utilisées (73 %), dont 14 012 LUT.
 - BSRAM : 21 / 46 blocs utilisés (46 %), dont les tampons sectoriels QL-SD et Microdrive et la ROM QSound optionnelle.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
-- Domaine système : 31,8 MHz, avec une Fmax mesurée de 66,804 MHz.
+- Domaine système : 48 MHz, avec une Fmax mesurée de 61,663 MHz.
 - HDMI : 720p50 avec audio PCM 48 kHz fonctionnel.
 
 Le pourcentage de LUT restant ne suffit pas à garantir toutes les extensions. La migration de la ROM QL dynamique vers une zone réservée de la SDRAM a toutefois libéré 32 blocs BSRAM pour les ROM et tampons des fonctions suivantes. La fréquence du domaine système devient maintenant la contrainte principale pour les modes CPU rapides.
@@ -44,12 +44,13 @@ La Tang Nano 20K ne possédant pas de pile RTC, une heure absolue correcte aprè
 
 #### 3. Vitesses CPU
 
-- `QL` et `16 MHz` sont disponibles et commutables à chaud dans l'OSD.
-- Ajouter `24 MHz` et `42 MHz` après augmentation et validation du domaine système.
+- `QL`, `16 MHz` et `24 MHz` sont disponibles et commutables à chaud dans l'OSD.
+- Le domaine système à 48 MHz conserve les cadences natives des périphériques et fournit les deux phases requises par fx68k pour un CPU à 24 MHz.
+- Le mode `42 MHz` reste à étudier avec une architecture ou un cœur CPU capable de fermer les timings à 84 MHz.
 - Conserver la contention vidéo originale uniquement en mode `QL`.
 - Valider QDOS, les interruptions, le clavier, le son et la SDRAM à chaque vitesse.
 
-Le mode 16 MHz fonctionne à 15,9 MHz avec le domaine actuel. Le mode 24 MHz nécessite un domaine système plus rapide mais reste réaliste. Le mode 42 MHz requiert environ 84 MHz pour l'architecture MiSTer actuelle ; il est donc expérimental tant que les chemins critiques n'ont pas été optimisés au-delà de la Fmax actuelle de 54,785 MHz.
+Le mode 42 MHz de QL_MiSTer requiert un événement Phi1/Phi2 à chaque cycle d'un domaine à 84 MHz. Cette fréquence dépasse la fermeture temporelle actuelle du GW2AR-18 ; NanoQL ne présente donc pas un faux mode 42 MHz qui serait instable ou plus lent que son libellé.
 
 #### 4. Gold Card et SMSQ/E
 
@@ -133,10 +134,10 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 15,065 / 20,736 logic cells used (73%), including 14,077 LUTs.
+- FPGA: 15,020 / 20,736 logic cells used (73%), including 14,012 LUTs.
 - BSRAM: 21 / 46 blocks used (46%), including QL-SD and Microdrive sector buffers and the optional QSound ROM.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
-- System domain: 31.8 MHz, with a measured Fmax of 66.804 MHz.
+- System domain: 48 MHz, with a measured Fmax of 61.663 MHz.
 - HDMI: working 720p50 output with 48 kHz PCM audio.
 
 The remaining LUT percentage alone does not guarantee that every extension will fit. Moving the dynamic QL ROM to a reserved SDRAM area has nevertheless freed 32 BSRAM blocks for future ROMs and buffers. System-domain timing is now the main constraint for faster CPU modes.
@@ -167,12 +168,13 @@ The Tang Nano 20K has no battery-backed RTC. Correct absolute time after complet
 
 #### 3. CPU speeds
 
-- `QL` and `16 MHz` are available and live-switchable in the OSD.
-- Add `24 MHz` and `42 MHz` after increasing and validating the system domain.
+- `QL`, `16 MHz`, and `24 MHz` are available and live-switchable in the OSD.
+- The 48 MHz system domain preserves native peripheral rates and supplies the two fx68k phases required for a 24 MHz CPU.
+- A `42 MHz` mode still requires an architecture or CPU core that closes timing at 84 MHz.
 - Keep original video contention only in `QL` mode.
 - Validate QDOS, interrupts, keyboard, audio, and SDRAM at every speed.
 
-The 16 MHz mode runs at 15.9 MHz with the current domain. 24 MHz requires a faster system domain but remains realistic. 42 MHz needs about 84 MHz with the current MiSTer architecture and is therefore experimental until critical paths improve beyond the current 54.785 MHz Fmax.
+QL_MiSTer's 42 MHz mode needs one Phi1/Phi2 event on every cycle of an 84 MHz domain. That exceeds the current GW2AR-18 timing closure, so NanoQL does not expose a misleading 42 MHz setting that would be unstable or slower than advertised.
 
 #### 4. Gold Card and SMSQ/E
 

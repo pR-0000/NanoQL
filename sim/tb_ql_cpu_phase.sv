@@ -8,6 +8,7 @@ module tb_ql_cpu_phase;
     wire en_phi2;
     integer ql_ticks;
     integer fast_ticks;
+    integer mhz24_ticks;
     integer i;
 
     always #5 clk = ~clk;
@@ -29,12 +30,12 @@ module tb_ql_cpu_phase;
             if (en_phi1 || en_phi2)
                 ql_ticks = ql_ticks + 1;
         end
-        if (ql_ticks < 30912 || ql_ticks > 30914)
+        if (ql_ticks < 20479 || ql_ticks > 20481)
             $fatal(1, "QL mode emitted %0d phase ticks", ql_ticks);
 
         cpu_speed = 2'd1;
         fast_ticks = 0;
-        for (i = 0; i < 64; i = i + 1) begin
+        for (i = 0; i < 96; i = i + 1) begin
             @(posedge clk);
             #1;
             if (en_phi1 && en_phi2)
@@ -42,8 +43,21 @@ module tb_ql_cpu_phase;
             if (en_phi1 || en_phi2)
                 fast_ticks = fast_ticks + 1;
         end
-        if (fast_ticks != 64)
-            $fatal(1, "16 MHz mode emitted %0d/64 phase ticks", fast_ticks);
+        if (fast_ticks < 63 || fast_ticks > 65)
+            $fatal(1, "16 MHz mode emitted %0d/96 phase ticks", fast_ticks);
+
+        cpu_speed = 2'd2;
+        mhz24_ticks = 0;
+        for (i = 0; i < 96; i = i + 1) begin
+            @(posedge clk);
+            #1;
+            if (en_phi1 && en_phi2)
+                $fatal(1, "Phi1 and Phi2 overlap in 24 MHz mode");
+            if (en_phi1 || en_phi2)
+                mhz24_ticks = mhz24_ticks + 1;
+        end
+        if (mhz24_ticks != 96)
+            $fatal(1, "24 MHz mode emitted %0d/96 phase ticks", mhz24_ticks);
 
         cpu_speed = 2'd0;
         repeat (8) begin
@@ -53,7 +67,7 @@ module tb_ql_cpu_phase;
                 $fatal(1, "Phi overlap after live speed change");
         end
 
-        $display("PASS: live QL/16 MHz CPU phase selection");
+        $display("PASS: live QL/16/24 MHz CPU phase selection");
         $finish;
     end
 endmodule

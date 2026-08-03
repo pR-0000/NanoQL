@@ -31,6 +31,8 @@ Commandes SPI de la cible 4 :
 
 Le script PC est `tools/nanoql_link.py`. Le firmware unifié est construit à partir des sources de `firmware/bl616/nanoql_companion` pour les révisions 3921 et 3923.
 
+L'assistant `tools/nanoql_setup.py` expose ces fonctions dans l'onglet **Bare-metal** et conserve les chemins ainsi que les adresses dans son fichier INI utilisateur. Il permet également de redémarrer QDOS sans couper l'alimentation.
+
 ### Premier essai matériel
 
 1. Flashez une fois le firmware BL616 NanoQL unifié correspondant à la révision de la carte.
@@ -150,6 +152,8 @@ This CDC device is not the official FPGA Partner firmware's dual-channel `SIPEED
 
 The PC utility is `tools/nanoql_link.py`. Unified firmware sources are in `firmware/bl616/nanoql_companion` and support board revisions 3921 and 3923.
 
+The `tools/nanoql_setup.py` assistant exposes these operations in its **Bare-metal** tab and stores paths and addresses in its per-user INI file. It can also restart QDOS without power cycling.
+
 Flash the matching unified BL616 firmware once, boot NanoQL normally, connect the board to the computer with a USB data cable, wait for FPGA startup, and briefly press S1. Once the `NanoQL Link` serial port appears, run `python tools/nanoql_link.py --port PORT status`, followed by either `keyboard` or `demo`. Keyboard mode works on Windows, macOS, and Linux and reads the QL layout from the FPGA configuration; `--ql-layout fr` and `--ql-layout uk` override it. It translates printable characters for the selected ROM layout and holds every key in the QL matrix until release, allowing games and simultaneous inputs. On macOS, grant Input Monitoring and Accessibility permission to Terminal or Python when requested. The demo writes one central 32-line green band and then stops writing SDRAM. Use the `qdos` command to leave injected code and restart QDOS. A power cycle restores normal USB-host mode.
 
 Run `python tools/nanoql_link.py --port COMx cpu-status` to display the selected CPU mode and measure its effective clock rate. The non-destructive `python tools/nanoql_link.py --port COMx link-stress` command checks USB stability for 30 seconds by default.
@@ -158,7 +162,7 @@ Run `python tools/nanoql_link.py --port COMx cpu-status` to display the selected
 
 The recommended path requires neither NanoQL Link nor a PC connection. Create one cartridge subfolder under `NanoQL/Microdrives` on the microSD, for example `NanoQL/Microdrives/Benchmark`, and place the QL files inside it. In the `F12` overlay, select **Build MDV1 from:** and then `Benchmark`. The BL616 creates `NanoQL/Generated/Benchmark.mdv`, mounts that QLAY image read/write as `mdv1_`, and resets only the QL.
 
-The development `mdv-sync` command also replaces `MDV1.mdv`, then resets only the QL. The BL616 remains in NanoQL Link mode, so the same serial port and remote keyboard can be reused as soon as QDOS has restarted.
+The development `mdv-sync` command replaces `MDV1.mdv` and mounts it like a physical cartridge, without resetting QDOS. The BL616 remains in NanoQL Link mode, so the same serial port and remote keyboard remain available; use `DIR mdv1_` after synchronization.
 
 Subdirectories are flattened with `_`; for example, `tests/README.md` becomes `tests_README_md`. Resulting names must be ASCII and no longer than 36 characters. Conversion accepts up to 126 files and eight nested directory levels. A QLAY image is always 174,930 bytes, but only 253 512-byte sectors are allocatable to headers and data. The exact condition is `ceil((file_count + 1) × 64 / 512) + sum(ceil((file_size + 64) / 512)) <= 253`; a single file can therefore contain at most 128,960 bytes. At the QDOS prompt, enter `DIR mdv1_`, followed by a command such as `LRUN mdv1_program_bas`.
 

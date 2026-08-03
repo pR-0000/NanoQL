@@ -3,9 +3,9 @@
 // Based on the QL_MiSTer/QL-SD implementation by Adrian Ives and Peter Graf.
 
 module ql_sd_qlromext #(
-    // Four original 7.5 MHz bus clocks at NanoQL's 31.8 MHz system clock.
-    parameter integer DTACK_DELAY = 17,
-    parameter integer SLOW_DIVIDER = 47
+    // Preserve the original absolute delays in NanoQL's 48 MHz domain.
+    parameter integer DTACK_DELAY = 26,
+    parameter integer SLOW_DIVIDER = 71
 ) (
     input  wire        clk,
     input  wire        reset,

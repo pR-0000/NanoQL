@@ -156,11 +156,16 @@ module ql_companion_hid (
 
                     // HID command 1 starts with a raw USB event. Bit 7 is
                     // release and bits 6:0 contain the usage or modifier id.
-                    // The remaining packet bytes are not part of this event.
-                    if ((command == 8'd1) && (state == 4'd0)) begin
+                    // Command 5 is the NanoQL Link equivalent, already mapped
+                    // to the selected QL ROM layout by the host. Keeping the
+                    // two paths distinct avoids translating remote keys twice
+                    // while preserving physical USB keyboard behavior.
+                    if (((command == 8'd1) || (command == 8'd5)) &&
+                        (state == 4'd0)) begin
                         key_event <= 1'b1;
                         key_press_event <= !data_in[7];
-                        if (host_keyboard_azerty && !rom_keyboard_french &&
+                        if ((command == 8'd1) &&
+                            host_keyboard_azerty && !rom_keyboard_french &&
                             ((data_in[6:0] == 7'h20) ||
                              (data_in[6:0] == 7'h36) ||
                              (data_in[6:0] == 7'h37))) begin
@@ -174,7 +179,8 @@ module ql_companion_hid (
                                      !shift_down);
                                 layout_shift_suppress <= shift_down;
                             end
-                        end else if (!host_keyboard_azerty &&
+                        end else if ((command == 8'd1) &&
+                                     !host_keyboard_azerty &&
                                      rom_keyboard_french &&
                                      (data_in[6:0] == 7'h33)) begin
                             if (data_in[7]) begin
@@ -185,7 +191,8 @@ module ql_companion_hid (
                                 layout_shift_suppress <= shift_down;
                             end
                         end
-                        case (translated_usage(data_in[6:0], shift_down))
+                        case (command == 8'd5 ? data_in[6:0] :
+                              translated_usage(data_in[6:0], shift_down))
                             // A-Z
                             7'h04: ql_matrix[36] <= !data_in[7];
                             7'h05: ql_matrix[20] <= !data_in[7];

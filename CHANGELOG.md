@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.2.8 - 2026-08-03
+
+- Persists Setup Assistant paths, selected tools, ports, and developer parameters in a per-user cross-platform INI file.
+- Adds a Bare-metal assistant tab for verified raw 68000 injection with configurable load, PC, and SSP addresses and one-click QDOS restart.
+- Paces the BL616 BootROM's acknowledged 256-byte Flash writes to prevent intermittent USB receive-endpoint saturation.
+- Finalizes NanoQL Link uploads with one FatFs close operation instead of a redundant sync-then-close sequence.
+- Adds a live-switchable 24 MHz CPU mode while preserving native QL video, IPC, Microdrive, QL-SD, audio, and SDRAM timing in a new 48 MHz system domain.
+- Keeps 42 MHz disabled because fx68k requires an 84 MHz phase domain, above the placed GW2AR-18 design's timing limit.
+- Recovers MDV synchronization when macOS loses the final microSD commit reply by retrying the commit and validating the installed file by size and CRC32.
+- Suppresses local Terminal escape-sequence echo on macOS through the authorized Quartz event tap and preserves real NanoQL Link errors instead of misreporting them as privacy-permission failures.
+- Removes Gowin operation 51 from persistent FPGA programming because it can hang with the Sipeed FPGA Partner before programming starts.
+- Routes the graphical assistant's persistent Gowin programming through the same `fpga-flash-native` implementation as the CLI, including a second USB Debugger A/1 scan immediately before programming.
+- Requires and prefers openFPGALoader v1.1.1 or newer for scripted persistent programming because Gowin CLI operation 8 hangs and Gowin `JTAGLoading` does not support the BL616 `USB Debugger A` cable.
+- Maps NanoQL Link keyboard input by the character produced by Windows or macOS, folds accented letters for English QL ROMs, and adds a graphical Stop remote keyboard button.
+- Keeps the ZX8302 receive byte stable across the complete status/data handshake and scales the virtual Microdrive cadence with accelerated CPU modes, fixing MDV1 reads at QL, 16 MHz, and 24 MHz.
+- Makes Microdrive uploads resilient to slow or interrupted microSD finalization and verifies the installed image by size and CRC32.
+- Automates FPGA and BL616 programming on Windows while retaining cross-platform openFPGALoader and Bouffalo Lab tool support.
+
 ## v0.2.7 - 2026-08-03
 
 - Advanced MDV synchronization now restarts QDOS through the FPGA host link and explicitly releases the Companion reset afterward, preventing the BL616 holding-reset startup screen.

@@ -146,18 +146,13 @@ def build_full_flash_image(
     )
 
 
-def flash_bl616(image: Path, port: str, baudrate: int) -> None:
-    ensure_bflb_mcu_tool()
-    print("\nPut the Tang Nano 20K BL616 in boot mode:")
-    print("1. Disconnect USB.")
-    print("2. Hold UPDATE while reconnecting USB, then release UPDATE.")
-    print(f"3. Flashing through {port} at {baudrate} baud.")
+def flash_bl616_once(image: Path, port: str, baudrate: int) -> tuple[bool, str]:
+    runner = Path(__file__).with_name("bl616_flash_runner.py")
     command = [
         sys.executable,
         "-W",
         "ignore::RuntimeWarning",
-        "-m",
-        "bflb_mcu_tool.libs.bflb_eflash_loader",
+        str(runner),
         "--chipname=bl616",
         "--interface=uart",
         "--write",
@@ -182,11 +177,27 @@ def flash_bl616(image: Path, port: str, baudrate: int) -> None:
         output.append(line)
     return_code = process.wait()
     transcript = "".join(output)
-    if return_code != 0 or "[All Successful]" not in transcript:
-        raise RuntimeError(
-            "Bouffalo Lab's tool did not confirm successful BL616 programming."
+    return return_code == 0 and "[All Successful]" in transcript, transcript
+
+
+def flash_bl616(image: Path, port: str, baudrate: int) -> None:
+    ensure_bflb_mcu_tool()
+    print("\nPut the Tang Nano 20K BL616 in boot mode:")
+    print("1. Disconnect USB.")
+    print("2. Hold UPDATE while reconnecting USB, then release UPDATE.")
+
+    print(f"3. Flashing through {port} at {baudrate} baud.")
+    successful, _ = flash_bl616_once(image, port, baudrate)
+    if successful:
+        print(
+            "BL616 programming completed and the board was asked to restart "
+            "from Flash. The serial port may briefly disconnect."
         )
-    print("BL616 programming command completed. Power-cycle the board normally.")
+        return
+
+    raise RuntimeError(
+        "Bouffalo Lab's tool did not confirm successful BL616 programming."
+    )
 
 
 def main() -> int:
@@ -234,7 +245,9 @@ def main() -> int:
     parser.add_argument(
         "--baudrate",
         type=int,
-        default=230_400 if platform.system() == "Darwin" else 2_000_000,
+        default=(
+            230_400 if platform.system() == "Darwin" else 2_000_000
+        ),
         help="UART baud rate (default: 230400 on macOS, 2000000 elsewhere)",
     )
     parser.add_argument(

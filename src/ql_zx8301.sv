@@ -4,7 +4,7 @@
 // HDMI scanout remains clock-domain independent, but QL system timing (VSYNC,
 // VBLANK and flashing) is generated here and never from the HDMI frame.
 module ql_zx8301 #(
-    parameter [31:0] NATIVE_CE_STEP = 32'd1418149579
+    parameter [31:0] NATIVE_CE_STEP = 32'd939524096
 )(
     input  wire        reset,
     input  wire        core_reset,
@@ -92,8 +92,8 @@ module ql_zx8301 #(
     wire [9:0] h_total = H_VISIBLE + hfp + hsw + hbp;
     wire [9:0] v_total = V_VISIBLE + vfp + vsw + vbp;
 
-    // 31.8 MHz * 1418149579 / 2^32 = 10.500000 MHz to sub-ppm
-    // precision. The former 16-bit accumulator accumulated visible drift.
+    // 48 MHz * 939524096 / 2^32 = exactly 10.500000 MHz. The native raster
+    // therefore remains independent of the selected 68000 speed.
     reg [31:0] ce_accum;
     wire [32:0] ce_sum = {1'b0, ce_accum} +
                          {1'b0, NATIVE_CE_STEP};

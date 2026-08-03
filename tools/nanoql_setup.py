@@ -3,7 +3,11 @@
 
 from __future__ import annotations
 
+import configparser
 import importlib.util
+import ctypes
+import hashlib
+import os
 import platform
 import queue
 import re
@@ -11,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import urllib.request
 import webbrowser
 from pathlib import Path
 
@@ -55,6 +60,10 @@ BUILD_SCRIPT = "build_sd_rom.tcl"
 OPENFPGA_INSTALL_URL = (
     "https://trabucayre.github.io/openFPGALoader/guide/install.html"
 )
+ZADIG_URL = (
+    "https://github.com/pbatard/libwdi/releases/download/v1.5.1/zadig-2.9.exe"
+)
+ZADIG_SHA256 = "4ecaa95df3da3621486a043aef8b3050b8bafe7c901402871e816229ef82039b"
 QL_ROM_URL = "https://sinclairql.net/djw/qlrom/index.html"
 IPC_ROM_URL = "https://github.com/MiSTer-devel/QL_MiSTer/tree/master/rtl"
 HERMES_URL = "http://firshman.co.uk/ql/hermes.htm"
@@ -62,6 +71,19 @@ PYTHON_URL = "https://www.python.org/downloads/"
 HOMEBREW_URL = "https://brew.sh/"
 AUTO_PORT = "Automatic detection"
 SELECT_PORT = "Select a serial port"
+
+
+def settings_path() -> Path:
+    override = os.environ.get("NANOQL_SETUP_INI")
+    if override:
+        return Path(override).expanduser()
+    if platform.system() == "Windows":
+        root = Path(os.environ.get("APPDATA", Path.home()))
+    elif platform.system() == "Darwin":
+        root = Path.home() / "Library" / "Application Support"
+    else:
+        root = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return root / "NanoQL" / "nanoql_setup.ini"
 
 
 def find_gowin() -> str:
@@ -95,6 +117,25 @@ def find_openfpgaloader() -> str:
     return next((str(path) for path in candidates if path.is_file()), "")
 
 
+def openfpgaloader_version(executable: str) -> tuple[int, int, int]:
+    if not executable:
+        return (0, 0, 0)
+    try:
+        completed = subprocess.run(
+            [executable, "-V"], check=False, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", creationflags=CREATE_NO_WINDOW,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return (0, 0, 0)
+    match = re.search(
+        r"openFPGALoader\s+v(\d+)\.(\d+)\.(\d+)",
+        completed.stdout + completed.stderr,
+        flags=re.IGNORECASE,
+    )
+    return tuple(map(int, match.groups())) if match else (0, 0, 0)
+
+
 def find_gowin_programmer() -> str:
     command = shutil.which("programmer_cli") or shutil.which("programmer_cli.exe")
     if command:
@@ -108,9 +149,12 @@ def find_gowin_programmer() -> str:
 
 
 def find_fpga_programmer() -> str:
+    openfpga = find_openfpgaloader()
+    if openfpgaloader_version(openfpga) >= (1, 1, 1):
+        return openfpga
     if platform.system() == "Windows":
-        return find_gowin_programmer() or find_openfpgaloader()
-    return find_openfpgaloader() or find_gowin_programmer()
+        return find_gowin_programmer() or openfpga
+    return openfpga or find_gowin_programmer()
 
 
 def find_homebrew() -> str:
@@ -155,7 +199,8 @@ def command_failure_message(command: list[str], output: str, code: int) -> str:
         return (
             f"Gowin Programmer failed with exit code {code}. Close every programmer, "
             "reconnect the board, verify the BL616 ORIGINAL profile, then click "
-            "Detect programmer before retrying."
+            "Detect programmer before retrying. The FPGA screen may show "
+            "'BL616 COMPANION NOT READY' while ORIGINAL exposes JTAG; that is expected."
         )
     if "openfpgaloader" not in executable:
         return f"Command failed with exit code {code}"
@@ -164,9 +209,9 @@ def command_failure_message(command: list[str], output: str, code: int) -> str:
         if platform.system() == "Windows":
             return (
                 "openFPGALoader found the Sipeed debugger but its Windows USB "
-                "driver could not be opened. Close every programmer and retry. "
-                "For the simplest Windows setup, select Gowin programmer_cli.exe "
-                "in the FPGA programmer field."
+                "driver is not compatible. In the FPGA tab, click Install Windows "
+                "JTAG driver and assign WinUSB only to USB Serial Converter A / "
+                "Interface 0 (USB 0403:6010, MI_00). Never change Interface 1/B."
             )
         return (
             "openFPGALoader found the Sipeed debugger but could not access it. "
@@ -232,6 +277,7 @@ class NanoQLSetup(tk.Tk):
         self.minsize(820, 620)
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.busy_widgets: list[ttk.Button] = []
+        self.keyboard_stop_file = settings_path().with_name("keyboard.stop")
 
         self.revision = tk.StringVar(value="3923")
         self.firmware_mode = tk.StringVar(value="nanoql")
@@ -242,6 +288,10 @@ class NanoQLSetup(tk.Tk):
         self.ipc_path = tk.StringVar()
         self.mdv_folder = tk.StringVar()
         self.mdv_name = tk.StringVar(value="NANOQL")
+        self.binary_path = tk.StringVar()
+        self.binary_address = tk.StringVar(value="0x030000")
+        self.binary_pc = tk.StringVar()
+        self.binary_stack = tk.StringVar(value="0x03FFF0")
         self.link_port = tk.StringVar(value=AUTO_PORT)
         self.ql_layout = tk.StringVar(value="auto")
         self.gowin_path = tk.StringVar(value=find_gowin())
@@ -249,10 +299,89 @@ class NanoQLSetup(tk.Tk):
         self.bitstream_path = tk.StringVar(value=find_precompiled_bitstream())
         self.port_devices: dict[str, str] = {}
         self.status = tk.StringVar(value="Ready")
+        self.settings_file = settings_path()
+        self.settings_save_after: str | None = None
+        self.settings_variables = {
+            "revision": self.revision,
+            "firmware_mode": self.firmware_mode,
+            "bl616_port": self.bl616_port,
+            "rom_path": self.rom_path,
+            "qsound_rom_path": self.qsound_rom_path,
+            "sd_path": self.sd_path,
+            "ipc_path": self.ipc_path,
+            "mdv_folder": self.mdv_folder,
+            "mdv_name": self.mdv_name,
+            "binary_path": self.binary_path,
+            "binary_address": self.binary_address,
+            "binary_pc": self.binary_pc,
+            "binary_stack": self.binary_stack,
+            "link_port": self.link_port,
+            "ql_layout": self.ql_layout,
+            "gowin_path": self.gowin_path,
+            "loader_path": self.loader_path,
+            "bitstream_path": self.bitstream_path,
+        }
+        self._load_settings()
 
         self._build_ui()
         self.refresh_ports()
+        for variable in self.settings_variables.values():
+            variable.trace_add("write", self._schedule_settings_save)
+        self.protocol("WM_DELETE_WINDOW", self._close)
         self.after(100, self._poll_events)
+
+    def _load_settings(self) -> None:
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read(self.settings_file, encoding="utf-8")
+        except (OSError, configparser.Error):
+            return
+        if not parser.has_section("setup"):
+            return
+        section = parser["setup"]
+        for name, variable in self.settings_variables.items():
+            if name in section:
+                variable.set(section[name])
+        if self.revision.get() not in ("3921", "3923"):
+            self.revision.set("3923")
+        if self.firmware_mode.get() not in ("nanoql", "original"):
+            self.firmware_mode.set("nanoql")
+        if self.ql_layout.get() not in ("auto", "fr", "uk"):
+            self.ql_layout.set("auto")
+
+    def _schedule_settings_save(self, *_args) -> None:
+        if self.settings_save_after is not None:
+            self.after_cancel(self.settings_save_after)
+        self.settings_save_after = self.after(300, self._save_settings)
+
+    def _save_settings(self) -> None:
+        self.settings_save_after = None
+        parser = configparser.ConfigParser(interpolation=None)
+        values = {
+            name: variable.get().strip()
+            for name, variable in self.settings_variables.items()
+        }
+        # Store stable device paths rather than the descriptive combobox text.
+        values["link_port"] = self._selected_port(self.link_port, allow_auto=True)
+        values["bl616_port"] = self._selected_port(
+            self.bl616_port, allow_auto=False
+        )
+        parser["setup"] = values
+        try:
+            self.settings_file.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.settings_file.with_suffix(".ini.tmp")
+            with temporary.open("w", encoding="utf-8", newline="\n") as stream:
+                parser.write(stream)
+            os.replace(temporary, self.settings_file)
+        except OSError as error:
+            if hasattr(self, "log"):
+                self._append_log(f"Could not save user settings: {error}\n")
+
+    def _close(self) -> None:
+        if self.settings_save_after is not None:
+            self.after_cancel(self.settings_save_after)
+        self._save_settings()
+        self.destroy()
 
     def _build_ui(self) -> None:
         style = ttk.Style(self)
@@ -274,11 +403,13 @@ class NanoQLSetup(tk.Tk):
         storage_tab = ttk.Frame(notebook, padding=16)
         fpga_tab = ttk.Frame(notebook, padding=16)
         microdrive_tab = ttk.Frame(notebook, padding=16)
+        baremetal_tab = ttk.Frame(notebook, padding=16)
         notebook.add(quick_tab, text="Start here")
         notebook.add(storage_tab, text="1. ROMs and microSD")
         notebook.add(fpga_tab, text="2. FPGA")
         notebook.add(firmware_tab, text="3. BL616")
         notebook.add(link_tab, text="4. USB keyboard")
+        notebook.add(baremetal_tab, text="5. Bare-metal")
         notebook.add(microdrive_tab, text="Advanced MDV sync")
 
         self._build_quick_tab(quick_tab)
@@ -286,6 +417,7 @@ class NanoQLSetup(tk.Tk):
         self._build_storage_tab(storage_tab)
         self._build_fpga_tab(fpga_tab)
         self._build_link_tab(link_tab)
+        self._build_baremetal_tab(baremetal_tab)
         self._build_microdrive_tab(microdrive_tab)
 
         log_frame = ttk.LabelFrame(self, text="Log", padding=8)
@@ -302,6 +434,7 @@ class NanoQLSetup(tk.Tk):
         self.log.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         self._append_log(f"Repository: {REPOSITORY}\n")
+        self._append_log(f"User settings: {self.settings_file}\n")
         self.after(200, self.check_requirements)
 
     def _build_quick_tab(self, parent: ttk.Frame) -> None:
@@ -531,8 +664,26 @@ class NanoQLSetup(tk.Tk):
             row=4, column=2, pady=8
         )
 
+        if platform.system() == "Windows":
+            ttk.Label(
+                parent,
+                text=(
+                    "openFPGALoader on Windows needs WinUSB on JTAG interface A "
+                    "only. Interface B must keep its FTDI serial driver."
+                ),
+                wraplength=560,
+            ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(4, 8))
+            ttk.Button(
+                parent,
+                text="Install Windows JTAG driver",
+                command=self.install_windows_jtag_driver,
+            ).grid(row=5, column=2, pady=(4, 8))
+            action_row = 6
+        else:
+            action_row = 5
+
         actions = ttk.Frame(parent)
-        actions.grid(row=5, column=0, columnspan=3, sticky="w", pady=(18, 8))
+        actions.grid(row=action_row, column=0, columnspan=3, sticky="w", pady=(18, 8))
         self._button(actions, "Build", self.build_fpga).pack(side="left", padx=(0, 8))
         self._button(actions, "Program SRAM", lambda: self.program_fpga(False)).pack(
             side="left", padx=(0, 8)
@@ -552,7 +703,7 @@ class NanoQLSetup(tk.Tk):
                 "should select NanoQL-*-FPGA.fs and do not need to click Build."
             ),
             wraplength=760,
-        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ).grid(row=action_row + 1, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
     def _build_link_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -584,6 +735,11 @@ class NanoQLSetup(tk.Tk):
         self._button(actions, "Start remote keyboard", self.start_remote_keyboard).pack(
             side="left", padx=(0, 8)
         )
+        self.stop_keyboard_button = ttk.Button(
+            actions, text="Stop remote keyboard",
+            command=self.stop_remote_keyboard, state="disabled",
+        )
+        self.stop_keyboard_button.pack(side="left", padx=(0, 8))
         self._button(actions, "30 s USB test", self.link_stress).pack(side="left")
         ttk.Label(
             parent,
@@ -595,11 +751,57 @@ class NanoQLSetup(tk.Tk):
                 "Input Monitoring or Accessibility permission for Terminal or "
                 "Python. The layout selector describes the QL ROM; the computer "
                 "keyboard layout is read from the operating system. Keep auto unless "
-                "ROM detection is incorrect. Press F6 to return control to this "
-                "assistant."
+                "ROM detection is incorrect. Use Stop remote keyboard or press F6 "
+                "to return control to this assistant."
             ),
             wraplength=760,
         ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
+
+    def _build_baremetal_tab(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(1, weight=1)
+        self._path_row(
+            parent, 0, "Raw 68000 binary", self.binary_path,
+            self._browse_binary,
+        )
+        fields = (
+            ("Load address", self.binary_address),
+            ("Initial PC (empty = load address)", self.binary_pc),
+            ("Initial SSP", self.binary_stack),
+        )
+        for row, (label, variable) in enumerate(fields, start=1):
+            ttk.Label(parent, text=label, style="Section.TLabel").grid(
+                row=row, column=0, sticky="w", pady=8
+            )
+            ttk.Entry(parent, textvariable=variable, width=20).grid(
+                row=row, column=1, sticky="w", padx=8, pady=8
+            )
+        ttk.Label(parent, text="NanoQL Link port", style="Section.TLabel").grid(
+            row=4, column=0, sticky="w", pady=8
+        )
+        self.binary_port_combo = ttk.Combobox(
+            parent, textvariable=self.link_port, state="readonly", width=62
+        )
+        self.binary_port_combo.grid(row=4, column=1, sticky="ew", padx=8, pady=8)
+        ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
+            row=4, column=2, pady=8
+        )
+        actions = ttk.Frame(parent)
+        actions.grid(row=5, column=0, columnspan=3, sticky="w", pady=(18, 8))
+        self._button(actions, "Inject and execute", self.inject_binary).pack(
+            side="left", padx=(0, 8)
+        )
+        self._button(actions, "Restart QDOS", self.restart_qdos).pack(side="left")
+        ttk.Label(
+            parent,
+            text=(
+                "Developer feature for raw big-endian 68000 machine code. NanoQL "
+                "stops the CPU, writes and verifies the binary in physical RAM, "
+                "loads SSP/PC, then starts execution. It does not load QDOS executable "
+                "headers or relocate code. Ensure that the selected addresses fit the "
+                "active RAM configuration and do not overwrite the video buffer."
+            ),
+            wraplength=760,
+        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
     def _build_microdrive_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -623,7 +825,7 @@ class NanoQLSetup(tk.Tk):
         ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
             row=2, column=2, pady=8
         )
-        self._button(parent, "Synchronize and restart QL", self.sync_microdrive).grid(
+        self._button(parent, "Synchronize and mount MDV1", self.sync_microdrive).grid(
             row=3, column=0, columnspan=3, sticky="w", pady=(18, 8)
         )
         ttk.Label(
@@ -632,8 +834,8 @@ class NanoQLSetup(tk.Tk):
                 "Optional developer workflow: start NanoQL, briefly press S1 to expose "
                 "NanoQL Link, then synchronize. Normal users can instead copy folders to "
                 "NanoQL/Microdrives on the microSD and select Build MDV1 from: in the F12 "
-                "overlay. After synchronization, only the QL restarts; NanoQL Link and "
-                "the remote keyboard remain available on the same serial port."
+                "overlay. Synchronization mounts MDV1 without restarting QDOS; NanoQL "
+                "Link and the remote keyboard remain available on the same serial port."
             ),
             wraplength=760,
         ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
@@ -718,6 +920,17 @@ class NanoQLSetup(tk.Tk):
         if path:
             self.bitstream_path.set(path)
 
+    def _browse_binary(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Select a raw 68000 binary",
+            filetypes=(
+                ("Raw binaries", "*.bin *.raw"),
+                ("All files", "*"),
+            ),
+        )
+        if path:
+            self.binary_path.set(path)
+
     def _open_url(self, url: str) -> None:
         webbrowser.open(url)
 
@@ -747,6 +960,7 @@ class NanoQLSetup(tk.Tk):
         bl616_values = (SELECT_PORT, *labels)
         self.link_port_combo.configure(values=link_values)
         self.mdv_port_combo.configure(values=link_values)
+        self.binary_port_combo.configure(values=link_values)
         self.bl616_port_combo.configure(values=bl616_values)
 
         self.link_port.set(next(
@@ -770,8 +984,11 @@ class NanoQLSetup(tk.Tk):
         return self.port_devices.get(value, value)
 
     def install_openfpgaloader(self) -> None:
-        if find_openfpgaloader():
-            messagebox.showinfo("openFPGALoader", "openFPGALoader is already installed.")
+        existing = find_openfpgaloader()
+        if openfpgaloader_version(existing) >= (1, 1, 1):
+            messagebox.showinfo(
+                "openFPGALoader", "Compatible openFPGALoader is already installed."
+            )
             self.check_requirements()
             return
         if platform.system() == "Darwin":
@@ -791,6 +1008,46 @@ class NanoQLSetup(tk.Tk):
             return
         self._open_url(OPENFPGA_INSTALL_URL)
 
+    def install_windows_jtag_driver(self) -> None:
+        if platform.system() != "Windows":
+            messagebox.showinfo(
+                "Windows JTAG driver", "This driver step is only required on Windows."
+            )
+            return
+        proceed = messagebox.askokcancel(
+            "Install the openFPGALoader JTAG driver",
+            "NanoQL will open the official Zadig utility. In Zadig:\n\n"
+            "1. Choose Options > List All Devices.\n"
+            "2. Select USB Serial Converter A or Dual RS232-HS (Interface 0).\n"
+            "3. Verify USB ID 0403:6010 and MI_00 / Interface 0.\n"
+            "4. Select WinUSB, then click Replace Driver.\n\n"
+            "Never replace Interface 1/B: it provides the serial channel. Reconnect "
+            "the Tang Nano after installation, then click Detect programmer.",
+        )
+        if not proceed:
+            return
+
+        tools_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "NanoQL" / "tools"
+        zadig = tools_dir / "zadig-2.9.exe"
+        try:
+            tools_dir.mkdir(parents=True, exist_ok=True)
+            valid = zadig.is_file() and hashlib.sha256(zadig.read_bytes()).hexdigest() == ZADIG_SHA256
+            if not valid:
+                temporary = zadig.with_suffix(".download")
+                urllib.request.urlretrieve(ZADIG_URL, temporary)
+                digest = hashlib.sha256(temporary.read_bytes()).hexdigest()
+                if digest != ZADIG_SHA256:
+                    temporary.unlink(missing_ok=True)
+                    raise RuntimeError("the downloaded Zadig file failed SHA-256 verification")
+                temporary.replace(zadig)
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", str(zadig), None, str(tools_dir), 1
+            )
+            if result <= 32:
+                raise OSError(f"Windows elevation failed with ShellExecute code {result}")
+        except (OSError, RuntimeError) as error:
+            messagebox.showerror("Windows JTAG driver", f"Could not start Zadig: {error}")
+
     def install_bl616_tool(self) -> None:
         self._run(
             [
@@ -805,8 +1062,12 @@ class NanoQLSetup(tk.Tk):
     def check_requirements(self) -> None:
         programmer = find_fpga_programmer()
         openfpga = find_openfpgaloader()
+        openfpga_version = openfpgaloader_version(openfpga)
         gowin = find_gowin_programmer()
-        if programmer:
+        selected_programmer = self.loader_path.get().strip()
+        if programmer and (
+            not selected_programmer or not Path(selected_programmer).is_file()
+        ):
             self.loader_path.set(programmer)
         system = platform.system()
         python_state = f"Python {platform.python_version()}: ready"
@@ -816,7 +1077,8 @@ class NanoQLSetup(tk.Tk):
         )
         alternatives = (
             f"Gowin Programmer: {gowin or 'not found'}\n"
-            f"openFPGALoader: {openfpga or 'not found'}"
+            f"openFPGALoader: {openfpga or 'not found'} "
+            f"(version {'.'.join(map(str, openfpga_version))})"
         )
         flash_state = (
             "BL616 tool: "
@@ -840,10 +1102,57 @@ class NanoQLSetup(tk.Tk):
         self._run(self._link_command("status"), "Checking NanoQL Link")
 
     def start_remote_keyboard(self) -> None:
-        self._run(self._link_command("keyboard"), "Remote keyboard active; press F6 to stop")
+        self.keyboard_stop_file.parent.mkdir(parents=True, exist_ok=True)
+        self.keyboard_stop_file.unlink(missing_ok=True)
+        command = self._link_command("keyboard")
+        command.extend(["--stop-file", str(self.keyboard_stop_file)])
+        self.stop_keyboard_button.configure(state="normal")
+        self._run(
+            command,
+            "Remote keyboard active; use Stop or press F6",
+            lambda: self.stop_keyboard_button.configure(state="disabled"),
+        )
+
+    def stop_remote_keyboard(self) -> None:
+        self.keyboard_stop_file.parent.mkdir(parents=True, exist_ok=True)
+        self.keyboard_stop_file.touch()
+        self.stop_keyboard_button.configure(state="disabled")
+        self.status.set("Stopping remote keyboard")
 
     def link_stress(self) -> None:
         self._run(self._link_command("link-stress"), "Testing NanoQL Link USB")
+
+    def inject_binary(self) -> None:
+        binary = Path(self.binary_path.get()).expanduser()
+        if not binary.is_file():
+            messagebox.showerror(
+                "Missing binary", "Select an existing raw 68000 binary file."
+            )
+            return
+        address = self.binary_address.get().strip()
+        program_counter = self.binary_pc.get().strip()
+        stack = self.binary_stack.get().strip()
+        try:
+            for label, value in (
+                ("load address", address),
+                ("initial PC", program_counter or address),
+                ("initial SSP", stack),
+            ):
+                parsed = int(value, 0)
+                if not 0 <= parsed <= 0xFFFFFFFF or parsed & 1:
+                    raise ValueError(f"{label} must be an even 32-bit address")
+        except ValueError as error:
+            messagebox.showerror("Invalid address", str(error))
+            return
+
+        command = self._link_command("load")
+        command.extend([str(binary), "--address", address, "--stack", stack])
+        if program_counter:
+            command.extend(["--pc", program_counter])
+        self._run(command, "Injecting bare-metal binary")
+
+    def restart_qdos(self) -> None:
+        self._run(self._link_command("qdos"), "Restarting QDOS")
 
     def _selected_config(self) -> Path:
         if self.firmware_mode.get() == "nanoql":
@@ -1025,28 +1334,34 @@ class NanoQLSetup(tk.Tk):
                     "BL616 ORIGINAL profile is running.",
                 )
                 return
-            command = [
-                loader,
-                "--device", "GW2AR-18C",
-                "--operation_index", "8" if persistent else "2",
-                "--fsFile", str(bitstream),
-                "--frequency", "2.5MHz",
-                "--cable-index", "4",
-                "--channel", "1",
-                "--location", str(location),
-            ]
+            self._append_log(
+                f"Using freshly detected Gowin cable "
+                f"USB Debugger A/1/{location}/null.\n"
+            )
             if persistent:
-                probe = [
+                # Keep one authoritative Gowin Flash path. nanoql_link adds
+                # the required report file, rescans A/1 immediately before
+                # programming, and handles the Gowin timeout consistently.
+                command = [
+                    sys.executable,
+                    str(TOOLS / "nanoql_link.py"),
+                    "fpga-flash-native",
+                    str(bitstream),
+                    "--tool", loader,
+                    "--channel", "1",
+                    "--yes",
+                ]
+            else:
+                command = [
                     loader,
                     "--device", "GW2AR-18C",
-                    "--operation_index", "51",
+                    "--operation_index", "2",
+                    "--fsFile", str(bitstream),
                     "--frequency", "2.5MHz",
                     "--cable-index", "4",
                     "--channel", "1",
                     "--location", str(location),
                 ]
-                self._run_commands([probe, command], "Programming Flash")
-                return
         self._run(command, "Programming Flash" if persistent else "Programming SRAM")
 
     def detect_fpga(self) -> None:

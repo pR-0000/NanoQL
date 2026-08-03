@@ -50,6 +50,7 @@ module ql_zx8302 (
     reg [1:0] pending_ds_n;
     reg [15:0] pending_din;
     reg [7:0] microdrive_receive_data;
+    reg previous_microdrive_rx_ready;
 
     wire ipc_comdata_in = comdata_reg[0];
     wire ipc_comctrl;
@@ -145,6 +146,7 @@ module ql_zx8302 (
             pending_ds_n <= 2'b11;
             pending_din <= 16'd0;
             microdrive_receive_data <= 8'd0;
+            previous_microdrive_rx_ready <= 1'b0;
             microdrive_tx_write <= 1'b0;
             microdrive_tx_data <= 8'd0;
             cpu_write_done <= 1'b0;
@@ -160,13 +162,14 @@ module ql_zx8302 (
                 pending_din <= cpu_din;
             end
 
-            // Capture the receive byte at the same edge on which the status
-            // register exposes RX ready. NanoQL's synchronous memory bridge
-            // can then complete the later 0x18022 read without observing a
-            // newer tape bit position.
-            if (cpu_read && (cpu_addr == 2'b10) && !cpu_ds_n[1] &&
-                microdrive_rx_ready)
+            // The physical ZX8302 owns a receive holding register. Capture
+            // the byte when its RX-ready signal rises, independently of when
+            // or how quickly the 68000 polls the status register. Capturing on
+            // the CPU status read caused the following data read to race this
+            // register in accelerated 16/24 MHz modes.
+            if (microdrive_rx_ready && !previous_microdrive_rx_ready)
                 microdrive_receive_data <= microdrive_data;
+            previous_microdrive_rx_ready <= microdrive_rx_ready;
 
             if (ce_bus_n && write_pending && !ipc_comctrl_falling) begin
                 // Preserve a newly arriving write when the previous one is

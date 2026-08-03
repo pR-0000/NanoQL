@@ -25,7 +25,7 @@
       <hide/>
     </action>
   </actions>
-  <menu label="NanoQL v0.2.7">
+  <menu label="NanoQL v0.2.8">
     <fileselector label="QL ROM:" ext="rom;bin" index="0" action="save_reset"/>
     <fileselector label="QL-SD image:" ext="win;qxl" index="1" action="save"/>
     <fileselector label="Microdrive 1:" ext="mdv" index="2" action="save"/>
@@ -46,6 +46,7 @@
     <list label="CPU:" id="C" default="0" action="save">
       <listentry label="QL" value="0"/>
       <listentry label="16 MHz" value="1"/>
+      <listentry label="24 MHz" value="2"/>
     </list>
     <list label="USB keyboard:" id="H" default="0" action="save">
       <listentry label="QWERTY" value="0"/>

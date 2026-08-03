@@ -57,6 +57,8 @@ Sous Windows, suivez le [guide officiel openFPGALoader](https://trabucayre.githu
 pacman -S mingw-w64-ucrt-x86_64-openFPGALoader
 ```
 
+Le pilote FTDI installé par défaut ne permet pas à openFPGALoader d'ouvrir le JTAG. Dans l'onglet **2. FPGA**, cliquez une seule fois sur **Install Windows JTAG driver**. Dans Zadig, activez **Options > List All Devices**, choisissez uniquement **USB Serial Converter A** ou **Dual RS232-HS (Interface 0)**, vérifiez `0403:6010` et `MI_00`, sélectionnez **WinUSB**, puis remplacez le pilote. Ne modifiez jamais **Interface 1/B**, qui doit conserver son pilote série FTDI. Débranchez et rebranchez ensuite la Tang Nano.
+
 ### Assistant graphique
 
 Depuis le dossier NanoQL :
@@ -99,7 +101,9 @@ Dans **2. FPGA**, utilisez **Browse** pour sélectionner `NanoQL-*-FPGA.fs`. Une
 
 Reliez directement la Tang Nano 20K à l'ordinateur avec un câble USB-C de données pendant cette étape : le fichier FPGA est programmé par cette connexion USB, indépendamment de la microSD.
 
-Sous Windows, l'assistant préfère Gowin Programmer lorsqu'il est installé, car il utilise directement le pilote Sipeed/Gowin existant. openFPGALoader reste disponible comme solution de repli. Sous macOS et Linux, openFPGALoader est utilisé par défaut. Cliquez sur **Detect programmer** avant la programmation ; si aucune interface n'est trouvée, restaurez le profil BL616 ORIGINAL, débranchez et rebranchez la carte, puis recommencez.
+L'assistant utilise de préférence openFPGALoader v1.1.1 ou plus récent sous Windows, macOS et Linux. Cette version contient les corrections nécessaires au firmware de programmation Sipeed. Gowin Programmer reste utilisable manuellement sous Windows, mais ses outils en ligne de commande ne gèrent pas fiablement le câble BL616. Cliquez sur **Detect programmer** avant la programmation ; si aucune interface n'est trouvée, restaurez le profil BL616 ORIGINAL, débranchez et rebranchez la carte, puis recommencez.
+
+Avec le profil ORIGINAL actif, l'écran NanoQL peut afficher `BL616 COMPANION NOT READY`. C'est normal pendant la programmation : le BL616 expose alors le JTAG au PC au lieu de fournir les services Companion au FPGA.
 
 ```sh
 openFPGALoader -b tangnano20k -f /chemin/vers/NanoQL-vX.Y.Z-FPGA.fs
@@ -121,7 +125,7 @@ Cette opération vient après le FPGA. Dans **3. BL616** :
 6. cliquez sur **Refresh**, puis choisissez le nouveau port série du bootloader dans la liste ;
 7. cliquez sur **Flash selected firmware**.
 
-L'assistant installe automatiquement `bflb-mcu-tool-uart`, l'outil UART multiplateforme de Bouffalo Lab. Avec Python 3.13 ou plus récent, il installe aussi le module de compatibilité requis depuis la suppression de `telnetlib`. Sur macOS, le débit prudent par défaut est de 230400 bauds. Commande équivalente :
+L'assistant installe automatiquement `bflb-mcu-tool-uart`, l'outil UART multiplateforme de Bouffalo Lab. Avec Python 3.13 ou plus récent, il installe aussi le module de compatibilité requis depuis la suppression de `telnetlib`. macOS utilise 230400 bauds ; Windows et Linux utilisent 2000000 bauds avec de petits blocs acquittés pour fiabiliser l'USB. Une tentative interrompue impose de débrancher la carte et de rentrer de nouveau dans le mode UPDATE avant de recommencer. Commande équivalente :
 
 ```sh
 python3 tools/prepare_bl616_firmware.py --revision 3923 --profile nanoql --flash --port PORT --yes
@@ -153,7 +157,7 @@ Pour un essai temporaire sans changer le BL616, NanoQL Link peut charger le fich
 4. Alimentez par USB-C.
 5. Si NanoQL demande des ROM, ouvrez `F12`, choisissez **QL ROM** et **IPC ROM**, puis redémarrez le QL.
 
-Le QL doit démarrer sans clavier ni hub. Pour le développement, connectez la carte à l'ordinateur, attendez le démarrage du FPGA, appuyez brièvement sur S1 et utilisez l'onglet **4. USB keyboard**. Le clavier distant fonctionne sous Windows, macOS et Linux. Sur macOS/Linux, le script installe automatiquement `pynput` lors de la première utilisation. macOS peut demander d'autoriser Terminal ou Python dans **Réglages Système > Confidentialité et sécurité > Surveillance de l'entrée** et **Accessibilité**. Si la console affiche `This process is not trusted`, ajoutez également l'exécutable Python réellement affiché par la commande, par exemple celui du dossier `venv/bin`, puis quittez complètement et relancez Terminal. Un lancement manuel dans Terminal conserve son écho sous macOS, car le désactiver active la saisie sécurisée et bloque la capture globale ; l'assistant graphique évite cet écho. Dans les deux cas, les séquences en attente sont vidées avant de rendre la main avec `F6`.
+Le QL doit démarrer sans clavier ni hub. Pour le développement, connectez la carte à l'ordinateur, attendez le démarrage du FPGA, appuyez brièvement sur S1 et utilisez l'onglet **4. USB keyboard**. Le clavier distant fonctionne sous Windows, macOS et Linux. Sur macOS/Linux, le script installe automatiquement `pynput` lors de la première utilisation. macOS peut demander d'autoriser Terminal ou Python dans **Réglages Système > Confidentialité et sécurité > Surveillance de l'entrée** et **Accessibilité**. Si la console affiche `This process is not trusted`, ajoutez également l'exécutable Python réellement affiché par la commande, par exemple celui du dossier `venv/bin`, puis quittez complètement et relancez Terminal. Sur macOS, l'interception Quartz autorisée empêche les touches et séquences de contrôle de s'afficher dans Terminal. Les événements en attente sont vidés avant de rendre la main avec `F6`.
 
 NanoQL émet un signal CEA standard 1280×720p50, mais les téléviseurs et moniteurs n'appliquent pas tous le même overscan, filtre de netteté ou redimensionnement. Pour une image fidèle, choisissez le mode écran `1:1`, `Just Scan`, `Screen Fit` ou `Full Pixel`, puis désactivez l'overscan, la réduction de bruit, l'interpolation de mouvement et les renforcements de netteté. Un défaut fixé à une position de la dalle mais absent sur un autre écran provient probablement de son traitement vidéo ; un défaut qui suit le contenu et apparaît aussi sur une capture HDMI doit être signalé avec le mode vidéo NanoQL utilisé.
 
@@ -214,6 +218,8 @@ On Windows, follow the [official openFPGALoader guide](https://trabucayre.github
 pacman -S mingw-w64-ucrt-x86_64-openFPGALoader
 ```
 
+The default FTDI driver does not let openFPGALoader access JTAG. In **2. FPGA**, click **Install Windows JTAG driver** once. In Zadig, enable **Options > List All Devices**, select only **USB Serial Converter A** or **Dual RS232-HS (Interface 0)**, verify `0403:6010` and `MI_00`, select **WinUSB**, then replace the driver. Never modify **Interface 1/B**, which must keep its FTDI serial driver. Disconnect and reconnect the Tang Nano afterward.
+
 ### Graphical assistant
 
 Run from the NanoQL directory:
@@ -256,7 +262,9 @@ In **2. FPGA**, use **Browse** to select `NanoQL-*-FPGA.fs`. A precompiled relea
 
 Connect the Tang Nano 20K directly to the computer with a USB-C data cable during this step: the FPGA file is programmed through this USB connection, independently of the microSD card.
 
-On Windows, the assistant prefers Gowin Programmer when installed because it directly uses the existing Sipeed/Gowin driver. openFPGALoader remains available as a fallback. On macOS and Linux, openFPGALoader is used by default. Click **Detect programmer** before programming; if no interface is found, restore the BL616 ORIGINAL profile, disconnect and reconnect the board, then try again.
+The assistant prefers openFPGALoader v1.1.1 or newer on Windows, macOS, and Linux. This release contains the fixes required for Sipeed programmer firmware. Gowin Programmer remains available for manual Windows use, but its command-line tools do not handle the BL616 cable reliably. On Windows, first use **Install Windows JTAG driver** as described above. Click **Detect programmer** before programming; if no interface is found, restore the BL616 ORIGINAL profile, disconnect and reconnect the board, then try again.
+
+With the ORIGINAL profile active, NanoQL may display `BL616 COMPANION NOT READY`. This is expected while programming: the BL616 exposes JTAG to the computer instead of providing Companion services to the FPGA.
 
 ```sh
 openFPGALoader -b tangnano20k -f /path/to/NanoQL-vX.Y.Z-FPGA.fs
@@ -278,7 +286,7 @@ Do this after programming the FPGA. In **3. BL616**:
 6. click **Refresh**, then select the new bootloader serial port from the list;
 7. click **Flash selected firmware**.
 
-The assistant automatically installs Bouffalo Lab's cross-platform `bflb-mcu-tool-uart` loader. On Python 3.13 or newer it also installs the compatibility module needed since `telnetlib` was removed. macOS uses a conservative default rate of 230400 baud. Command-line equivalent:
+The assistant automatically installs Bouffalo Lab's cross-platform `bflb-mcu-tool-uart` loader. On Python 3.13 or newer it also installs the compatibility module needed since `telnetlib` was removed. macOS uses 230400 baud; Windows and Linux use 2000000 baud with small acknowledged blocks for reliable USB transfers. After an interrupted attempt, disconnect the board and enter UPDATE mode again before retrying. Command-line equivalent:
 
 ```sh
 python3 tools/prepare_bl616_firmware.py --revision 3923 --profile nanoql --flash --port PORT --yes
@@ -310,6 +318,6 @@ For temporary testing without changing BL616 firmware, NanoQL Link can load the 
 4. Power the board through USB-C.
 5. If NanoQL requests ROMs, open `F12`, select **QL ROM** and **IPC ROM**, then restart the QL.
 
-The QL must boot without a keyboard or hub. For development, connect the board to the computer, wait for FPGA startup, briefly press S1, and use the **4. USB keyboard** tab. The remote keyboard works on Windows, macOS, and Linux. On macOS/Linux the script automatically installs `pynput` on first use. macOS may ask you to allow Terminal or Python under **System Settings > Privacy & Security > Input Monitoring** and **Accessibility**. If the console reports `This process is not trusted`, also add the actual Python executable shown by the command, for example the one under `venv/bin`, then fully quit and restart Terminal. A manual Terminal launch keeps local echo on macOS because disabling it enables Secure Keyboard Entry and blocks global capture; the graphical assistant avoids that echo. In both cases pending key sequences are flushed before `F6` returns control.
+The QL must boot without a keyboard or hub. For development, connect the board to the computer, wait for FPGA startup, briefly press S1, and use the **4. USB keyboard** tab. The remote keyboard works on Windows, macOS, and Linux. On macOS/Linux the script automatically installs `pynput` on first use. macOS may ask you to allow Terminal or Python under **System Settings > Privacy & Security > Input Monitoring** and **Accessibility**. If the console reports `This process is not trusted`, also add the actual Python executable shown by the command, for example the one under `venv/bin`, then fully quit and restart Terminal. On macOS, the authorized Quartz event tap prevents keys and control sequences from being echoed into Terminal. Pending events are flushed before `F6` returns control.
 
 NanoQL outputs standard CEA 1280×720p50, but displays do not all apply the same overscan, sharpness filtering, or scaling. For faithful pixels, select the display's `1:1`, `Just Scan`, `Screen Fit`, or `Full Pixel` mode, then disable overscan, noise reduction, motion interpolation, and sharpness enhancement. A defect fixed at one panel position but absent on another display is probably display processing; a defect that follows the content and also appears in an HDMI capture should be reported together with the selected NanoQL video mode.

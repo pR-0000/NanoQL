@@ -11,7 +11,7 @@
 //
 
 module sdram #(
-    parameter integer CLOCK_HZ = 31_800_000
+    parameter integer CLOCK_HZ = 48_000_000
 ) (
     output             sd_clk,
     output             sd_cke,
