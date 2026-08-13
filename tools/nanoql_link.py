@@ -88,6 +88,7 @@ CMD_WRITE = 0x02
 CMD_EXEC = 0x03
 CMD_QDOS = 0x04
 CMD_KEY = 0x05
+KEY_DIRECT_MATRIX = 0x01
 CMD_READ = 0x06
 CMD_READ_RESULT = 0x07
 CMD_QLSD_DIAG = 0x08
@@ -115,6 +116,39 @@ CMD_FPGA_PROGRAM = 0xF2
 MOD_LEFT_CTRL = 0x68
 MOD_LEFT_SHIFT = 0x69
 MOD_LEFT_ALT = 0x6A
+
+# Direct QL matrix contacts used by NanoQL Link. A local USB keyboard still
+# follows the raw HID command-1 path in the FPGA and is translated separately.
+QL_USAGE_TO_MATRIX = {
+    0x04: 36, 0x05: 20, 0x06: 19, 0x07: 38, 0x08: 52,
+    0x09: 28, 0x0A: 30, 0x0B: 34, 0x0C: 42, 0x0D: 39,
+    0x0E: 26, 0x0F: 32, 0x10: 22, 0x11: 62, 0x12: 47,
+    0x13: 37, 0x14: 51, 0x15: 44, 0x16: 27, 0x17: 54,
+    0x18: 55, 0x19: 60, 0x1A: 41, 0x1B: 59, 0x1C: 46,
+    0x1D: 17, 0x1E: 35, 0x1F: 49, 0x20: 33, 0x21: 6,
+    0x22: 2, 0x23: 50, 0x24: 7, 0x25: 48, 0x26: 40,
+    0x27: 53, 0x28: 8, 0x29: 11, 0x2B: 43, 0x2C: 14,
+    0x2D: 45, 0x2E: 29, 0x2F: 24, 0x30: 16, 0x31: 13,
+    0x32: 21, 0x33: 31, 0x34: 23, 0x36: 63, 0x37: 18,
+    0x38: 61, 0x39: 25, 0x3A: 1, 0x3B: 3, 0x3C: 4,
+    0x3D: 0, 0x3E: 5, 0x4F: 12, 0x50: 9, 0x51: 15,
+    0x52: 10, MOD_LEFT_CTRL: 57, MOD_LEFT_SHIFT: 56,
+    MOD_LEFT_ALT: 58, 0x6C: 57, 0x6D: 56, 0x6E: 58,
+}
+
+# Keep overlay navigation as raw HID usages. The BL616 must see these codes
+# before deciding whether to consume them for the OSD or forward them to QDOS.
+REMOTE_MENU_USAGES = {
+    0x28,  # Enter
+    0x29,  # Escape
+    0x2C,  # Space
+    0x4B,  # Page Up
+    0x4E,  # Page Down
+    0x4F,  # Right
+    0x50,  # Left
+    0x51,  # Down
+    0x52,  # Up
+}
 
 ASCII_KEYS = {
     "a": (0x04, False), "b": (0x05, False), "c": (0x06, False),
@@ -1185,9 +1219,14 @@ class NanoQLLink:
     def key_event(self, usage: int, pressed: bool) -> None:
         if not 0 <= usage <= 0x7F:
             raise ValueError("HID key code is out of range.")
-        event = usage if pressed else usage | 0x80
+        matrix_contact = (None if usage in REMOTE_MENU_USAGES
+                          else QL_USAGE_TO_MATRIX.get(usage))
+        event_code = matrix_contact if matrix_contact is not None else usage
+        event = event_code if pressed else event_code | 0x80
+        request = (bytes((CMD_KEY, KEY_DIRECT_MATRIX, event))
+                   if matrix_contact is not None else bytes((CMD_KEY, event)))
         try:
-            self.transact(bytes((CMD_KEY, event)))
+            self.transact(request)
         except RuntimeError as error:
             if not is_link_response_error(error):
                 raise
@@ -1195,7 +1234,7 @@ class NanoQLLink:
             # single retry cannot duplicate text even if only the reply was
             # lost by the host CDC driver.
             time.sleep(0.02)
-            self.transact(bytes((CMD_KEY, event)))
+            self.transact(request)
 
     def tap_key(self, usage: int, hold_time: float = 0.05,
                 release_time: float = 0.03, wait_consumed: bool = False,
@@ -1999,7 +2038,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--ql-layout", choices=("auto", "uk", "fr"), default="auto",
-        help="QL ROM layout; auto reads the persistent FPGA overlay setting",
+        help=("QL ROM character table override; auto reads 'QL ROM keyboard' "
+              "from the FPGA overlay (recommended)"),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

@@ -19,7 +19,7 @@ Le cœur AY utilisé est [JT49](https://github.com/jotego/jt49), distribué sous
 
 La ROM QSound n'est pas redistribuée par NanoQL. Le dépôt du [clone matériel QSound/QPrint](https://github.com/alvaroalea/QL_QsoundQprint_clone/tree/main/ROM) propose plusieurs images de 8 192 octets pour tester le matériel. Son auteur indique avoir validé les versions 1.10, 1.31 et 1.40 ; la version 1.40 constitue le choix classique recommandé. La version 1.94 ajoute notamment des fonctions utilisées par le lecteur PT3, mais ne contient plus les routines QPrint. Vérifiez toujours que vous êtes autorisé à utiliser l'image choisie.
 
-Dans `python tools/nanoql_setup.py`, sélectionnez **Optional 8 KiB QSound ROM** dans l'onglet de préparation de la microSD. La commande équivalente est :
+Dans `python tools/nanoql_setup.pyw`, sélectionnez **Optional 8 KiB QSound ROM** dans l'onglet de préparation de la microSD. La commande équivalente est :
 
 ```sh
 python tools/prepare_sd_card.py path/to/QL.rom D:\ --qsound-rom path/to/QSound.rom
@@ -68,7 +68,7 @@ The AY implementation is [JT49](https://github.com/jotego/jt49), licensed under 
 
 NanoQL does not redistribute the QSound ROM. The [QSound/QPrint hardware clone repository](https://github.com/alvaroalea/QL_QsoundQprint_clone/tree/main/ROM) provides several 8,192-byte images for hardware testing. Its author reports versions 1.10, 1.31, and 1.40 as tested; version 1.40 is the recommended classic choice. Version 1.94 adds features used by the PT3 player but omits QPrint routines. Always ensure that you are authorized to use the selected image.
 
-Select **Optional 8 KiB QSound ROM** in `python tools/nanoql_setup.py`, or run:
+Select **Optional 8 KiB QSound ROM** in `python tools/nanoql_setup.pyw`, or run:
 
 ```sh
 python tools/prepare_sd_card.py path/to/QL.rom /media/sd --qsound-rom path/to/QSound.rom

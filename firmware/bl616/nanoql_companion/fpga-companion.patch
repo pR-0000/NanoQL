@@ -47,7 +47,7 @@ index 3dbe4a0..e87f93a 100644
  include $(BL_SDK_BASE)/project.build
  
 diff --git a/src/bl616/mcu_hw.c b/src/bl616/mcu_hw.c
-index f7d5c21..77cd0c2 100644
+index f7d5c21..ec9a025 100644
 --- a/src/bl616/mcu_hw.c
 +++ b/src/bl616/mcu_hw.c
 @@ -27,11 +27,13 @@
@@ -64,7 +64,56 @@ index f7d5c21..77cd0c2 100644
  #include "bflb_dma.h"
  #include "bflb_gpio.h"
  #include "bflb_wdg.h"
-@@ -1037,10 +1039,41 @@ void mcu_hw_spi_begin(void) {
+@@ -294,6 +296,7 @@ USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t hid_buffer[CONFIG_USBHOST_MAX_HID
+ USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t xbox_buffer[CONFIG_USBHOST_MAX_XBOX_CLASS][XBOX_REPORT_SIZE];
+ USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t report_desc[CONFIG_USBHOST_MAX_HID_CLASS][128];
+ USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t dummy_report[20];
++USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t keyboard_led_report[CONFIG_USBHOST_MAX_HID_CLASS];
+ 
+ uint8_t byteScaleAnalog(int16_t xbox_val)
+ {
+@@ -332,6 +335,30 @@ bool mcu_hw_hid_present(void) {
+   return false;
+   }  
+ 
++void mcu_hw_keyboard_set_leds(uint8_t leds) {
++  struct usb_config *usb = &usb_config;
++
++  for (int i = 0; i < CONFIG_USBHOST_MAX_HID_CLASS; i++) {
++    struct hid_info_S *hid = &usb->hid_info[i];
++    if (hid->state == STATE_DETECTED && hid->class &&
++        hid->report.type == REPORT_TYPE_KEYBOARD &&
++        hid->class->hport && hid->class->hport->connected) {
++      struct usb_setup_packet *setup = hid->class->hport->setup;
++      keyboard_led_report[i] = leds;
++      setup->bmRequestType = USB_REQUEST_DIR_OUT | USB_REQUEST_CLASS |
++                             USB_REQUEST_RECIPIENT_INTERFACE;
++      setup->bRequest = HID_REQUEST_SET_REPORT;
++      setup->wValue = 2u << 8; /* OUTPUT report, report ID 0. */
++      setup->wIndex = hid->class->intf;
++      setup->wLength = 1;
++      int result = usbh_control_transfer(hid->class->hport, setup,
++                                         &keyboard_led_report[i]);
++      if (result < 0)
++        usb_debugf("Keyboard LED report failed for HID #%d: %d", i, result);
++    }
++  }
++}
++
+ 
+ static void xbox_parse(struct xbox_info_S *xbox) {
+ 
+@@ -488,6 +515,9 @@ static void usbh_hid_client_thread(void *argument) {
+ 
+   usb_debugf("HID client #%d: entering hid thread loop", hid->index);
+ 
++  if (hid->report.type == REPORT_TYPE_KEYBOARD)
++    mcu_hw_keyboard_set_leds(hid_keyboard_leds());
++
+   while (1) {
+     if (hid->stop)
+       break;
+@@ -1037,10 +1067,41 @@ void mcu_hw_spi_begin(void) {
    bflb_gpio_reset(gpio, SPI_PIN_CSN);
  }
  
@@ -106,7 +155,7 @@ index f7d5c21..77cd0c2 100644
  void mcu_hw_spi_end(void) {
    bflb_gpio_set(gpio, SPI_PIN_CSN);
    xSemaphoreGive(spi_sem);
-@@ -1352,9 +1385,23 @@ void mcu_hw_init(void) {
+@@ -1352,9 +1413,23 @@ void mcu_hw_init(void) {
  #ifdef ENABLE_JTAG
    mcu_hw_jtag_init();
  #endif
@@ -132,7 +181,7 @@ index f7d5c21..77cd0c2 100644
  }
  
  void stop_hid(void) {
-@@ -1385,7 +1432,7 @@ void mcu_hw_reset(void) {
+@@ -1385,7 +1460,7 @@ void mcu_hw_reset(void) {
    struct bflb_wdg_config_s wdg_cfg;
    wdg_cfg.clock_source = WDG_CLKSRC_32K;
    wdg_cfg.clock_div = 31;
@@ -141,7 +190,7 @@ index f7d5c21..77cd0c2 100644
    wdg_cfg.mode = WDG_MODE_RESET;
  
    wdg = bflb_device_get_by_name("watchdog0");
-@@ -1393,6 +1440,11 @@ void mcu_hw_reset(void) {
+@@ -1393,6 +1468,11 @@ void mcu_hw_reset(void) {
    bflb_wdg_init(wdg, &wdg_cfg);
    bflb_wdg_start(wdg);
  
@@ -272,6 +321,162 @@ index bf062aa..21409f7 100644
  void gowin_fpgaReset(void);
  
  #endif // GOWIN_H
+diff --git a/src/hid.c b/src/hid.c
+index f58198b..35dbdd8 100644
+--- a/src/hid.c
++++ b/src/hid.c
+@@ -16,6 +16,25 @@
+ // keep a map of joysticks to be able to report
+ // them individually
+ static uint8_t joystick_map = 0;
++static uint8_t keyboard_leds = 0;
++
++static void kbd_tx_caps_snapshot(void) {
++  mcu_hw_spi_begin();
++  mcu_hw_spi_tx_u08(SPI_TARGET_HID);
++  mcu_hw_spi_tx_u08(8);
++  mcu_hw_spi_tx_u08(keyboard_leds);
++  mcu_hw_spi_end();
++}
++
++uint8_t hid_keyboard_leds(void) {
++  return keyboard_leds;
++}
++
++static void kbd_toggle_caps_lock(void) {
++  keyboard_leds ^= 0x02;
++  mcu_hw_keyboard_set_leds(keyboard_leds);
++  kbd_tx_caps_snapshot();
++}
+ 
+ uint8_t hid_allocate_joystick(void) {
+   uint8_t idx;
+@@ -38,6 +57,14 @@ static void kbd_tx(uint8_t byte) {
+   mcu_hw_spi_end();
+ }
+ 
++static void kbd_tx_idle_snapshot(void) {
++  mcu_hw_spi_begin();
++  mcu_hw_spi_tx_u08(SPI_TARGET_HID);
++  mcu_hw_spi_tx_u08(7);
++  mcu_hw_spi_tx_u08(keyboard_leds);
++  mcu_hw_spi_end();
++}
++
+ void get_keyboard_change(const unsigned char* a, const unsigned char* b, int start ,int length, unsigned char* res) {
+   int i1, i2;
+   int res_len = 0;
+@@ -136,10 +163,12 @@ void newkbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid
+           msg = MENU_EVENT_BACK;
+         else
+         {
+-          if (!osd_is_visible())
++          if (!osd_is_visible()) {
++          if (keyboard_change[1][i] == 0x39)
++            kbd_toggle_caps_lock();
+ //        kbd_tx(core_map_key(keyboard_change[1][i]));
+           kbd_tx(0x3f & keyboard_change[1][i]);
+-          else
++          } else
+           {
+             // check if cursor up/down or space has been pressed
+             if (keyboard_change[1][i] == 0x51)
+@@ -161,6 +190,13 @@ void newkbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid
+     }   
+   }
+ 
++  // An all-released USB report is authoritative. Clear the complete physical
++  // keyboard state in the FPGA so one missed break event cannot repeat a
++  // stale key forever. NanoQL Link uses a separate matrix and is unaffected.
++  if(buffer[0] == 0 && buffer[2] == 0 && buffer[3] == 0 &&
++     buffer[4] == 0 && buffer[5] == 0 && buffer[6] == 0 && buffer[7] == 0)
++    kbd_tx_idle_snapshot();
++
+   memcpy(state->last_report, buffer, 8);
+ }
+ 
+@@ -180,23 +216,6 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
+   // we expect boot mode packets which are exactly 8 bytes long
+   if(nbytes != 8) return;
+ 
+-  // check if modifier have changed
+-  if((buffer[0] != state->last_report[0]) && !osd_is_visible()) {
+-    for(int i=0;i<8;i++) {
+-      // modifier keys map to key codes 0x68+
+-      
+-      // modifier released?
+-      if((state->last_report[0] & (1<<i)) && !(buffer[0] & (1<<i)))
+-        //kbd_tx(0x80 | (i+0x68));
+-        kbd_tx_hid_ps2_break(i, 1);
+-
+-      // modifier pressed?
+-      if(!(state->last_report[0] & (1<<i)) && (buffer[0] & (1<<i)))
+-        //kbd_tx(i+0x68);
+-        kbd_tx_hid_ps2_make(i, 1);
+-    }
+-  } 
+-  
+   // check if regular keys have changed
+   // key released?
+   for(int i=0;i<6;i++) {
+@@ -216,6 +235,19 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
+     }
+   }
+ 
++  // Apply modifier changes only after ordinary releases. A shifted key and
++  // Shift are commonly released in the same USB report; releasing Shift
++  // first would make the FPGA translate the key-up event to a different QL
++  // matrix contact and leave the original contact stuck.
++  if((buffer[0] != state->last_report[0]) && !osd_is_visible()) {
++    for(int i=0;i<8;i++) {
++      if((state->last_report[0] & (1<<i)) && !(buffer[0] & (1<<i)))
++        kbd_tx_hid_ps2_break(i, 1);
++      if(!(state->last_report[0] & (1<<i)) && (buffer[0] & (1<<i)))
++        kbd_tx_hid_ps2_make(i, 1);
++    }
++  }
++
+   // key pressed?
+   for(int i=0;i<6;i++) {
+     // process all slots that are used in current report
+@@ -240,10 +272,12 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
+       } else if(osd_is_visible() && buffer[2+i] == 0x29 /* ESC key */ )
+         msg = MENU_EVENT_BACK;
+       else {
+-        if(!osd_is_visible())
++        if(!osd_is_visible()) {
++           if(buffer[2+i] == 0x39)
++             kbd_toggle_caps_lock();
+            //kbd_tx(buffer[2+i]);
+            kbd_tx_hid_ps2_make(buffer[2+i], 0);
+-        else {
++        } else {
+           // check if cursor up/down or space has been pressed
+           if(buffer[2+i] == 0x51) msg = MENU_EVENT_DOWN;
+           if(buffer[2+i] == 0x52) msg = MENU_EVENT_UP;
+@@ -258,6 +292,11 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
+       if(msg) menu_notify(msg);
+     }
+   }
++
++  if(buffer[0] == 0 && buffer[2] == 0 && buffer[3] == 0 &&
++     buffer[4] == 0 && buffer[5] == 0 && buffer[6] == 0 && buffer[7] == 0)
++    kbd_tx_idle_snapshot();
++
+   memcpy(state->last_report, buffer, 8);
+ }
+ 
+diff --git a/src/hid.h b/src/hid.h
+index 28196d8..e54c68a 100644
+--- a/src/hid.h
++++ b/src/hid.h
+@@ -42,5 +42,6 @@ void hid_handle_event(void);
+ 
+ uint8_t hid_allocate_joystick(void);
+ void hid_release_joystick(uint8_t idx);
++uint8_t hid_keyboard_leds(void);
+ 
+ #endif // _HID_H
 diff --git a/src/inifile.c b/src/inifile.c
 index 5f5fb8e..f0ac8a8 100644
 --- a/src/inifile.c
@@ -560,10 +765,10 @@ index 7880ac8..9ed8b21 100644
    mcu_hw_main_loop();
  
 diff --git a/src/mcu_hw.h b/src/mcu_hw.h
-index a53cf9f..f9513df 100644
+index a53cf9f..af6d4ca 100644
 --- a/src/mcu_hw.h
 +++ b/src/mcu_hw.h
-@@ -19,7 +19,10 @@ void mcu_hw_reset(void);
+@@ -19,10 +19,14 @@ void mcu_hw_reset(void);
  
  // HW SPI interface
  void mcu_hw_spi_begin(void);
@@ -574,7 +779,11 @@ index a53cf9f..f9513df 100644
  void mcu_hw_spi_end(void);
  
  bool mcu_hw_hid_present(void);
-@@ -50,7 +53,7 @@ char mcu_hw_wifi_scan_start(mcu_hw_wifi_scan_cb_func);
++void mcu_hw_keyboard_set_leds(uint8_t leds);
+ void mcu_hw_usb_sector_read(void *buffer, int sector, int count);
+ void mcu_hw_upload_core(char *name);
+ bool mcu_hw_usb_msc_present(void);
+@@ -50,7 +54,7 @@ char mcu_hw_wifi_scan_start(mcu_hw_wifi_scan_cb_func);
  #define PIN_TF_SDIO_SEL GPIO_PIN_16
  #define DIRECT_SDC_SUPPORTED
  #endif
@@ -584,7 +793,7 @@ index a53cf9f..f9513df 100644
  uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len);
  void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
 diff --git a/src/menu.c b/src/menu.c
-index 5b8883d..281c9d1 100644
+index 5b8883d..252420e 100644
 --- a/src/menu.c
 +++ b/src/menu.c
 @@ -33,6 +33,10 @@
@@ -611,7 +820,20 @@ index 5b8883d..281c9d1 100644
    }
    
    // draw title in bold and seperator line
-@@ -742,6 +746,16 @@ static void menu_file_selector_open(config_menu_entry_t *entry) {
+@@ -535,9 +539,10 @@ static void menu_draw_entry(config_menu_entry_t *entry, int row, bool selected)
+       int sw = u8g2_GetStrWidth(&u8g2, str) + 1;
+       if(sw > width/2) sw = width/2;
+       u8g2_DrawStr(&u8g2, width-sw, ypos, str);
++      // Highlight only the displayed value rather than the complete right
++      // half of the row. Two pixels of padding keep glyph edges readable.
++      hl_w = sw + 2;
+     }
+-		  
+-    hl_w = width/2;
+   }
+   
+   // some entries have a small icon to the right    
+@@ -742,6 +747,16 @@ static void menu_file_selector_open(config_menu_entry_t *entry) {
      fsel_state.none_icn = NULL;
      fsel_state.action = entry->fsel->action;
    }
@@ -628,7 +850,7 @@ index 5b8883d..281c9d1 100644
      
    // The file selector usually works on the sd card as that is what
    // the cores are reading data from. But cores may be loaded from
-@@ -824,6 +838,38 @@ static void menu_fileselector_select(sdc_dir_entry_t *entry) {
+@@ -824,6 +839,38 @@ static void menu_fileselector_select(sdc_dir_entry_t *entry) {
      
    // stop any scroll timer that might be running
    menu_timer_enable(false);

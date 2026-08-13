@@ -18,7 +18,7 @@ module ql_companion_osd (
     localparam [9:0]  OSD_Y = 10'd296;
     localparam [10:0] OSD_W = 11'd256;
     localparam [9:0]  OSD_H = 10'd128;
-    localparam [10:0] BORDER = 11'd4;
+    localparam [10:0] BORDER = 11'd6;
     localparam [10:0] SHADOW = 11'd8;
 
     reg enabled;
@@ -69,14 +69,13 @@ module ql_companion_osd (
 
     wire [7:0] osd_x = x - OSD_X;
     wire [6:0] osd_y = y - OSD_Y;
-    // The synchronous buffer is read one pixel ahead. Saturate at the right
-    // edge so column 255 cannot wrap around to column 0.
-    wire [7:0] osd_x_lookahead = (osd_x == 8'hff) ?
-                                 8'hff : osd_x + 8'd1;
     reg [7:0] buffer_byte;
 
+    // The buffer and all geometry flags are delayed by the same pixel clock.
+    // Reading the current address keeps the highlighted final column inside
+    // the panel; the former look-ahead shifted it over the right edge.
     always @(posedge clk_pixel)
-        buffer_byte <= buffer[{osd_y[6:4], osd_x_lookahead[7:1]}];
+        buffer_byte <= buffer[{osd_y[6:4], osd_x[7:1]}];
 
     reg panel_d;
     reg text_area_d;
@@ -107,11 +106,12 @@ module ql_companion_osd (
     wire [23:0] shadow_rgb = {2'b00, rgb_in_d[23:18],
                                2'b00, rgb_in_d[15:10],
                                2'b00, rgb_in_d[7:2]};
-    wire [23:0] panel_rgb = text_area_d && text_pixel ? 24'hffffff :
-                             panel_d ? 24'h123c3a : dim_rgb;
+    wire [23:0] panel_rgb = text_area_d ?
+                             (text_pixel ? 24'hf4f7f5 : 24'h13272a) :
+                             24'h2fb6a3;
 
     assign rgb_out = !enabled ? rgb_in_d :
                      panel_d ? panel_rgb :
-                     shadow_d ? shadow_rgb : rgb_in_d;
+                     shadow_d ? shadow_rgb : dim_rgb;
 
 endmodule

@@ -16,6 +16,7 @@ from pathlib import Path
 
 
 RELEASE_TAG = "v1.4.22"
+NANOQL_RELEASE_TAG = "v0.3.0"
 RELEASE_BASE = (
     "https://github.com/MiSTle-Dev/FPGA-Companion/releases/download/"
     + RELEASE_TAG
@@ -311,6 +312,10 @@ def main() -> int:
         if not source.is_file():
             raise FileNotFoundError(source)
         shutil.copy2(source, package / firmware_name)
+        print(
+            f"NanoQL BL616 {revision} firmware: {source} "
+            f"(SHA-256 {sha256(source)})"
+        )
         shutil.copy2(repository / "firmware" / "bl616" / config_source, package / config_name)
 
     allowed_names = {name for name, _, _ in DOWNLOADS}
@@ -344,7 +349,8 @@ def main() -> int:
         flashcube_executable = candidates[0]
 
     print("\nBL616 package ready.")
-    print(f"Release: {RELEASE_TAG}")
+    print(f"NanoQL release: {NANOQL_RELEASE_TAG}")
+    print(f"FPGA Companion base: {RELEASE_TAG}")
     for revision in revisions:
         print(f"Revision {revision} original: {package / original_configs[revision][1]}")
         print(f"Revision {revision} NanoQL:   {package / unified_firmware[revision][3]}")
@@ -373,6 +379,7 @@ def main() -> int:
             ]
         full_image = package / f"nanoql_bl616_{revision}_{args.profile}_full.bin"
         build_full_flash_image(segments, full_image)
+        print(f"Flashing image SHA-256: {sha256(full_image)}")
         flash_bl616(full_image, args.port, args.baudrate)
 
     if args.launch:

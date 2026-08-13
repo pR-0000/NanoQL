@@ -31,7 +31,7 @@ Commandes SPI de la cible 4 :
 
 Le script PC est `tools/nanoql_link.py`. Le firmware unifié est construit à partir des sources de `firmware/bl616/nanoql_companion` pour les révisions 3921 et 3923.
 
-L'assistant `tools/nanoql_setup.py` expose ces fonctions dans l'onglet **Bare-metal** et conserve les chemins ainsi que les adresses dans son fichier INI utilisateur. Il permet également de redémarrer QDOS sans couper l'alimentation.
+L'assistant `tools/nanoql_setup.pyw` expose ces fonctions dans l'onglet **Binary injection** et conserve les chemins ainsi que les adresses dans son fichier INI utilisateur. Il permet également de redémarrer QDOS sans couper l'alimentation.
 
 ### Premier essai matériel
 
@@ -39,7 +39,7 @@ L'assistant `tools/nanoql_setup.py` expose ces fonctions dans l'onglet **Bare-me
 2. Démarrez normalement NanoQL et attendez QDOS.
 3. Reliez l'USB-C de la carte au PC avec un câble de données, attendez le démarrage du FPGA, puis appuyez brièvement sur S1.
 4. Attendez l'apparition du port série `NanoQL Link`, puis exécutez `python tools/nanoql_link.py --port COMx status`.
-5. Utilisez `python tools/nanoql_link.py --port PORT keyboard` pour le clavier distant ou `python tools/nanoql_link.py --port PORT demo` pour la mire bare-metal. Le profil QL est lu depuis la configuration du FPGA ; `--ql-layout fr` et `--ql-layout uk` permettent de le forcer. Le clavier distant fonctionne sous Windows, macOS et Linux, traduit les caractères vers la disposition de la ROM choisie et maintient les touches dans la matrice QL jusqu'à leur relâchement, ce qui permet les jeux et les appuis simultanés. Sur macOS, autorisez Terminal ou Python dans les réglages de Surveillance de l'entrée et d'Accessibilité si le système le demande.
+5. Utilisez `python tools/nanoql_link.py --port PORT keyboard` pour le clavier distant ou `python tools/nanoql_link.py --port PORT demo` pour la mire bare-metal. Le mode `auto`, utilisé par défaut, lit directement le réglage `Keyboard > QL ROM keyboard` de l'overlay. Il ne décrit pas la disposition physique du clavier PC : celle-ci est lue par le système d'exploitation et les caractères reçus sont ensuite convertis vers la matrice de la ROM QL. `--ql-layout fr` et `--ql-layout uk` ne servent que d'override de compatibilité. Le clavier distant fonctionne sous Windows, macOS et Linux et maintient les touches dans la matrice QL jusqu'à leur relâchement, ce qui permet les jeux et les appuis simultanés. Sur macOS, autorisez Terminal ou Python dans les réglages de Surveillance de l'entrée et d'Accessibilité si le système le demande.
 
 La démo arrête QDOS, charge un court programme 68000 à `0x030000`, écrit une seule fois une bande verte de 32 lignes au centre de la VRAM, puis s'arrête sur une boucle locale. Elle évite ainsi de saturer l'arbitre SDRAM pendant le balayage HDMI. Utilisez `python tools/nanoql_link.py --port COMx qdos` pour quitter le programme injecté et redémarrer QDOS. Un redémarrage électrique restaure le mode USB hôte normal.
 
@@ -152,9 +152,9 @@ This CDC device is not the official FPGA Partner firmware's dual-channel `SIPEED
 
 The PC utility is `tools/nanoql_link.py`. Unified firmware sources are in `firmware/bl616/nanoql_companion` and support board revisions 3921 and 3923.
 
-The `tools/nanoql_setup.py` assistant exposes these operations in its **Bare-metal** tab and stores paths and addresses in its per-user INI file. It can also restart QDOS without power cycling.
+The `tools/nanoql_setup.pyw` assistant exposes these operations in its **Binary injection** tab and stores paths and addresses in its per-user INI file. It can also restart QDOS without power cycling.
 
-Flash the matching unified BL616 firmware once, boot NanoQL normally, connect the board to the computer with a USB data cable, wait for FPGA startup, and briefly press S1. Once the `NanoQL Link` serial port appears, run `python tools/nanoql_link.py --port PORT status`, followed by either `keyboard` or `demo`. Keyboard mode works on Windows, macOS, and Linux and reads the QL layout from the FPGA configuration; `--ql-layout fr` and `--ql-layout uk` override it. It translates printable characters for the selected ROM layout and holds every key in the QL matrix until release, allowing games and simultaneous inputs. On macOS, grant Input Monitoring and Accessibility permission to Terminal or Python when requested. The demo writes one central 32-line green band and then stops writing SDRAM. Use the `qdos` command to leave injected code and restart QDOS. A power cycle restores normal USB-host mode.
+Flash the matching unified BL616 firmware once, boot NanoQL normally, connect the board to the computer with a USB data cable, wait for FPGA startup, and briefly press S1. Once the `NanoQL Link` serial port appears, run `python tools/nanoql_link.py --port PORT status`, followed by either `keyboard` or `demo`. Keyboard mode works on Windows, macOS, and Linux. Its default `auto` mode reads `Keyboard > QL ROM keyboard` directly from the FPGA overlay; this setting describes the ROM character table, not the physical PC keyboard, which the operating system handles. `--ql-layout fr` and `--ql-layout uk` are compatibility overrides only. Printable host characters are converted for the selected ROM and every key remains held in the QL matrix until release, allowing games and simultaneous inputs. On macOS, grant Input Monitoring and Accessibility permission to Terminal or Python when requested. The demo writes one central 32-line green band and then stops writing SDRAM. Use the `qdos` command to leave injected code and restart QDOS. A power cycle restores normal USB-host mode.
 
 Run `python tools/nanoql_link.py --port COMx cpu-status` to display the selected CPU mode and measure its effective clock rate. The non-destructive `python tools/nanoql_link.py --port COMx link-stress` command checks USB stability for 30 seconds by default.
 

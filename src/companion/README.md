@@ -10,6 +10,8 @@ The ROM, QL-SD, and ordinary Microdrive image selectors run the XML `save` actio
 
 `ql_companion_hid.sv` consumes the first raw USB event in FPGA Companion HID command 1 packets. It maintains the original QL 8x8 matrix and feeds it to the 8049 data bus according to the row selected on `P1`. Later PS/2 compatibility bytes in each packet are ignored. The mapping is adapted from the MiST QL keyboard implementation and retains its delayed modifier combinations.
 
+The overlay's `USB layout` setting applies only to these raw command 1 events. Printable QWERTY/AZERTY usages and modifiers are decoded to characters, then encoded for the selected `QL ROM layout`. NanoQL Link uses command 6 to address QL matrix contacts directly and owns a separate matrix state, so remote events are never translated as physical USB keys and one source cannot release a key held by the other.
+
 `ql_companion_osd.sv` implements the FPGA Companion `u8g2` 128x64 display protocol in one BSRAM block. It composites a centered 2x overlay after the QL video path, allowing the firmware menu to remain visible without modifying QL VRAM.
 
 The vendor modules were imported from MiSTeryNano revision `1b4432869e3c4bcedf68f138e1a3beb7421c43aa`.

@@ -15,7 +15,7 @@ module tb_ql_companion_hid;
 
     always #5 clk = ~clk;
 
-    ql_companion_hid dut (
+    ql_companion_hid #(.CAPS_PULSE_CYCLES(8)) dut (
         .clk(clk),
         .reset(reset),
         .data_strobe(data_strobe),
@@ -41,6 +41,63 @@ module tb_ql_companion_hid;
             data_start = 1'b0;
             @(negedge clk);
             data_in = event_byte;
+            data_strobe = 1'b1;
+            @(negedge clk);
+            data_strobe = 1'b0;
+            @(negedge clk);
+        end
+    endtask
+
+    task automatic send_caps_state;
+        input caps_lock;
+        begin
+            @(negedge clk);
+            data_start = 1'b1;
+            data_in = 8'd8;
+            data_strobe = 1'b1;
+            @(negedge clk);
+            data_strobe = 1'b0;
+            data_start = 1'b0;
+            @(negedge clk);
+            data_in = {6'd0, caps_lock, 1'b0};
+            data_strobe = 1'b1;
+            @(negedge clk);
+            data_strobe = 1'b0;
+            @(negedge clk);
+        end
+    endtask
+
+    task automatic send_remote_contact;
+        input [7:0] event_byte;
+        begin
+            @(negedge clk);
+            data_start = 1'b1;
+            data_in = 8'd6;
+            data_strobe = 1'b1;
+            @(negedge clk);
+            data_strobe = 1'b0;
+            data_start = 1'b0;
+            @(negedge clk);
+            data_in = event_byte;
+            data_strobe = 1'b1;
+            @(negedge clk);
+            data_strobe = 1'b0;
+            @(negedge clk);
+        end
+    endtask
+
+    task automatic send_usb_idle;
+        input caps_lock;
+        begin
+            @(negedge clk);
+            data_start = 1'b1;
+            data_in = 8'd7;
+            data_strobe = 1'b1;
+            @(negedge clk);
+            data_strobe = 1'b0;
+            data_start = 1'b0;
+            @(negedge clk);
+            data_in = {6'd0, caps_lock, 1'b0};
             data_strobe = 1'b1;
             @(negedge clk);
             data_strobe = 1'b0;
@@ -74,7 +131,9 @@ module tb_ql_companion_hid;
         check_key(7'h10, 63, 1'b0); // AZERTY comma
         check_key(7'h36, 31, 1'b0); // AZERTY semicolon
         check_key(7'h37, 31, 1'b1); // AZERTY colon
-        check_key(7'h20, 40, 1'b1); // AZERTY quote -> English QL Shift+9
+        check_key(7'h20, 23, 1'b1); // AZERTY quote -> English QL quote contact
+
+        check_key(7'h1e, 7, 1'b1);  // AZERTY & -> English QL Shift+7
 
         // Shift+3 on AZERTY is the digit 3. Suppress the host Shift contact
         // while presenting the English QL 3 matrix position.
@@ -89,7 +148,88 @@ module tb_ql_companion_hid;
         if (matrix[56])
             $fatal(1, "AZERTY Shift release did not clear QL Shift");
 
-        $display("PASS: AZERTY punctuation and English QL quote translation");
+        // NanoQL Link addresses QL contacts directly. Contact 63 is comma
+        // on an English QL ROM and must not become the M contact (22).
+        send_remote_contact(8'd63);
+        if (!matrix[63] || matrix[22])
+            $fatal(1, "remote comma was mixed with the USB M mapping");
+        // A physical USB M may coexist with the remote comma.
+        send_hid(7'h33);
+        if (!matrix[63] || !matrix[22])
+            $fatal(1, "USB and remote matrices are not independent");
+        send_remote_contact(8'hbf);
+        if (matrix[63] || !matrix[22])
+            $fatal(1, "remote release altered the USB keyboard state");
+        send_hid(8'hb3);
+
+        // Shift+1 on AZERTY is digit 1, so the source Shift must not reach
+        // the English QL while the translated number contact is held.
+        send_hid(8'h69);
+        send_hid(8'h1e);
+        if (!matrix[35] || matrix[56])
+            $fatal(1, "AZERTY Shift+1 did not produce English QL digit 1");
+        send_hid(8'h9e);
+        send_hid(8'he9);
+
+        // A PC AZERTY Caps Lock also exposes digits on the number row.
+        // This host-layout convenience is separate from the QL IPC's own
+        // letter-only Caps Lock behavior.
+        // Shift held during Caps must not change the isolated QL code.
+        send_hid(8'h69);
+        send_caps_state(1'b1);
+        if (!matrix[25])
+            $fatal(1, "authoritative Caps Lock did not pulse the QL contact");
+        if (matrix[56])
+            $fatal(1, "Shift leaked into the QL Caps Lock pulse");
+        repeat (10) @(negedge clk);
+        if (!matrix[56] || matrix[25])
+            $fatal(1, "Caps pulse did not restore the held Shift state");
+        send_hid(8'he9);
+        send_hid(8'h39);
+        send_hid(8'hb9);
+        send_usb_idle(1'b1);
+        if (matrix[25])
+            $fatal(1, "stable Caps Lock snapshot did not release QL contact");
+        send_hid(8'h1e);
+        if (!matrix[35] || matrix[56])
+            $fatal(1, "AZERTY Caps Lock+1 did not produce English QL digit 1");
+        send_hid(8'h9e);
+        send_usb_idle(1'b1);
+        send_hid(8'h20);
+        if (!matrix[33] || matrix[56])
+            $fatal(1, "USB idle snapshot incorrectly cleared AZERTY Caps Lock");
+        send_hid(8'ha0);
+        send_caps_state(1'b0);
+        if (!matrix[25])
+            $fatal(1, "Caps Lock release did not pulse the QL contact");
+        send_hid(8'h39);
+        send_hid(8'hb9);
+        send_usb_idle(1'b0);
+
+        // Verify same-layout French punctuation as well as an AltGr symbol.
+        rom_keyboard_french = 1'b1;
+        check_key(7'h36, 18, 1'b0); // AZERTY semicolon -> French QL semicolon
+        send_hid(8'h6e);            // right Alt / AltGr
+        send_hid(8'h27);            // AltGr+0 -> @
+        if (!matrix[50] || !matrix[57] || matrix[58])
+            $fatal(1, "AZERTY AltGr+0 did not produce French QL Ctrl+6 (@)");
+        send_hid(8'ha7);
+        send_hid(8'hee);
+        if (matrix[50] || matrix[57] || matrix[58])
+            $fatal(1, "AZERTY AltGr+0 did not release cleanly");
+
+        // An authoritative idle report repairs any missed physical-key
+        // release without clearing the independent remote matrix.
+        send_hid(8'h08);             // physical USB E
+        send_remote_contact(8'h3f);  // remote comma
+        if (!matrix[52] || !matrix[63])
+            $fatal(1, "keyboard setup for idle recovery failed");
+        send_usb_idle(1'b0);
+        if (matrix[52] || !matrix[63])
+            $fatal(1, "USB idle snapshot did not isolate and clear state");
+        send_remote_contact(8'hbf);
+
+        $display("PASS: semantic USB AZERTY punctuation translation");
         $finish;
     end
 endmodule

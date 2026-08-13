@@ -3,7 +3,7 @@ module ql_video_test(
     input  wire        clk_pixel,
     input  wire        reset,
     input  wire        core_reset,
-    input  wire [1:0]  aspect_mode,
+    input  wire [2:0]  video_mode,
     output wire [18:0] mem_addr,
     output wire        mem_rd,
     input  wire        mem_ready,
@@ -27,8 +27,10 @@ module ql_video_test(
     output reg  [9:0]  y
 );
 
-    // CEA-861 1280x720p50: 74.25 MHz, 1980x750 total pixels.
-    localparam [10:0] FRAME_W = 11'd1980;
+    // 720p50 and 720p60 share the same 74.25 MHz pixel clock. Only the
+    // horizontal blanking and the AVI VIC differ.
+    wire video_60hz = video_mode >= 3'd3;
+    wire [10:0] frame_w = video_60hz ? 11'd1650 : 11'd1980;
     localparam [9:0]  FRAME_H = 10'd750;
 
     wire visible_now;
@@ -43,7 +45,7 @@ module ql_video_test(
         .reset(reset),
         .x(x),
         .y(y),
-        .aspect_mode(aspect_mode),
+        .video_mode(video_mode),
         .visible(visible_now),
         .ql_area(ql_area_now),
         .ql_fetch_start(ql_fetch_start_now),
@@ -57,7 +59,7 @@ module ql_video_test(
             x <= 11'd0;
             y <= 10'd0;
         end else begin
-            if (x == FRAME_W - 1'b1) begin
+            if (x >= frame_w - 1'b1) begin
                 x <= 11'd0;
                 if (y == FRAME_H - 1'b1) begin
                     y <= 10'd0;

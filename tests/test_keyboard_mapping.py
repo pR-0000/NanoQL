@@ -6,11 +6,44 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 from nanoql_link import (  # noqa: E402
+    CMD_KEY,
+    KEY_DIRECT_MATRIX,
     MOD_LEFT_ALT,
     MOD_LEFT_CTRL,
     MOD_LEFT_SHIFT,
     NanoQLLink,
 )
+
+
+class RemoteMatrixProtocolTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.link = NanoQLLink.__new__(NanoQLLink)
+        self.requests = []
+        self.link.transact = self.requests.append
+
+    def test_printable_contact_uses_direct_matrix_protocol(self) -> None:
+        self.link.key_event(0x36, True)   # English QL comma
+        self.link.key_event(0x36, False)
+        self.assertEqual(
+            self.requests,
+            [bytes((CMD_KEY, KEY_DIRECT_MATRIX, 0x3F)),
+             bytes((CMD_KEY, KEY_DIRECT_MATRIX, 0xBF))],
+        )
+
+    def test_overlay_key_keeps_legacy_menu_protocol(self) -> None:
+        self.link.key_event(0x45, True)   # F12
+        self.assertEqual(self.requests, [bytes((CMD_KEY, 0x45))])
+
+    def test_overlay_navigation_keeps_raw_hid_usages(self) -> None:
+        for usage in (0x28, 0x29, 0x2C, 0x4B, 0x4E, 0x4F, 0x50, 0x51, 0x52):
+            with self.subTest(usage=usage):
+                self.requests.clear()
+                self.link.key_event(usage, True)
+                self.link.key_event(usage, False)
+                self.assertEqual(
+                    self.requests,
+                    [bytes((CMD_KEY, usage)), bytes((CMD_KEY, usage | 0x80))],
+                )
 
 
 class FrenchKeyboardMappingTests(unittest.TestCase):

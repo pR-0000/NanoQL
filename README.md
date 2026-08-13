@@ -6,7 +6,7 @@ Sinclair QL FPGA core for the Sipeed Tang Nano 20K.
 
 ## Français
 
-NanoQL transforme une Tang Nano 20K en Sinclair QL autonome. Le cœur démarre depuis une carte microSD, produit une image HDMI 720p50 et utilise le BL616 intégré pour le clavier USB, l'overlay et les services de stockage.
+NanoQL transforme une Tang Nano 20K en Sinclair QL autonome. Le cœur démarre depuis une carte microSD, produit une image HDMI 720p50 ou 720p60 et utilise le BL616 intégré pour le clavier USB, l'overlay et les services de stockage.
 
 Le projet privilégie la fidélité matérielle : CPU 68000, timings vidéo natifs, contention RAM, interruption VBL, IPC 8049, ZX8302 et flux Microdrive sont reproduits dans le FPGA plutôt que remplacés par une émulation logicielle.
 
@@ -15,7 +15,7 @@ Le projet privilégie la fidélité matérielle : CPU 68000, timings vidéo nati
 - ROM QL et firmware IPC standard ou Hermes sélectionnables sur microSD ;
 - CPU en modes QL fidèle, 16 MHz ou 24 MHz, commutable à chaud ;
 - 128, 640 ou 896 Kio de RAM ;
-- vidéo QL 4/8 couleurs sur HDMI avec modes `Monitor`, `TV` et larges ;
+- vidéo QL 4/8 couleurs sur HDMI, pixels non carrés corrigés à environ 4,4:3 et profils 50/60 Hz ;
 - son QL et carte QSound optionnelle mixés sur HDMI ;
 - clavier USB QWERTY/AZERTY et clavier distant par NanoQL Link ;
 - overlay `F12` pour les ROM, la RAM, le CPU, la vidéo et les supports ;
@@ -43,6 +43,8 @@ Le clavier USB et le hub OTG sont facultatifs. Un PC peut fournir un clavier dis
 
 Le clavier distant NanoQL Link fonctionne sous Windows, macOS et Linux. Sur macOS, la capture temps réel peut nécessiter l'autorisation de Terminal ou Python dans les réglages de confidentialité.
 
+Dans l'overlay, **USB layout** concerne uniquement le clavier physique relié au BL616. **QL ROM layout** décrit la table de clavier attendue par la ROM QL. Le FPGA convertit les caractères imprimables du premier layout vers le second, y compris les chiffres, la ponctuation et les combinaisons AltGr prises en charge. Le clavier distant NanoQL Link reçoit déjà les caractères traduits par le système d'exploitation et utilise un chemin de matrice QL distinct : il n'utilise donc pas **USB layout** et ne peut pas modifier l'état du clavier USB.
+
 Pour un clavier USB autonome, utilisez de préférence un hub OTG simple ou alimenté : reliez la Tang Nano au connecteur hôte du hub, le clavier à un port USB-A et, si nécessaire, le chargeur uniquement à l'entrée d'alimentation PD. Un dock avec lecteur de cartes ou HDMI peut fonctionner, mais sa topologie USB interne est plus complexe. Ne reliez pas simultanément son connecteur hôte à un ordinateur lorsque la Tang Nano doit piloter le clavier.
 
 ### Installation
@@ -56,10 +58,10 @@ Pour commencer avec l'assistant graphique :
 ```sh
 git clone https://github.com/pR-0000/NanoQL.git
 cd NanoQL
-python tools/nanoql_setup.py
+python tools/nanoql_setup.pyw
 ```
 
-L'assistant mémorise automatiquement les chemins, outils et paramètres de développement dans un fichier INI propre à l'utilisateur. L'onglet **Bare-metal** charge, vérifie et exécute un binaire 68000 brut avec des adresses de chargement, PC et SSP configurables.
+Sous Windows, vous pouvez aussi double-cliquer sur `tools/nanoql_setup.pyw` : aucune console ne reste ouverte. L'assistant mémorise automatiquement les chemins, paramètres et la langue choisie dans un fichier INI propre à l'utilisateur. Son sélecteur **English / Français** traduit immédiatement toute l'interface. L'onglet **Injection de binaire** charge, vérifie et exécute directement un binaire 68000 avec des adresses de chargement, PC et SSP configurables.
 
 L'assistant accepte directement le fichier FPGA `.fs` précompilé d'une release, détecte les ports USB/série dans des listes déroulantes et peut installer openFPGALoader avec Homebrew sous macOS. Gowin EDA n'est pas requis pour installer une release.
 
@@ -109,17 +111,17 @@ Sur le QL original de 128 Kio, `RESPR(65536)` peut normalement produire `Out of 
 
 | Ressource |            Utilisation |
 | --------- | ---------------------: |
-| Logique   | 14 968 / 20 736 (73 %) |
-| LUT       |                 13 961 |
-| Registres |                  7 154 |
+| Logique   | 15 381 / 20 736 (75 %) |
+| LUT       |                 14 384 |
+| Registres |                  7 250 |
 | BSRAM     |         21 / 46 (46 %) |
 | DSP       |               0,5 / 24 |
 
-Le domaine système fonctionne à 48 MHz avec un Fmax mesuré de 61,663 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax mesuré de 74,276 MHz.
+Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 52,106 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,419 MHz. L'analyse de puissance Gowin estime 326,976 mW et une température de jonction de 34,757 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
 
 ## English
 
-NanoQL turns a Tang Nano 20K into a standalone Sinclair QL. It boots from microSD, outputs 720p50 HDMI, and uses the integrated BL616 for USB keyboard, overlay, and storage services.
+NanoQL turns a Tang Nano 20K into a standalone Sinclair QL. It boots from microSD, outputs 720p50 or 720p60 HDMI, and uses the integrated BL616 for USB keyboard, overlay, and storage services.
 
 The project emphasizes hardware fidelity: the 68000 CPU, native video timing, RAM contention, VBL interrupt, 8049 IPC, ZX8302, and Microdrive stream are implemented in FPGA logic instead of being replaced by software emulation.
 
@@ -128,7 +130,7 @@ The project emphasizes hardware fidelity: the 68000 CPU, native video timing, RA
 - microSD-selectable QL ROM and standard or Hermes IPC firmware;
 - faithful QL, 16 MHz, and 24 MHz CPU modes, live-switchable;
 - 128, 640, or 896 KiB RAM;
-- QL 4/8-colour video over HDMI with `Monitor`, `TV`, and wide modes;
+- QL 4/8-colour HDMI video with corrected non-square pixels at approximately 4.4:3 and 50/60 Hz profiles;
 - QL sound and optional QSound card mixed into HDMI;
 - QWERTY/AZERTY USB keyboard and NanoQL Link remote keyboard;
 - `F12` overlay for ROMs, RAM, CPU, video, and media;
@@ -156,6 +158,8 @@ A USB keyboard and OTG hub are optional. A computer can provide a remote keyboar
 
 The NanoQL Link remote keyboard works on Windows, macOS, and Linux. On macOS, real-time capture may require granting Terminal or Python permission in the privacy settings.
 
+In the overlay, **USB layout** applies only to the physical keyboard attached to the BL616. **QL ROM layout** describes the keyboard table expected by the QL ROM. The FPGA converts printable characters from the former to the latter, including supported digits, punctuation, and AltGr combinations. The NanoQL Link remote keyboard receives characters translated by the host and uses an independent direct QL-matrix path, so it does not use **USB layout** and cannot alter the USB keyboard state.
+
 For a standalone USB keyboard, prefer a simple or powered OTG hub: connect the Tang Nano to the hub's host connector, the keyboard to a USB-A port and, when required, the charger only to the PD power input. A dock with a card reader or HDMI may work, but has a more complex internal USB topology. Do not simultaneously connect its host connector to a computer while the Tang Nano is expected to drive the keyboard.
 
 ### Installation
@@ -169,10 +173,10 @@ Start the graphical assistant with:
 ```sh
 git clone https://github.com/pR-0000/NanoQL.git
 cd NanoQL
-python tools/nanoql_setup.py
+python tools/nanoql_setup.pyw
 ```
 
-The assistant automatically remembers paths, tools, and development parameters in a per-user INI file. Its **Bare-metal** tab loads, verifies, and executes a raw 68000 binary with configurable load, PC, and SSP addresses.
+On Windows, you can also double-click `tools/nanoql_setup.pyw`, which opens no console window. The assistant automatically remembers paths, settings, and the selected language in a per-user INI file. Its **English / Français** selector translates the complete interface immediately. The **Binary injection** tab directly loads, verifies, and executes a 68000 binary with configurable load, PC, and SSP addresses.
 
 The assistant accepts a release's precompiled FPGA `.fs` directly, detects USB/serial ports in drop-down lists, and can install openFPGALoader through Homebrew on macOS. Gowin EDA is not required to install a release.
 
@@ -222,16 +226,18 @@ On an original 128 KiB QL, `RESPR(65536)` can normally report `Out of Memory`: Q
 
 | Resource  |                 Usage |
 | --------- | --------------------: |
-| Logic     | 14,968 / 20,736 (73%) |
-| LUT       |                13,961 |
-| Registers |                 7,154 |
+| Logic     | 15,381 / 20,736 (75%) |
+| LUT       |                14,384 |
+| Registers |                 7,250 |
 | BSRAM     |         21 / 46 (46%) |
 | DSP       |              0.5 / 24 |
 
-The system domain runs at 48 MHz with a measured Fmax of 61.663 MHz. The HDMI domain runs at 74.25 MHz with a measured Fmax of 74.276 MHz.
+The system domain runs at 48 MHz with an estimated Fmax of 52.106 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.419 MHz. Gowin power analysis estimates 326.976 mW and a 34.757 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
 
 ## Credits and licenses
 
 NanoQL derives from [QL_MiSTer](https://github.com/MiSTer-devel/QL_MiSTer), [the MiST QL core](https://github.com/mist-devel/ql), [MiSTeryNano](https://github.com/MiSTle-Dev/MiSTeryNano), and [NanoMig](https://github.com/MiSTle-Dev/NanoMig).
 
 Third-party modules retain their original licenses and notices. User-supplied QL, IPC, QL-SD, Microdrive, and QSound images are not part of NanoQL.
+
+The setup assistant embeds user-prepared Tang Nano 20K button illustrations derived from Sipeed's official board rendering on the [Sipeed Wiki](https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html). The source wiki is distributed under the MIT License, copyright (c) 2021 Neucrack.

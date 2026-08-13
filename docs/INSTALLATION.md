@@ -64,10 +64,12 @@ Le pilote FTDI installé par défaut ne permet pas à openFPGALoader d'ouvrir le
 Depuis le dossier NanoQL :
 
 ```sh
-python tools/nanoql_setup.py
+python tools/nanoql_setup.pyw
 ```
 
 Sous macOS/Linux, utilisez `python3` si nécessaire. L'assistant installe automatiquement PySerial, affiche les ports série dans des listes détaillées, vérifie les outils, prépare la microSD, programme le FPGA et prépare le firmware BL616.
+
+Le sélecteur **Language** du premier onglet bascule immédiatement toute l'interface entre le français et l'anglais. Ce choix est mémorisé avec les autres réglages. Les illustrations intégrées montrent les boutons **UPDATE** et **S1** à utiliser ; aucun fichier image externe n'est requis.
 
 ### Ordre de première installation
 
@@ -123,7 +125,7 @@ Cette opération vient après le FPGA. Dans **3. BL616** :
 4. débranchez la carte ;
 5. maintenez **UPDATE**, reconnectez l'USB puis relâchez **UPDATE** ;
 6. cliquez sur **Refresh**, puis choisissez le nouveau port série du bootloader dans la liste ;
-7. cliquez sur **Flash selected firmware**.
+7. cliquez sur **Flash firmware**.
 
 L'assistant installe automatiquement `bflb-mcu-tool-uart`, l'outil UART multiplateforme de Bouffalo Lab. Avec Python 3.13 ou plus récent, il installe aussi le module de compatibilité requis depuis la suppression de `telnetlib`. macOS utilise 230400 bauds ; Windows et Linux utilisent 2000000 bauds avec de petits blocs acquittés pour fiabiliser l'USB. Une tentative interrompue impose de débrancher la carte et de rentrer de nouveau dans le mode UPDATE avant de recommencer. Commande équivalente :
 
@@ -157,9 +159,13 @@ Pour un essai temporaire sans changer le BL616, NanoQL Link peut charger le fich
 4. Alimentez par USB-C.
 5. Si NanoQL demande des ROM, ouvrez `F12`, choisissez **QL ROM** et **IPC ROM**, puis redémarrez le QL.
 
-Le QL doit démarrer sans clavier ni hub. Pour le développement, connectez la carte à l'ordinateur, attendez le démarrage du FPGA, appuyez brièvement sur S1 et utilisez l'onglet **4. USB keyboard**. Le clavier distant fonctionne sous Windows, macOS et Linux. Sur macOS/Linux, le script installe automatiquement `pynput` lors de la première utilisation. macOS peut demander d'autoriser Terminal ou Python dans **Réglages Système > Confidentialité et sécurité > Surveillance de l'entrée** et **Accessibilité**. Si la console affiche `This process is not trusted`, ajoutez également l'exécutable Python réellement affiché par la commande, par exemple celui du dossier `venv/bin`, puis quittez complètement et relancez Terminal. Sur macOS, l'interception Quartz autorisée empêche les touches et séquences de contrôle de s'afficher dans Terminal. Les événements en attente sont vidés avant de rendre la main avec `F6`.
+Le QL doit démarrer sans clavier ni hub. Pour le développement, connectez la carte à l'ordinateur, attendez le démarrage du FPGA, appuyez brièvement sur S1 et utilisez l'onglet **4. Remote keyboard**. Le clavier distant fonctionne sous Windows, macOS et Linux. Sur macOS/Linux, le script installe automatiquement `pynput` lors de la première utilisation. macOS peut demander d'autoriser Terminal ou Python dans **Réglages Système > Confidentialité et sécurité > Surveillance de l'entrée** et **Accessibilité**. Si la console affiche `This process is not trusted`, ajoutez également l'exécutable Python réellement affiché par la commande, par exemple celui du dossier `venv/bin`, puis quittez complètement et relancez Terminal. Sur macOS, l'interception Quartz autorisée empêche les touches et séquences de contrôle de s'afficher dans Terminal. Les événements en attente sont vidés avant de rendre la main avec `F6`.
 
-NanoQL émet un signal CEA standard 1280×720p50, mais les téléviseurs et moniteurs n'appliquent pas tous le même overscan, filtre de netteté ou redimensionnement. Pour une image fidèle, choisissez le mode écran `1:1`, `Just Scan`, `Screen Fit` ou `Full Pixel`, puis désactivez l'overscan, la réduction de bruit, l'interpolation de mouvement et les renforcements de netteté. Un défaut fixé à une position de la dalle mais absent sur un autre écran provient probablement de son traitement vidéo ; un défaut qui suit le contenu et apparaît aussi sur une capture HDMI doit être signalé avec le mode vidéo NanoQL utilisé.
+NanoQL propose six profils vidéo dans `Display > Video mode`. Les profils 50 Hz utilisent le VIC CEA 19 et conservent la cadence PAL native du QL. Les profils 60 Hz utilisent le VIC CEA 4 pour les moniteurs qui refusent le 50 Hz ; la VRAM QL reste mise à jour à 50 Hz, ce qui produit une répétition périodique perceptible dans les mouvements. `Sharp` affiche 564×384, `Large` 844×576 et constitue le compromis recommandé, tandis que `Fit` utilise 990×675 avec une marge de sécurité contre l'overscan parfois appliqué par les modes TV 16:9. Les trois profils sont centrés et reproduisent le rapport historique approximatif de 4,4:3 des pixels non carrés du QL.
+
+Les deux cadences émettent un véritable flux HDMI à 74,25 MHz avec AVI InfoFrame 16:9. Si un moniteur ancien grise son réglage d'aspect ou déforme le 720p50, essayez d'abord `60 Hz Large`. Pour des pixels fidèles, désactivez l'overscan, la réduction de bruit, l'interpolation de mouvement et les renforcements de netteté.
+
+Dans l'overlay, `USB layout` concerne exclusivement le clavier USB local connecté au BL616 ; `QL ROM layout` sélectionne la table attendue par la ROM. Le clavier distant de l'onglet **4. Remote keyboard** est traduit en caractères par Windows, macOS ou Linux, ignore `USB layout` et utilise un état de matrice indépendant du clavier USB.
 
 ## English
 
@@ -225,10 +231,12 @@ The default FTDI driver does not let openFPGALoader access JTAG. In **2. FPGA**,
 Run from the NanoQL directory:
 
 ```sh
-python tools/nanoql_setup.py
+python tools/nanoql_setup.pyw
 ```
 
 Use `python3` on macOS/Linux when needed. The assistant installs PySerial automatically, presents detailed serial-port lists, checks tools, prepares the microSD, programs the FPGA, and prepares BL616 firmware.
+
+The first tab's **Language** selector immediately switches the complete interface between English and French. The choice is stored with the other settings. Embedded illustrations identify the **UPDATE** and **S1** buttons; no external image file is required.
 
 ### First-install order
 
@@ -284,7 +292,7 @@ Do this after programming the FPGA. In **3. BL616**:
 4. disconnect the board;
 5. hold **UPDATE**, reconnect USB, then release **UPDATE**;
 6. click **Refresh**, then select the new bootloader serial port from the list;
-7. click **Flash selected firmware**.
+7. click **Flash firmware**.
 
 The assistant automatically installs Bouffalo Lab's cross-platform `bflb-mcu-tool-uart` loader. On Python 3.13 or newer it also installs the compatibility module needed since `telnetlib` was removed. macOS uses 230400 baud; Windows and Linux use 2000000 baud with small acknowledged blocks for reliable USB transfers. After an interrupted attempt, disconnect the board and enter UPDATE mode again before retrying. Command-line equivalent:
 
@@ -318,6 +326,10 @@ For temporary testing without changing BL616 firmware, NanoQL Link can load the 
 4. Power the board through USB-C.
 5. If NanoQL requests ROMs, open `F12`, select **QL ROM** and **IPC ROM**, then restart the QL.
 
-The QL must boot without a keyboard or hub. For development, connect the board to the computer, wait for FPGA startup, briefly press S1, and use the **4. USB keyboard** tab. The remote keyboard works on Windows, macOS, and Linux. On macOS/Linux the script automatically installs `pynput` on first use. macOS may ask you to allow Terminal or Python under **System Settings > Privacy & Security > Input Monitoring** and **Accessibility**. If the console reports `This process is not trusted`, also add the actual Python executable shown by the command, for example the one under `venv/bin`, then fully quit and restart Terminal. On macOS, the authorized Quartz event tap prevents keys and control sequences from being echoed into Terminal. Pending events are flushed before `F6` returns control.
+The QL must boot without a keyboard or hub. For development, connect the board to the computer, wait for FPGA startup, briefly press S1, and use the **4. Remote keyboard** tab. The remote keyboard works on Windows, macOS, and Linux. On macOS/Linux the script automatically installs `pynput` on first use. macOS may ask you to allow Terminal or Python under **System Settings > Privacy & Security > Input Monitoring** and **Accessibility**. If the console reports `This process is not trusted`, also add the actual Python executable shown by the command, for example the one under `venv/bin`, then fully quit and restart Terminal. On macOS, the authorized Quartz event tap prevents keys and control sequences from being echoed into Terminal. Pending events are flushed before `F6` returns control.
 
-NanoQL outputs standard CEA 1280×720p50, but displays do not all apply the same overscan, sharpness filtering, or scaling. For faithful pixels, select the display's `1:1`, `Just Scan`, `Screen Fit`, or `Full Pixel` mode, then disable overscan, noise reduction, motion interpolation, and sharpness enhancement. A defect fixed at one panel position but absent on another display is probably display processing; a defect that follows the content and also appears in an HDMI capture should be reported together with the selected NanoQL video mode.
+NanoQL provides six video profiles under `Display > Video mode`. The 50 Hz profiles use CEA VIC 19 and preserve the QL's native PAL cadence. The 60 Hz profiles use CEA VIC 4 for displays that reject 50 Hz; QL VRAM is still updated at 50 Hz, causing a periodic repeated frame during motion. `Sharp` displays 564×384, `Large` uses 844×576 and is the recommended compromise, while `Fit` uses 990×675 with a safety margin for overscan sometimes applied by TV-style 16:9 modes. All three are centered and reproduce the QL's approximately 4.4:3 historical geometry with non-square pixels.
+
+Both rates are true 74.25 MHz HDMI streams with a 16:9 AVI InfoFrame. If an older display disables its aspect control or distorts 720p50, try `60 Hz Large` first. Disable overscan, noise reduction, motion interpolation, and sharpness enhancement for faithful pixels.
+
+In the overlay, `USB layout` applies exclusively to the local USB keyboard connected to the BL616; `QL ROM layout` selects the table expected by the ROM. The remote keyboard in the **4. Remote keyboard** tab is translated into characters by Windows, macOS, or Linux, ignores `USB layout`, and uses matrix state independent from the USB keyboard.

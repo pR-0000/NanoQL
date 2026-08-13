@@ -25,37 +25,47 @@
       <hide/>
     </action>
   </actions>
-  <menu label="NanoQL v0.2.8">
-    <fileselector label="QL ROM:" ext="rom;bin" index="0" action="save_reset"/>
-    <fileselector label="QL-SD image:" ext="win;qxl" index="1" action="save"/>
-    <fileselector label="Microdrive 1:" ext="mdv" index="2" action="save"/>
-    <fileselector label="QSound ROM:" ext="rom;bin" index="3" default="QSound.rom" action="save_reset"/>
-    <fileselector label="IPC ROM:" ext="hex;bin;rom" index="4" action="save_reset"/>
-    <fileselector label="Build MDV1 from:" ext="nqlfolder" index="7" default="/sd/NanoQL/Microdrives"/>
-    <list label="Video:" id="A" default="0" action="save">
-      <listentry label="Monitor" value="0"/>
-      <listentry label="TV" value="1"/>
-      <listentry label="Wide +6%" value="2"/>
-      <listentry label="Wide +30%" value="3"/>
-    </list>
-    <list label="RAM:" id="M" default="0" action="save_reset">
-      <listentry label="128 KiB" value="0"/>
-      <listentry label="640 KiB" value="1"/>
-      <listentry label="896 KiB" value="2"/>
-    </list>
-    <list label="CPU:" id="C" default="0" action="save">
-      <listentry label="QL" value="0"/>
-      <listentry label="16 MHz" value="1"/>
-      <listentry label="24 MHz" value="2"/>
-    </list>
-    <list label="USB keyboard:" id="H" default="0" action="save">
-      <listentry label="QWERTY" value="0"/>
-      <listentry label="AZERTY" value="1"/>
-    </list>
-    <list label="ROM keyboard:" id="K" default="0" action="save">
-      <listentry label="English" value="0"/>
-      <listentry label="French" value="1"/>
-    </list>
-    <button label="Reset QL" action="reset"/>
+  <menu label="NanoQL v0.3.0">
+    <menu label="System">
+      <fileselector label="QL ROM:" ext="rom;bin" index="0" action="save_reset"/>
+      <fileselector label="IPC ROM:" ext="hex;bin;rom" index="4" action="save_reset"/>
+      <fileselector label="QSound ROM:" ext="rom;bin" index="3" default="QSound.rom" action="save_reset"/>
+      <list label="RAM:" id="M" default="0" action="save_reset">
+        <listentry label="128 KiB" value="0"/>
+        <listentry label="640 KiB" value="1"/>
+        <listentry label="896 KiB" value="2"/>
+      </list>
+      <list label="CPU:" id="C" default="0" action="save">
+        <listentry label="QL" value="0"/>
+        <listentry label="16 MHz" value="1"/>
+        <listentry label="24 MHz" value="2"/>
+      </list>
+      <button label="Reset QL" action="reset"/>
+    </menu>
+    <menu label="Storage">
+      <fileselector label="QL-SD image:" ext="win;qxl" index="1" action="save"/>
+      <fileselector label="Microdrive 1:" ext="mdv" index="2" action="save"/>
+      <fileselector label="Build MDV1:" ext="nqlfolder" index="7" default="/sd/NanoQL/Microdrives"/>
+    </menu>
+    <menu label="Display">
+      <list label="Video mode:" id="A" default="0" action="save">
+        <listentry label="50 Hz Sharp" value="0"/>
+        <listentry label="50 Hz Large" value="1"/>
+        <listentry label="50 Hz Fit" value="2"/>
+        <listentry label="60 Hz Sharp" value="3"/>
+        <listentry label="60 Hz Large" value="4"/>
+        <listentry label="60 Hz Fit" value="5"/>
+      </list>
+    </menu>
+    <menu label="Keyboard">
+      <list label="USB keyboard:" id="H" default="0" action="save">
+        <listentry label="QWERTY" value="0"/>
+        <listentry label="AZERTY" value="1"/>
+      </list>
+      <list label="QL ROM keyboard:" id="K" default="0" action="save">
+        <listentry label="English" value="0"/>
+        <listentry label="French" value="1"/>
+      </list>
+    </menu>
   </menu>
 </config>

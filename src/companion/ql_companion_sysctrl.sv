@@ -10,7 +10,7 @@ module ql_companion_sysctrl(
     output wire       int_out_n,
     input  wire [1:0] buttons,
     output reg  [1:0] system_reset,
-    output reg  [1:0] video_aspect,
+    output reg  [2:0] video_mode,
     output reg  [1:0] ram_config,
     output reg  [1:0] cpu_speed,
     output reg        host_keyboard_azerty,
@@ -43,7 +43,7 @@ module ql_companion_sysctrl(
             data_out <= 8'd0;
             sd_iack <= 1'b0;
             system_reset <= 2'd1;
-            video_aspect <= 2'd2;
+            video_mode <= 3'd0;
             ram_config <= 2'd0;
             cpu_speed <= 2'd0;
             host_keyboard_azerty <= 1'b0;
@@ -86,7 +86,7 @@ module ql_companion_sysctrl(
                                 if (config_id == "R")
                                     system_reset <= data_in[1:0];
                                 else if (config_id == "A")
-                                    video_aspect <= data_in[1:0];
+                                    video_mode <= data_in[2:0];
                                 else if (config_id == "M")
                                     ram_config <= data_in[1:0];
                                 else if (config_id == "C")

@@ -181,7 +181,7 @@ module nanoql_top(
     wire companion_sd_irq;
     wire companion_sd_iack;
     wire [1:0] companion_system_reset;
-    wire [1:0] companion_video_aspect;
+    wire [2:0] companion_video_mode;
     wire [1:0] companion_ram_config;
     wire [1:0] companion_cpu_speed;
     wire companion_host_keyboard_azerty;
@@ -523,7 +523,7 @@ module nanoql_top(
         .int_out_n(spi_irqn),
         .buttons({1'b0, key_s1_latched}),
         .system_reset(companion_system_reset),
-        .video_aspect(companion_video_aspect),
+        .video_mode(companion_video_mode),
         .ram_config(companion_ram_config),
         .cpu_speed(companion_cpu_speed),
         .host_keyboard_azerty(companion_host_keyboard_azerty),
@@ -949,7 +949,7 @@ module nanoql_top(
         .clk_pixel(clk_hdmi),
         .reset(video_reset),
         .core_reset(ql_system_reset),
-        .aspect_mode(companion_video_aspect),
+        .video_mode(companion_video_mode),
         .mem_addr(video_mem_addr),
         .mem_rd(video_mem_rd),
         .mem_ready(video_mem_ready),
@@ -1659,6 +1659,7 @@ module nanoql_top(
         .clk_pixel_x5(clk_hdmi_x5),
         .clk_pixel(clk_hdmi),
         .reset(video_reset),
+        .video_60hz(companion_video_mode >= 3'd3),
         .rgb(osd_rgb),
         // HDMI is the board's common audio output. The original QL speaker
         // and QSound jack remain logically independent before this mix.

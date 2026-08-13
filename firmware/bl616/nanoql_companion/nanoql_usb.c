@@ -143,7 +143,7 @@ static void fpga_upload_resume_companion(void);
 static const uint8_t device_descriptor[] = {
     USB_DEVICE_DESCRIPTOR_INIT(
         USB_2_0, 0xef, 0x02, 0x01,
-        NANOQL_USB_VID, NANOQL_USB_PID, 0x0100, 0x01)
+        NANOQL_USB_VID, NANOQL_USB_PID, 0x0030, 0x01)
 };
 
 static const uint8_t config_descriptor[] = {
@@ -161,7 +161,7 @@ static const uint8_t device_qualifier_descriptor[] = {
 static const char *string_descriptors[] = {
     (const char[]){0x09, 0x04},
     "NanoQL",
-    "NanoQL Link",
+    "NanoQL Link v0.3.0",
     "NQL0001"
 };
 
@@ -1162,17 +1162,20 @@ static bool remote_menu_event(uint8_t event)
 static uint8_t spi_exchange(
     const uint8_t *payload, uint8_t length, uint8_t *response)
 {
-    if ((length == 2) && (payload[0] == NANOQL_CMD_KEY)) {
-        if (remote_menu_event(payload[1])) {
+    if (((length == 2) || (length == 3)) &&
+        (payload[0] == NANOQL_CMD_KEY)) {
+        bool matrix_event = (length == 3) && (payload[1] == 1);
+        uint8_t key_event = matrix_event ? payload[2] : payload[1];
+        if (!matrix_event && remote_menu_event(key_event)) {
             response[0] = 0;
             return 1;
         }
         mcu_hw_spi_begin();
         response[0] = mcu_hw_spi_tx_u08(SPI_TARGET_HID);
-        /* NanoQL Link sends characters already mapped to the selected QL ROM.
-           HID command 5 bypasses the physical host-layout translation in FPGA. */
-        response[1] = mcu_hw_spi_tx_u08(5);
-        response[2] = mcu_hw_spi_tx_u08(payload[1]);
+        /* A three-byte form of the proven key request carries an unambiguous
+           direct matrix event while two-byte raw HID requests remain intact. */
+        response[1] = mcu_hw_spi_tx_u08(matrix_event ? 6 : 5);
+        response[2] = mcu_hw_spi_tx_u08(key_event);
         mcu_hw_spi_end();
         return 3;
     }

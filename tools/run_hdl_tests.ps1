@@ -37,6 +37,8 @@ $sdArbiterOutput = Join-Path $env:TEMP "nanoql_sd_request_arbiter.vvp"
 $zx8301Output = Join-Path $env:TEMP "nanoql_zx8301.vvp"
 $qsoundOutput = Join-Path $env:TEMP "nanoql_qsound.vvp"
 $companionHidOutput = Join-Path $env:TEMP "nanoql_companion_hid.vvp"
+$hdmiWindowOutput = Join-Path $env:TEMP "nanoql_hdmi_window.vvp"
+$hdmiVideoModesOutput = Join-Path $env:TEMP "nanoql_hdmi_video_modes.vvp"
 $ipcRomLoaderOutput = Join-Path $env:TEMP "nanoql_ipc_rom_loader.vvp"
 $ipcHexLoaderOutput = Join-Path $env:TEMP "nanoql_ipc_hex_loader.vvp"
 $ipcPlainHexLoaderOutput = Join-Path $env:TEMP "nanoql_ipc_plain_hex_loader.vvp"
@@ -88,6 +90,32 @@ if ($LASTEXITCODE -ne 0) {
 & $vvp $companionHidOutput
 if ($LASTEXITCODE -ne 0) {
     throw "Companion HID simulation failed."
+}
+
+& $iverilog -g2012 -s tb_ql_hdmi_window -o $hdmiWindowOutput `
+    (Join-Path $projectRoot "sim\tb_ql_hdmi_window.sv") `
+    (Join-Path $projectRoot "src\ql_hdmi_window.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "HDMI window simulation compilation failed."
+}
+
+& $vvp $hdmiWindowOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "HDMI window simulation failed."
+}
+
+& $iverilog -g2012 -s tb_hdmi_video_modes -o $hdmiVideoModesOutput `
+    (Join-Path $projectRoot "sim\tb_hdmi_video_modes.sv") `
+    (Join-Path $projectRoot "src\hdmi\auxiliary_video_information_info_frame.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "HDMI video-mode simulation compilation failed."
+}
+
+& $vvp $hdmiVideoModesOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "HDMI video-mode simulation failed."
 }
 
 & $iverilog -g2012 -s tb_ql_qsound_card -o $qsoundOutput `

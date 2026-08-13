@@ -5,8 +5,9 @@ module tb_ql_microdrive_stream;
     reg reset = 1'b1;
     reg core_reset = 1'b1;
     always #5 clk = ~clk;
+    reg [1:0] cpu_speed = 2'd0;
     reg selected = 1'b0;
-    reg status_read_ack = 1'b0;
+    reg receive_ack = 1'b0;
     reg write_enable = 1'b0;
     reg erase_enable = 1'b0;
     reg tx_write = 1'b0;
@@ -36,8 +37,9 @@ module tb_ql_microdrive_stream;
         .clk(clk),
         .reset(reset),
         .core_reset(core_reset),
+        .cpu_speed(cpu_speed),
         .selected(selected),
-        .status_read_ack(status_read_ack),
+        .receive_ack(receive_ack),
         .write_enable(write_enable),
         .erase_enable(erase_enable),
         .tx_write(tx_write),
@@ -125,9 +127,9 @@ module tb_ql_microdrive_stream;
                     $fatal(1, "RX byte changed before the status read");
             end
             @(negedge clk);
-            status_read_ack = 1'b1;
+            receive_ack = 1'b1;
             @(negedge clk);
-            status_read_ack = 1'b0;
+            receive_ack = 1'b0;
             while (rx_ready)
                 @(posedge clk);
         end

@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.3.0 - 2026-08-13
+
+- Replaces monitor-dependent `Monitor`, `TV`, and wide geometry with centered `Sharp` (564×384), `Large` (844×576), and `Fit` (990×675) windows. Their approximately 4.4:3 geometry reproduces the QL's non-square pixels without asking the HDMI display to stretch the 1280×720 signal; `Fit` retains an overscan-safe margin so the complete raster remains visible.
+- Releases ordinary USB keys before their modifiers when both change in one HID report, preventing shifted keys from leaving an unrelated QL matrix contact stuck.
+- Atomically clears the local USB-keyboard matrix when the BL616 receives an all-keys-released HID report, recovering from any missed release without disturbing NanoQL Link's independent remote keyboard.
+- Mirrors the QL Caps Lock toggle to the physical USB keyboard's Caps Lock LED through a standard HID output report; as on original QL hardware, Caps Lock affects letters but not digits or punctuation.
+- Treats PC AZERTY Caps Lock as a number-row lock during local USB character translation, while retaining the QL IPC's native letter-only Caps Lock semantics; idle snapshots now keep the BL616 LED state and FPGA translation state synchronized.
+- Makes the BL616 lock state authoritative and derives the QL IPC Caps Lock pulse from that state, eliminating independent LED, number-row, and letter-lock toggles that could become inverted after a lost event.
+- Sends Caps Lock through a dedicated Companion command and a fixed isolated QL matrix pulse, so holding or pressing Shift during the transition cannot turn it into the distinct Shift+Caps IPC code.
+- Reorganizes the overlay into System, Storage, Display, and Keyboard sections, fixes the one-pixel selection overflow, dims the QL picture behind a cleaner high-contrast panel, and labels host-keyboard and ROM-keyboard settings unambiguously.
+- Adds live 720p50 and 720p60 output profiles at the same 74.25 MHz pixel clock, emitting VIC 19 or VIC 4 in the HDMI AVI InfoFrame.
+- Makes the overlay distinguish the local `USB layout` from the `QL ROM layout`, and renames the PC assistant tab to `Remote keyboard`; NanoQL Link keys remain independently character-mapped by the host.
+- Converts local USB AZERTY/QWERTY printable keys semantically, including number-row punctuation, French national keys, and common AltGr programming symbols.
+- Gives NanoQL Link a direct QL-matrix protocol and independent key state, preventing remote punctuation from being translated again by the USB-keyboard path or releasing a locally held key.
+- Reworks the graphical Setup Assistant around beginner-facing actions: temporary SRAM programming, permanent Flash programming, one-click BL616 flashing, remote keyboard, and binary injection. FPGA builds and MDV synchronization now live under Advanced.
+- Adds embedded user-prepared Tang Nano 20K illustrations that blink between normal, `UPDATE`, and `S1` states, a larger resizable log area, persistent user settings, and a console-free Windows `.pyw` launcher while retaining the former `.py` command as a compatibility wrapper.
+- Adds an immediately switchable and persistent English/French interface catalog, concise keyword-led instructions, and an unambiguous Remote keyboard tab distinct from a physical USB keyboard attached through a hub.
+
 ## v0.2.8 - 2026-08-03
 
 - Persists Setup Assistant paths, selected tools, ports, and developer parameters in a per-user cross-platform INI file.

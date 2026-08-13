@@ -41,6 +41,7 @@ module hdmi
     // synchronous reset back to 0,0
     input logic			      reset,
     input logic [1:0]		      stmode, // atari st video mode, 0=60hz ntsc, 1=50hz pal, 2=mono
+    input logic                       rate_60, // selects VIC 4 instead of VIC 19 in 720p mode
     input logic [1:0]		      screen,   // output-width mode selected by the core
     input logic [10:0]                 screen_width_override,
     input logic [23:0]		      rgb, 
@@ -93,10 +94,13 @@ wire [43:0] htiming2  = { 11'd896, 11'd640, 11'd24, 11'd72 };
 wire [39:0] vtiming2  = { 10'd501, 10'd400,  10'd5,  10'd5 };  
 wire [7:0] cea2 = 8'd2;
 
-// CEA VIC 19: 1280x720p at 50 Hz, 74.25 MHz pixel clock.
-wire [43:0] htiming3 = {11'd1980, 11'd1280, 11'd440, 11'd40};
+// CEA VIC 19/4: 1280x720p at 50/60 Hz. Both use a 74.25 MHz pixel clock.
+wire [43:0] htiming3 = {rate_60 ? 11'd1650 : 11'd1980,
+                        11'd1280,
+                        rate_60 ? 11'd110 : 11'd440,
+                        11'd40};
 wire [39:0] vtiming3 = {10'd750, 10'd720, 10'd5, 10'd5};
-wire [7:0] cea3 = 8'd19;
+wire [7:0] cea3 = rate_60 ? 8'd4 : 8'd19;
    
 wire [91:0]  timing0 = {  htiming0, vtiming0, cea0 };
 wire [91:0]  timing1 = {  htiming1, vtiming1, cea1 };
@@ -158,8 +162,8 @@ begin
     end
     else
     begin
-        cx <= cx == frame_width-1'b1 ? 11'd0 : cx + 1'b1;
-        cy <= cx == frame_width-1'b1 ? cy == frame_height-1'b1 ? 10'd0 : cy + 1'b1 : cy;
+        cx <= cx >= frame_width-1'b1 ? 11'd0 : cx + 1'b1;
+        cy <= cx >= frame_width-1'b1 ? cy == frame_height-1'b1 ? 10'd0 : cy + 1'b1 : cy;
     end
 end
 

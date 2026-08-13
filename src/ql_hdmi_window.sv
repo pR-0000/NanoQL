@@ -3,7 +3,7 @@ module ql_hdmi_window(
     input  wire        reset,
     input  wire [10:0] x,
     input  wire [9:0]  y,
-    input  wire [1:0]  aspect_mode,
+    input  wire [2:0]  video_mode,
 
     output reg         visible,
     output reg         ql_area,
@@ -13,82 +13,65 @@ module ql_hdmi_window(
     output reg  [7:0]  ql_y
 );
 
-    localparam [9:0]  VISIBLE_H = 10'd720;
-    localparam [9:0]  QL_TOP = 10'd104;
-    localparam [9:0]  QL_BOTTOM = 10'd616;
-    localparam [9:0]  QL_WIDE_TOP = 10'd129;
-    localparam [9:0]  QL_WIDE_BOTTOM = 10'd591;
+    localparam [9:0] VISIBLE_H = 10'd720;
 
+    // The original QL's pixels are not square. On a correctly adjusted CRT,
+    // the complete active picture is approximately 4.4:3 rather than 4:3.
+    // The 50/60 Hz variants use identical geometry; video_mode 3..5 only
+    // changes the HDMI frame timing.
     reg [10:0] ql_left;
     reg [10:0] ql_width;
+    reg [9:0] ql_top;
+    reg [9:0] ql_height;
+
     always @* begin
-        case (aspect_mode)
-            // Monitor is exact 2x integer scaling: each QL framebuffer sample
-            // becomes a uniform 2x2 block in square-pixel 720p output.
-            2'd0: begin
-                ql_left = 11'd128;
-                ql_width = 11'd1024;
+        case (video_mode)
+            3'd0, 3'd3: begin
+                ql_left = 11'd358;
+                ql_width = 11'd564;
+                ql_top = 10'd168;
+                ql_height = 10'd384;
             end
-            // TV adds the slight horizontal correction expected on a modern
-            // 16:9 panel while retaining the complete 512-sample QL line.
-            2'd1: begin
-                ql_left = 11'd64;
-                ql_width = 11'd1152;
-            end
-            2'd2: begin
-                ql_left = 11'd96;
-                ql_width = 11'd1088;
+            3'd1, 3'd4: begin
+                ql_left = 11'd218;
+                ql_width = 11'd844;
+                ql_top = 10'd72;
+                ql_height = 10'd576;
             end
             default: begin
-                ql_left = 11'd40;
-                ql_width = 11'd1200;
+                // Fit keeps the complete QL raster away from the outermost
+                // HDMI lines, which some televisions still hide as overscan.
+                // 990/675 is exactly 4.4:3 and leaves an overscan-safe frame
+                // of 22/23 lines plus 145 pixels on both horizontal sides.
+                ql_left = 11'd145;
+                ql_width = 11'd990;
+                ql_top = 10'd22;
+                ql_height = 10'd675;
             end
         endcase
     end
+
     wire [10:0] ql_right = ql_left + ql_width;
-
-    // Wide +30% keeps a 40-pixel safety margin on both sides. A 1200x462
-    // window gives a 1.299 geometry correction while preserving every one
-    // of the 512x256 QL samples.
-    wire [9:0] ql_top = (aspect_mode == 2'd3) ? QL_WIDE_TOP : QL_TOP;
-    wire [9:0] ql_bottom = (aspect_mode == 2'd3) ?
-                           QL_WIDE_BOTTOM : QL_BOTTOM;
-
+    wire [9:0] ql_bottom = ql_top + ql_height;
     wire in_ql_area = (x >= ql_left) && (x < ql_right) &&
                       (y >= ql_top) && (y < ql_bottom);
-    wire [9:0] content_y = y - ql_top;
-    wire [7:0] source_y = content_y[8:1];
 
-    wire [10:0] next_y = {1'b0, y} + 11'd1;
-    wire [10:0] next_content_y = next_y - {1'b0, ql_top};
-    wire [7:0] next_source_y = next_content_y[8:1];
+    // Fixed-ratio nearest-neighbour scalers. Accumulating the 512x256 source
+    // dimensions avoids dividers and gives a deterministic repetition phase.
+    reg [10:0] horizontal_phase;
+    wire [11:0] horizontal_sum = {1'b0, horizontal_phase} + 12'd512;
+    wire advance_x = horizontal_sum >= {1'b0, ql_width};
 
-    reg [7:0] vertical_phase;
-    wire [8:0] vertical_phase_sum = {1'b0, vertical_phase} + 9'd128;
-    wire advance_wide_y = vertical_phase_sum >= 9'd231;
-    wire [7:0] vertical_phase_current = advance_wide_y ?
-                                      vertical_phase_sum - 9'd231 :
-                                      vertical_phase_sum[7:0];
-    wire [8:0] vertical_phase_next_sum =
-               {1'b0, vertical_phase_current} + 9'd128;
-    wire advance_wide_y_next = vertical_phase_next_sum >= 9'd231;
+    reg [9:0] vertical_phase;
+    wire [10:0] vertical_sum = {1'b0, vertical_phase} + 11'd256;
+    wire advance_y = vertical_sum >= {1'b0, ql_height};
+    wire [9:0] phase_after_y = advance_y ?
+                               vertical_sum - {1'b0, ql_height} :
+                               vertical_sum[9:0];
+    wire [10:0] next_vertical_sum = {1'b0, phase_after_y} + 11'd256;
+    wire advance_next_y = next_vertical_sum >= {1'b0, ql_height};
+    wire [7:0] source_after_y = ql_y + {7'd0, advance_y};
 
-    reg [6:0] horizontal_phase;
-    wire advance_tv = (horizontal_phase == 7'd2) ||
-                      (horizontal_phase == 7'd4) ||
-                      (horizontal_phase == 7'd6) ||
-                      (horizontal_phase == 7'd8);
-    wire advance_wide_6 = advance_tv ||
-                          (horizontal_phase == 7'd10) ||
-                          (horizontal_phase == 7'd12) ||
-                          (horizontal_phase == 7'd14) ||
-                          (horizontal_phase == 7'd16);
-    wire [7:0] horizontal_wide_sum =
-               {1'b0, horizontal_phase} + 8'd32;
-    wire advance_wide_30 = horizontal_wide_sum >= 8'd75;
-
-    // The fractional modes use a Bresenham-style phase counter. This avoids
-    // a long divider path and makes the repetition pattern deterministic.
     always @(posedge clk) begin
         if (reset) begin
             visible <= 1'b0;
@@ -97,76 +80,45 @@ module ql_hdmi_window(
             ql_fetch_y <= 8'd0;
             ql_x <= 9'd0;
             ql_y <= 8'd0;
-            horizontal_phase <= 7'd0;
-            vertical_phase <= 8'd0;
+            horizontal_phase <= 11'd0;
+            vertical_phase <= 10'd0;
         end else begin
             visible <= (x < 11'd1280) && (y < VISIBLE_H);
             ql_area <= in_ql_area;
 
-            if (aspect_mode != 2'd3) begin
-                ql_y <= source_y;
-                vertical_phase <= 8'd0;
-            end else if (x == 11'd0) begin
+            if (x == 11'd0) begin
                 if (y == ql_top) begin
                     ql_y <= 8'd0;
-                    vertical_phase <= 8'd0;
+                    vertical_phase <= 10'd0;
                 end else if ((y > ql_top) && (y < ql_bottom)) begin
-                    if (advance_wide_y) begin
-                        ql_y <= ql_y + 8'd1;
-                        vertical_phase <= vertical_phase_sum - 9'd231;
-                    end else begin
-                        vertical_phase <= vertical_phase_sum[7:0];
-                    end
+                    ql_y <= source_after_y;
+                    vertical_phase <= phase_after_y;
                 end
             end
 
-            // Request the next source line at the start of the preceding
-            // display line. This leaves a complete 26.7 us HDMI line for the
-            // SDRAM fetch, including in the fractional Wide +30% mode.
+            // Fetch source line zero during the final blanking line. For all
+            // other lines, request a line one complete HDMI row before it is
+            // first displayed, leaving ample time for the SDRAM burst.
             ql_fetch_start <= ((x == 11'd0) && (y == 10'd749)) ||
                               ((x == 11'd0) &&
                                (y >= ql_top) &&
                                (y < ql_bottom - 10'd1) &&
-                               ((aspect_mode == 2'd3) ?
-                                ((y != ql_top) &&
-                                 advance_wide_y_next) :
-                                (next_source_y != source_y)));
+                               ((y == ql_top) ?
+                                (11'd256 >= {1'b0, ql_height}) :
+                                advance_next_y));
             ql_fetch_y <= ((x == 11'd0) && (y == 10'd749)) ?
                           8'd0 :
-                          ((aspect_mode == 2'd3) ?
-                           ql_y + {7'd0, advance_wide_y} + 8'd1 :
-                           next_source_y);
+                          ((y == ql_top) ? 8'd1 : source_after_y + 8'd1);
 
             if (x == ql_left) begin
                 ql_x <= 9'd0;
-                horizontal_phase <= 7'd0;
+                horizontal_phase <= 11'd0;
             end else if (in_ql_area) begin
-                case (aspect_mode)
-                    2'd0: begin
-                        horizontal_phase <= {6'd0, horizontal_phase[0]} + 7'd1;
-                        if (horizontal_phase[0] && (ql_x != 9'd511))
-                            ql_x <= ql_x + 9'd1;
-                    end
-                    2'd1: begin
-                        horizontal_phase <= horizontal_phase == 7'd8 ?
-                                            7'd0 : horizontal_phase + 7'd1;
-                        if (advance_tv && (ql_x != 9'd511))
-                            ql_x <= ql_x + 9'd1;
-                    end
-                    2'd2: begin
-                        horizontal_phase <= horizontal_phase == 7'd16 ?
-                                            7'd0 : horizontal_phase + 7'd1;
-                        if (advance_wide_6 && (ql_x != 9'd511))
-                            ql_x <= ql_x + 9'd1;
-                    end
-                    default: begin
-                        horizontal_phase <= advance_wide_30 ?
-                                            horizontal_wide_sum - 8'd75 :
-                                            horizontal_wide_sum[6:0];
-                        if (advance_wide_30 && (ql_x != 9'd511))
-                            ql_x <= ql_x + 9'd1;
-                    end
-                endcase
+                horizontal_phase <= advance_x ?
+                                    horizontal_sum - {1'b0, ql_width} :
+                                    horizontal_sum[10:0];
+                if (advance_x && (ql_x != 9'd511))
+                    ql_x <= ql_x + 9'd1;
             end
         end
     end
