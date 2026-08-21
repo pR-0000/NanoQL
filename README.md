@@ -22,7 +22,7 @@ Le projet privilégie la fidélité matérielle : CPU 68000, timings vidéo nati
 - images QL-SD en lecture ;
 - Microdrive QLAY lisible et inscriptible ;
 - conversion autonome d'un dossier microSD en cartouche `.mdv` ;
-- chargement FPGA temporaire et outils de développement par USB.
+- programmation FPGA temporaire ou permanente et outils de développement par USB.
 
 Les fonctions annoncées comme validées ont été testées sur une Tang Nano 20K révision 3923. La révision 3921 utilise le même bitstream avec un firmware BL616 adapté.
 
@@ -63,17 +63,19 @@ python tools/nanoql_setup.pyw
 
 Sous Windows, vous pouvez aussi double-cliquer sur `tools/nanoql_setup.pyw` : aucune console ne reste ouverte. L'assistant mémorise automatiquement les chemins, paramètres et la langue choisie dans un fichier INI propre à l'utilisateur. Son sélecteur **English / Français** traduit immédiatement toute l'interface. L'onglet **Injection de binaire** charge, vérifie et exécute directement un binaire 68000 avec des adresses de chargement, PC et SSP configurables.
 
-L'assistant accepte directement le fichier FPGA `.fs` précompilé d'une release, détecte les ports USB/série dans des listes déroulantes et peut installer openFPGALoader avec Homebrew sous macOS. Gowin EDA n'est pas requis pour installer une release.
+L'assistant accepte les fichiers FPGA `.fs`/`.bin` précompilés d'une release, détecte les ports USB/série dans des listes déroulantes et peut installer openFPGALoader avec Homebrew sous macOS. Gowin EDA n'est pas requis pour installer une release.
 
-Ordre impératif pour une première installation :
+Pour une première installation :
 
 1. préparer la microSD ;
-2. programmer la Flash FPGA pendant que le BL616 utilise encore FPGA Partner ;
-3. installer ensuite le firmware BL616 NanoQL.
+2. installer le firmware BL616 NanoQL avec le bouton `UPDATE` ;
+3. programmer ensuite la Flash FPGA via NanoQL Link. Si aucun core NanoQL valide n'est encore présent, le port de récupération apparaît automatiquement.
 
-Gowin Programmer n'est pas obligatoire : openFPGALoader peut programmer le FPGA. Gowin EDA est uniquement nécessaire pour compiler le cœur depuis les sources.
+Pour une mise à jour, installez d'abord le nouveau firmware BL616 **NanoQL** avec `UPDATE`, démarrez NanoQL, appuyez brièvement une fois sur `S1`, puis programmez le nouveau bitstream en SRAM ou en Flash depuis l'onglet FPGA. La restauration du firmware Sipeed d'origine est réservée à la récupération ou au JTAG externe.
 
-L'assistant utilise openFPGALoader sous Windows, macOS et Linux. Sous Windows, son bouton **Install Windows JTAG driver** configure avec Zadig l'interface JTAG A en WinUSB ; ne modifiez jamais l'interface série B. Le bouton **Detect programmer** vérifie ensuite la connexion avant la programmation. Gowin Programmer reste une alternative manuelle.
+Pour une récupération JTAG, Gowin Programmer n'est pas obligatoire : openFPGALoader peut programmer le FPGA. L'installation et les mises à jour normales passent directement par NanoQL Link. Gowin EDA est uniquement nécessaire pour compiler le cœur depuis les sources.
+
+Pour le JTAG externe, l'assistant utilise openFPGALoader sous Windows, macOS et Linux. Sous Windows, son bouton **Install Windows JTAG driver** configure avec Zadig l'interface JTAG A en WinUSB ; ne modifiez jamais l'interface série B. Le bouton **Detect programmer** vérifie ensuite la connexion. Gowin Programmer reste une alternative manuelle.
 
 NanoQL ne redistribue aucune ROM. L'utilisateur doit fournir légalement une ROM QL de 48 ou 64 Kio et un firmware IPC de 2 Kio.
 
@@ -111,13 +113,13 @@ Sur le QL original de 128 Kio, `RESPR(65536)` peut normalement produire `Out of 
 
 | Ressource |            Utilisation |
 | --------- | ---------------------: |
-| Logique   | 15 381 / 20 736 (75 %) |
-| LUT       |                 14 384 |
-| Registres |                  7 250 |
+| Logique   | 15 872 / 20 736 (77 %) |
+| LUT       |                 14 762 |
+| Registres |                  7 402 |
 | BSRAM     |         21 / 46 (46 %) |
 | DSP       |               0,5 / 24 |
 
-Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 52,106 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,419 MHz. L'analyse de puissance Gowin estime 326,976 mW et une température de jonction de 34,757 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
+Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 57,378 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,511 MHz. L'analyse de puissance Gowin estime 327,607 mW et une température de jonction de 34,776 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
 
 ## English
 
@@ -137,7 +139,7 @@ The project emphasizes hardware fidelity: the 68000 CPU, native video timing, RA
 - read-only QL-SD images;
 - readable and writable QLAY Microdrive cartridges;
 - standalone microSD-folder to `.mdv` conversion;
-- temporary FPGA loading and USB development tools.
+- temporary or persistent FPGA programming and USB development tools.
 
 Features described as validated were physically tested on a revision 3923 Tang Nano 20K. Revision 3921 uses the same FPGA bitstream with matching BL616 firmware.
 
@@ -178,17 +180,19 @@ python tools/nanoql_setup.pyw
 
 On Windows, you can also double-click `tools/nanoql_setup.pyw`, which opens no console window. The assistant automatically remembers paths, settings, and the selected language in a per-user INI file. Its **English / Français** selector translates the complete interface immediately. The **Binary injection** tab directly loads, verifies, and executes a 68000 binary with configurable load, PC, and SSP addresses.
 
-The assistant accepts a release's precompiled FPGA `.fs` directly, detects USB/serial ports in drop-down lists, and can install openFPGALoader through Homebrew on macOS. Gowin EDA is not required to install a release.
+The assistant accepts a release's precompiled FPGA `.fs`/`.bin` files, detects USB/serial ports in drop-down lists, and can install openFPGALoader through Homebrew on macOS. Gowin EDA is not required to install a release.
 
-Mandatory first-install order:
+For first installation:
 
 1. prepare the microSD;
-2. program persistent FPGA Flash while BL616 still runs FPGA Partner;
-3. install NanoQL BL616 firmware last.
+2. install NanoQL BL616 firmware with the `UPDATE` button;
+3. program persistent FPGA Flash through NanoQL Link. If no valid NanoQL core is present yet, the recovery port appears automatically.
 
-Gowin Programmer is optional because openFPGALoader can program the FPGA. Gowin EDA is only needed to compile the core from source.
+For an update, install the new **NanoQL** BL616 firmware first with `UPDATE`, start NanoQL, briefly press `S1` once, then program the new bitstream into SRAM or Flash from the FPGA tab. Restoring Sipeed original firmware is reserved for recovery or external JTAG.
 
-The assistant uses openFPGALoader on Windows, macOS, and Linux. On Windows, **Install Windows JTAG driver** uses Zadig to configure JTAG interface A with WinUSB; never modify serial interface B. **Detect programmer** then checks the connection before programming. Gowin Programmer remains a manual alternative.
+For JTAG recovery, Gowin Programmer is optional because openFPGALoader can program the FPGA. Normal installation and updates go directly through NanoQL Link. Gowin EDA is only needed to compile the core from source.
+
+For external JTAG, the assistant uses openFPGALoader on Windows, macOS, and Linux. On Windows, **Install Windows JTAG driver** uses Zadig to configure JTAG interface A with WinUSB; never modify serial interface B. **Detect programmer** then checks the connection. Gowin Programmer remains a manual alternative.
 
 NanoQL does not redistribute ROMs. Users must legally supply a 48 or 64 KiB QL ROM and a 2 KiB IPC firmware.
 
@@ -226,13 +230,13 @@ On an original 128 KiB QL, `RESPR(65536)` can normally report `Out of Memory`: Q
 
 | Resource  |                 Usage |
 | --------- | --------------------: |
-| Logic     | 15,381 / 20,736 (75%) |
-| LUT       |                14,384 |
-| Registers |                 7,250 |
+| Logic     | 15,872 / 20,736 (77%) |
+| LUT       |                14,762 |
+| Registers |                 7,402 |
 | BSRAM     |         21 / 46 (46%) |
 | DSP       |              0.5 / 24 |
 
-The system domain runs at 48 MHz with an estimated Fmax of 52.106 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.419 MHz. Gowin power analysis estimates 326.976 mW and a 34.757 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
+The system domain runs at 48 MHz with an estimated Fmax of 57.378 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.511 MHz. Gowin power analysis estimates 327.607 mW and a 34.776 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
 
 ## Credits and licenses
 

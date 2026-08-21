@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 RELEASE_TAG = "v1.4.22"
-NANOQL_RELEASE_TAG = "v0.3.0"
+NANOQL_RELEASE_TAG = "v0.3.1"
 RELEASE_BASE = (
     "https://github.com/MiSTle-Dev/FPGA-Companion/releases/download/"
     + RELEASE_TAG

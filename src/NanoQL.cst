@@ -21,6 +21,10 @@ IO_PORT "leds_n[4]" PULL_MODE=UP DRIVE=8 IO_TYPE=LVCMOS33 BANK_VCCIO=3.3;
 IO_LOC "leds_n[5]" 20;
 IO_PORT "leds_n[5]" PULL_MODE=UP DRIVE=8 IO_TYPE=LVCMOS33 BANK_VCCIO=3.3;
 
+// On-board WS2812 RGB LED. NanoQL uses dim green for Caps Lock.
+IO_LOC "ws2812_din" 79;
+IO_PORT "ws2812_din" PULL_MODE=NONE DRIVE=8 IO_TYPE=LVCMOS33 BANK_VCCIO=3.3;
+
 // HDMI TMDS differential pairs. The *_p port constraints name both pins.
 IO_LOC "tmds_clk_p" 33,34;
 IO_PORT "tmds_clk_p" PULL_MODE=NONE DRIVE=8;

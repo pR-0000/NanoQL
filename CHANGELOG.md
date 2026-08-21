@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.1 - 2026-08-21
+
+- Programs the FPGA SRAM or persistent configuration Flash directly through the NanoQL BL616 firmware, with JEDEC detection, erase/program/readback verification, diagnostics, and automatic recovery when the persistent core is missing or invalid.
+- Speeds up persistent FPGA updates with native 64 KiB block erases and page programming, while preserving the Sipeed firmware and external JTAG route as a recovery option.
+- Reorders the graphical setup workflow around the required BL616-first installation, separates normal updates from recovery tools, and accepts precompiled `.bin`/`.fs` release files without requiring Gowin EDA.
+- Adds scrollable assistant pages, a compact ten-line log, a graphical progress bar, read-only workflow markers, corrected Continue navigation, and a live bottom status indicator for automatic NanoQL Link port detection.
+- Makes `Sharp` use an exact 2x horizontal pixel scale while retaining the corrected QL pixel aspect vertically; `Large` and `Fit` keep centered, overscan-safe alternatives at both 50 Hz and 60 Hz.
+- Stores the semantic QL contact and modifiers for each physical USB key until release, preventing Shift ordering, short presses, Backspace, Caps Lock, digits, and punctuation from leaving stale or incorrect matrix contacts.
+- Keeps the physical USB keyboard and NanoQL Link remote keyboard as independent input sources, and stabilizes macOS modifier/key identities when the operating system reports different objects on press and release.
+- Mirrors Caps Lock on the Tang Nano 20K WS2812 and LED 6, with HDL regression coverage for the LED waveform, keyboard state, video windows, and HDMI mode metadata.
+
 ## v0.3.0 - 2026-08-13
 
 - Replaces monitor-dependent `Monitor`, `TV`, and wide geometry with centered `Sharp` (564×384), `Large` (844×576), and `Fit` (990×675) windows. Their approximately 4.4:3 geometry reproduces the QL's non-square pixels without asking the HDMI display to stretch the 1280×720 signal; `Fit` retains an overscan-safe margin so the complete raster remains visible.

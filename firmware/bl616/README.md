@@ -26,7 +26,7 @@ Le paquet ne contient que deux profils par révision : `ORIGINAL` restaure FPGA 
 
 Maintenez le bouton `UPDATE`, connectez l'USB-C au PC, relâchez le bouton, rafraîchissez les ports dans FlashCube, choisissez le port COM puis cliquez sur `Download`. Le fichier à sélectionner est affiché par le script.
 
-Lors de la première installation, programmez d'abord le bitstream FPGA persistant pendant que le BL616 utilise encore le profil `ORIGINAL`. FPGA Partner expose les canaux JTAG attendus par Gowin Programmer et openFPGALoader ; le profil `NANOQL` ne les expose pas. Installez donc `NANOQL` seulement après le succès de la programmation FPGA. Pour une future mise à jour persistante du FPGA, restaurez temporairement `ORIGINAL`, programmez le FPGA, puis réinstallez `NANOQL`.
+Lors de la première installation, installez d'abord `NANOQL` avec `UPDATE`, puis programmez le bitstream FPGA par NanoQL Link. Si aucun core NanoQL valide n'est présent, le firmware ouvre automatiquement son port de récupération. Les mises à jour suivantes utilisent le même ordre : BL616 NanoQL, puis FPGA après un appui bref sur `S1`. Le profil `ORIGINAL` reste disponible pour la récupération et les programmateurs JTAG externes.
 
 ## English
 
@@ -56,7 +56,7 @@ The package contains only two profiles per revision: `ORIGINAL` restores Sipeed 
 
 Hold `UPDATE`, connect USB-C to the PC, release the button, refresh ports in FlashCube, select the COM port, then click `Download`. The script displays the configuration file to select.
 
-For the first installation, program persistent FPGA Flash while the BL616 still uses the `ORIGINAL` profile. FPGA Partner exposes the JTAG channels expected by Gowin Programmer and openFPGALoader; the `NANOQL` profile does not. Install `NANOQL` only after FPGA programming succeeds. For a later persistent FPGA update, temporarily restore `ORIGINAL`, program the FPGA, then reinstall `NANOQL`.
+For first installation, install `NANOQL` first with `UPDATE`, then program the FPGA bitstream through NanoQL Link. If no valid NanoQL core is present, firmware automatically exposes its recovery port. Later updates use the same order: NanoQL BL616 first, then FPGA after briefly pressing `S1`. The `ORIGINAL` profile remains available for recovery and external JTAG programmers.
 
 ## Provenance
 

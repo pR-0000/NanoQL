@@ -52,6 +52,10 @@ module tb_ql_hdmi_window;
             for (index = 1; index < width; index = index + 1) begin
                 x = left + index;
                 tick();
+                if (((mode == 3'd0) || (mode == 3'd3)) &&
+                    (ql_x != (index >> 1)))
+                    $fatal(1, "Sharp mode %0d is not exactly 2x at output x=%0d, source x=%0d",
+                           mode, index, ql_x);
                 if ((index == 1) && (ql_x == 9'd0) && (width == 11'd512))
                     $fatal(1, "mode %0d scaler did not advance at x=%0d, left=%0d width=%0d area=%0d phase=%0d sum=%0d",
                            mode, x, dut.ql_left, dut.ql_width, dut.in_ql_area,
@@ -71,13 +75,13 @@ module tb_ql_hdmi_window;
     endtask
 
     initial begin
-        check_profile(3'd0, 11'd358, 11'd564, 10'd168, 10'd384);
+        check_profile(3'd0, 11'd128, 11'd1024, 10'd11, 10'd698);
         check_profile(3'd1, 11'd218, 11'd844, 10'd72, 10'd576);
         check_profile(3'd2, 11'd145, 11'd990, 10'd22, 10'd675);
-        check_profile(3'd3, 11'd358, 11'd564, 10'd168, 10'd384);
+        check_profile(3'd3, 11'd128, 11'd1024, 10'd11, 10'd698);
         check_profile(3'd4, 11'd218, 11'd844, 10'd72, 10'd576);
         check_profile(3'd5, 11'd145, 11'd990, 10'd22, 10'd675);
-        $display("PASS: all 720p50/60 QL windows cover 512x256 at 4.4:3");
+        $display("PASS: 720p50/60 QL windows cover 512x256 and Sharp is exact 2x horizontally");
         $finish;
     end
 endmodule

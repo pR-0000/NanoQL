@@ -29,12 +29,12 @@ Installez [Python 3](https://www.python.org/downloads/). Sous Windows, activez *
 sudo apt install python3 python3-tk
 ```
 
-Pour programmer le FPGA, utilisez au choix :
+Pour une récupération JTAG, utilisez au choix :
 
 - [openFPGALoader](https://trabucayre.github.io/openFPGALoader/guide/install.html) ;
 - Gowin Programmer, inclus dans Gowin EDA.
 
-Gowin Programmer et Gowin EDA ne sont pas nécessaires pour installer une version compilée si openFPGALoader fonctionne. Gowin EDA reste nécessaire pour recompiler le cœur FPGA.
+L'installation et les mises à jour normales passent directement par NanoQL Link et ne nécessitent aucun de ces programmateurs. Gowin EDA reste nécessaire uniquement pour recompiler le cœur FPGA.
 
 Le bouton **Install openFPGALoader** de l'assistant effectue directement l'installation avec Homebrew sous macOS. Il détecte `/opt/homebrew/bin` sur Apple Silicon et `/usr/local/bin` sur les Mac Intel, même lorsque l'assistant n'a pas hérité du `PATH` du Terminal.
 
@@ -57,7 +57,7 @@ Sous Windows, suivez le [guide officiel openFPGALoader](https://trabucayre.githu
 pacman -S mingw-w64-ucrt-x86_64-openFPGALoader
 ```
 
-Le pilote FTDI installé par défaut ne permet pas à openFPGALoader d'ouvrir le JTAG. Dans l'onglet **2. FPGA**, cliquez une seule fois sur **Install Windows JTAG driver**. Dans Zadig, activez **Options > List All Devices**, choisissez uniquement **USB Serial Converter A** ou **Dual RS232-HS (Interface 0)**, vérifiez `0403:6010` et `MI_00`, sélectionnez **WinUSB**, puis remplacez le pilote. Ne modifiez jamais **Interface 1/B**, qui doit conserver son pilote série FTDI. Débranchez et rebranchez ensuite la Tang Nano.
+Le pilote FTDI installé par défaut ne permet pas à openFPGALoader d'ouvrir le JTAG. Dans l'onglet **3. FPGA**, cliquez une seule fois sur **Install Windows JTAG driver**. Dans Zadig, activez **Options > List All Devices**, choisissez uniquement **USB Serial Converter A** ou **Dual RS232-HS (Interface 0)**, vérifiez `0403:6010` et `MI_00`, sélectionnez **WinUSB**, puis remplacez le pilote. Ne modifiez jamais **Interface 1/B**, qui doit conserver son pilote série FTDI. Débranchez et rebranchez ensuite la Tang Nano.
 
 ### Assistant graphique
 
@@ -73,15 +73,14 @@ Le sélecteur **Language** du premier onglet bascule immédiatement toute l'inte
 
 ### Ordre de première installation
 
-Respectez cet ordre. Il évite de perdre temporairement l'accès JTAG :
+Respectez cet ordre pour une première installation :
 
 1. Préparez la microSD dans **1. ROMs and microSD**.
-2. Laissez le BL616 avec son firmware Sipeed **FPGA Partner**.
-3. Dans **2. FPGA**, sélectionnez le fichier précompilé `NanoQL-*-FPGA.fs` de la release et programmez-le en Flash persistante.
-4. Installez seulement ensuite le profil BL616 **NanoQL** depuis **3. BL616**.
-5. Insérez la microSD et redémarrez la carte.
+2. Dans **2. BL616**, installez le firmware **NanoQL** avec le bouton matériel **UPDATE**.
+3. Dans **3. FPGA**, programmez le bitstream en Flash persistante via NanoQL Link. Si aucun core NanoQL valide n'est présent, le firmware BL616 ouvre automatiquement son port de récupération.
+4. Insérez la microSD et redémarrez la carte.
 
-FPGA Partner expose les canaux JTAG utilisés par Gowin Programmer et openFPGALoader. Le firmware BL616 NanoQL remplace cette fonction par le clavier USB, la microSD, l'overlay et NanoQL Link.
+Le firmware BL616 NanoQL fournit le clavier USB, la microSD, l'overlay, NanoQL Link et la programmation directe de la SRAM ou de la Flash FPGA. Le firmware Sipeed d'origine et son JTAG externe restent disponibles comme solution de récupération.
 
 ### Préparer la microSD
 
@@ -99,13 +98,17 @@ Le format recommandé est une partition unique **FAT32 avec une table de partiti
 
 ### Programmer le FPGA
 
-Dans **2. FPGA**, utilisez **Browse** pour sélectionner `NanoQL-*-FPGA.fs`. Une release précompilée ne nécessite ni Gowin EDA ni le bouton **Build**. Tant que FPGA Partner est installé, l'assistant peut appeler openFPGALoader. Équivalent manuel :
+Pour une mise à jour normale, laissez le firmware BL616 **NanoQL** installé :
 
-Reliez directement la Tang Nano 20K à l'ordinateur avec un câble USB-C de données pendant cette étape : le fichier FPGA est programmé par cette connexion USB, indépendamment de la microSD.
+1. démarrez NanoQL et attendez l'image HDMI ou les LED ;
+2. appuyez brièvement une fois sur **S1**, sans le maintenir au démarrage ;
+3. dans **3. FPGA**, sélectionnez le bitstream de la release ; le fichier `.bin` doit être présent à côté du `.fs` si vous sélectionnez ce dernier ;
+4. choisissez le port **NanoQL Link** ;
+5. cliquez sur **Programmer la Flash (permanente)**, ou sur **Programmer la SRAM (temporaire)** pour un essai qui disparaîtra à la prochaine coupure d'alimentation.
 
-L'assistant utilise de préférence openFPGALoader v1.1.1 ou plus récent sous Windows, macOS et Linux. Cette version contient les corrections nécessaires au firmware de programmation Sipeed. Gowin Programmer reste utilisable manuellement sous Windows, mais ses outils en ligne de commande ne gèrent pas fiablement le câble BL616. Cliquez sur **Detect programmer** avant la programmation ; si aucune interface n'est trouvée, restaurez le profil BL616 ORIGINAL, débranchez et rebranchez la carte, puis recommencez.
+La programmation permanente efface, écrit et vérifie la Flash de configuration, puis redémarre NanoQL. Ne débranchez ni l'USB ni l'alimentation pendant cette opération. Le bouton **Détecter la Flash de configuration** est une vérification facultative sans écriture.
 
-Avec le profil ORIGINAL actif, l'écran NanoQL peut afficher `BL616 COMPANION NOT READY`. C'est normal pendant la programmation : le BL616 expose alors le JTAG au PC au lieu de fournir les services Companion au FPGA.
+Pour une récupération, utilisez la section **JTAG externe** du même onglet avec le firmware BL616 **Sipeed d'origine**. L'assistant peut alors appeler openFPGALoader 1.1.1 ou plus récent, ou Gowin Programmer sous Windows. Avec le profil Sipeed actif, l'écran peut afficher `BL616 COMPANION NOT READY` : c'est normal, car le BL616 expose alors le JTAG au PC.
 
 ```sh
 openFPGALoader -b tangnano20k -f /chemin/vers/NanoQL-vX.Y.Z-FPGA.fs
@@ -117,15 +120,16 @@ Dans Gowin EDA, laissez **Use JTAG as regular IO** décoché.
 
 ### Programmer le BL616
 
-Cette opération vient après le FPGA. Dans **3. BL616** :
+Lors de la première installation, effectuez cette opération avant le FPGA. Dans **2. BL616** :
 
 1. reliez la Tang Nano 20K à l'ordinateur avec un câble USB-C de données ; cette étape programme le BL616 par USB ;
 2. sélectionnez la révision 3921 ou 3923 ;
-3. sélectionnez le profil **NanoQL** ;
-4. débranchez la carte ;
-5. maintenez **UPDATE**, reconnectez l'USB puis relâchez **UPDATE** ;
-6. cliquez sur **Refresh**, puis choisissez le nouveau port série du bootloader dans la liste ;
-7. cliquez sur **Flash firmware**.
+3. débranchez la carte ;
+4. maintenez **UPDATE**, reconnectez l'USB puis relâchez **UPDATE** ;
+5. cliquez sur **Actualiser**, puis choisissez le nouveau port série du bootloader ;
+6. cliquez sur **Installer / mettre à jour le firmware NanoQL**.
+
+Le second bouton, **Restaurer le firmware Sipeed d'origine**, sert uniquement à une récupération ou à l'utilisation d'un programmateur JTAG externe. Dans les deux cas, **UPDATE** désigne le bouton matériel du BL616 ; **S1** n'est pas utilisé pour flasher le BL616.
 
 L'assistant installe automatiquement `bflb-mcu-tool-uart`, l'outil UART multiplateforme de Bouffalo Lab. Avec Python 3.13 ou plus récent, il installe aussi le module de compatibilité requis depuis la suppression de `telnetlib`. macOS utilise 230400 bauds ; Windows et Linux utilisent 2000000 bauds avec de petits blocs acquittés pour fiabiliser l'USB. Une tentative interrompue impose de débrancher la carte et de rentrer de nouveau dans le mode UPDATE avant de recommencer. Commande équivalente :
 
@@ -137,19 +141,24 @@ Remplacez `PORT` par `COMx`, `/dev/ttyACMx`, `/dev/ttyUSBx`, `/dev/cu.usbmodem*`
 
 ### Mettre NanoQL à jour
 
-Le firmware NanoQL n'expose pas le JTAG standard. Pour modifier la Flash FPGA :
+Dans **Commencer**, choisissez **Mettre NanoQL à jour**. Le parcours normal ne remplace plus le firmware BL616 deux fois :
 
-1. restaurez temporairement le profil BL616 **Original** ;
-2. programmez le nouveau `.fs` ;
-3. réinstallez le profil BL616 **NanoQL**.
+1. mettez à jour le firmware BL616 NanoQL depuis **2. BL616** avec **UPDATE** ;
+2. démarrez NanoQL, appuyez brièvement sur **S1**, puis programmez le nouveau bitstream FPGA depuis **3. FPGA**.
 
-La restauration multiplateforme utilise :
+La microSD et ses réglages sont conservés. Si NanoQL Link est inaccessible ou si la Flash FPGA est endommagée, restaurez le firmware Sipeed avec **UPDATE**, puis utilisez le JTAG externe :
 
 ```sh
 python3 tools/prepare_bl616_firmware.py --revision 3923 --profile original --flash --port PORT --yes
 ```
 
-Pour un essai temporaire sans changer le BL616, NanoQL Link peut charger le fichier FPGA `.bin` en SRAM.
+Commande directe équivalente pour une mise à jour permanente :
+
+```sh
+python3 tools/nanoql_link.py --port PORT fpga-flash path/to/NanoQL.bin --yes
+```
+
+Remplacez `fpga-flash` par `fpga` pour programmer uniquement la SRAM.
 
 ### Premier démarrage
 
@@ -159,9 +168,9 @@ Pour un essai temporaire sans changer le BL616, NanoQL Link peut charger le fich
 4. Alimentez par USB-C.
 5. Si NanoQL demande des ROM, ouvrez `F12`, choisissez **QL ROM** et **IPC ROM**, puis redémarrez le QL.
 
-Le QL doit démarrer sans clavier ni hub. Pour le développement, connectez la carte à l'ordinateur, attendez le démarrage du FPGA, appuyez brièvement sur S1 et utilisez l'onglet **4. Remote keyboard**. Le clavier distant fonctionne sous Windows, macOS et Linux. Sur macOS/Linux, le script installe automatiquement `pynput` lors de la première utilisation. macOS peut demander d'autoriser Terminal ou Python dans **Réglages Système > Confidentialité et sécurité > Surveillance de l'entrée** et **Accessibilité**. Si la console affiche `This process is not trusted`, ajoutez également l'exécutable Python réellement affiché par la commande, par exemple celui du dossier `venv/bin`, puis quittez complètement et relancez Terminal. Sur macOS, l'interception Quartz autorisée empêche les touches et séquences de contrôle de s'afficher dans Terminal. Les événements en attente sont vidés avant de rendre la main avec `F6`.
+Le QL doit démarrer sans clavier ni hub. Pour le développement, connectez la carte à l'ordinateur, attendez le démarrage du FPGA, appuyez brièvement sur S1 et utilisez **4. NanoQL Link > Connexion et clavier distant**. Le clavier distant fonctionne sous Windows, macOS et Linux. Sur macOS/Linux, le script installe automatiquement `pynput` lors de la première utilisation. macOS peut demander d'autoriser Terminal ou Python dans **Réglages Système > Confidentialité et sécurité > Surveillance de l'entrée** et **Accessibilité**. Si la console affiche `This process is not trusted`, ajoutez également l'exécutable Python réellement affiché par la commande, par exemple celui du dossier `venv/bin`, puis quittez complètement et relancez Terminal. Sur macOS, l'interception Quartz autorisée empêche les touches et séquences de contrôle de s'afficher dans Terminal. Les événements en attente sont vidés avant de rendre la main avec `F6`.
 
-NanoQL propose six profils vidéo dans `Display > Video mode`. Les profils 50 Hz utilisent le VIC CEA 19 et conservent la cadence PAL native du QL. Les profils 60 Hz utilisent le VIC CEA 4 pour les moniteurs qui refusent le 50 Hz ; la VRAM QL reste mise à jour à 50 Hz, ce qui produit une répétition périodique perceptible dans les mouvements. `Sharp` affiche 564×384, `Large` 844×576 et constitue le compromis recommandé, tandis que `Fit` utilise 990×675 avec une marge de sécurité contre l'overscan parfois appliqué par les modes TV 16:9. Les trois profils sont centrés et reproduisent le rapport historique approximatif de 4,4:3 des pixels non carrés du QL.
+NanoQL propose six profils vidéo dans `Display > Video mode`. Les profils 50 Hz utilisent le VIC CEA 19 et conservent la cadence PAL native du QL. Les profils 60 Hz utilisent le VIC CEA 4 pour les moniteurs qui refusent le 50 Hz ; la VRAM QL reste mise à jour à 50 Hz, ce qui produit une répétition périodique perceptible dans les mouvements. `Sharp` affiche 1024×698 et double exactement chaque colonne QL, `Large` utilise 844×576, tandis que `Fit` utilise 990×675 avec une marge de sécurité contre l'overscan parfois appliqué par les modes TV 16:9. Les trois profils sont centrés et reproduisent le rapport historique approximatif de 4,4:3 des pixels non carrés du QL.
 
 Les deux cadences émettent un véritable flux HDMI à 74,25 MHz avec AVI InfoFrame 16:9. Si un moniteur ancien grise son réglage d'aspect ou déforme le 720p50, essayez d'abord `60 Hz Large`. Pour des pixels fidèles, désactivez l'overscan, la réduction de bruit, l'interpolation de mouvement et les renforcements de netteté.
 
@@ -196,12 +205,12 @@ Install [Python 3](https://www.python.org/downloads/). Enable **Add Python to PA
 sudo apt install python3 python3-tk
 ```
 
-Program the FPGA with either:
+For JTAG recovery, use either:
 
 - [openFPGALoader](https://trabucayre.github.io/openFPGALoader/guide/install.html);
 - Gowin Programmer, included with Gowin EDA.
 
-Gowin Programmer and Gowin EDA are not required to install a compiled release when openFPGALoader works. Gowin EDA is still required to compile the FPGA core.
+Normal installation and updates go directly through NanoQL Link and require neither programmer. Gowin EDA is only required to compile the FPGA core.
 
 The assistant's **Install openFPGALoader** button installs it directly through Homebrew on macOS. It checks `/opt/homebrew/bin` on Apple Silicon and `/usr/local/bin` on Intel Macs even when the GUI did not inherit Terminal's `PATH`.
 
@@ -224,7 +233,7 @@ On Windows, follow the [official openFPGALoader guide](https://trabucayre.github
 pacman -S mingw-w64-ucrt-x86_64-openFPGALoader
 ```
 
-The default FTDI driver does not let openFPGALoader access JTAG. In **2. FPGA**, click **Install Windows JTAG driver** once. In Zadig, enable **Options > List All Devices**, select only **USB Serial Converter A** or **Dual RS232-HS (Interface 0)**, verify `0403:6010` and `MI_00`, select **WinUSB**, then replace the driver. Never modify **Interface 1/B**, which must keep its FTDI serial driver. Disconnect and reconnect the Tang Nano afterward.
+The default FTDI driver does not let openFPGALoader access JTAG. In **3. FPGA**, click **Install Windows JTAG driver** once. In Zadig, enable **Options > List All Devices**, select only **USB Serial Converter A** or **Dual RS232-HS (Interface 0)**, verify `0403:6010` and `MI_00`, select **WinUSB**, then replace the driver. Never modify **Interface 1/B**, which must keep its FTDI serial driver. Disconnect and reconnect the Tang Nano afterward.
 
 ### Graphical assistant
 
@@ -240,15 +249,14 @@ The first tab's **Language** selector immediately switches the complete interfac
 
 ### First-install order
 
-Follow this order to avoid temporarily losing JTAG access:
+Follow this order for first installation:
 
 1. Prepare the microSD in **1. ROMs and microSD**.
-2. Keep Sipeed's **FPGA Partner** BL616 firmware installed.
-3. In **2. FPGA**, select the release's precompiled `NanoQL-*-FPGA.fs` and program it into persistent Flash.
-4. Only then install the **NanoQL** BL616 profile from **3. BL616**.
-5. Insert the microSD and restart the board.
+2. In **2. BL616**, install **NanoQL** firmware with the hardware **UPDATE** button.
+3. In **3. FPGA**, program the bitstream into persistent Flash through NanoQL Link. If no valid NanoQL core is present, BL616 firmware automatically exposes its recovery port.
+4. Insert the microSD and restart the board.
 
-FPGA Partner exposes the JTAG channels used by Gowin Programmer and openFPGALoader. NanoQL BL616 firmware replaces them with USB keyboard, microSD, overlay, and NanoQL Link services.
+NanoQL BL616 firmware provides the USB keyboard, microSD, overlay, NanoQL Link, and direct FPGA SRAM or Flash programming. Sipeed original firmware and external JTAG remain available as a recovery route.
 
 ### Prepare the microSD
 
@@ -266,13 +274,17 @@ The preferred format is one **FAT32 partition using an MBR partition table**. On
 
 ### Program the FPGA
 
-In **2. FPGA**, use **Browse** to select `NanoQL-*-FPGA.fs`. A precompiled release does not require Gowin EDA or the **Build** button. While FPGA Partner remains installed, the assistant can call openFPGALoader. Manual equivalent:
+For a normal update, leave the **NanoQL** BL616 firmware installed:
 
-Connect the Tang Nano 20K directly to the computer with a USB-C data cable during this step: the FPGA file is programmed through this USB connection, independently of the microSD card.
+1. start NanoQL and wait for HDMI output or the LEDs;
+2. briefly press **S1** once; do not hold it during power-on;
+3. in **3. FPGA**, select the release bitstream; when selecting `.fs`, keep the matching `.bin` beside it;
+4. select the **NanoQL Link** port;
+5. click **Program Flash (permanent)**, or **Program SRAM (temporary)** for a test that disappears after power-off.
 
-The assistant prefers openFPGALoader v1.1.1 or newer on Windows, macOS, and Linux. This release contains the fixes required for Sipeed programmer firmware. Gowin Programmer remains available for manual Windows use, but its command-line tools do not handle the BL616 cable reliably. On Windows, first use **Install Windows JTAG driver** as described above. Click **Detect programmer** before programming; if no interface is found, restore the BL616 ORIGINAL profile, disconnect and reconnect the board, then try again.
+Persistent programming erases, writes, and verifies configuration Flash, then restarts NanoQL. Keep USB and power connected throughout the operation. **Detect configuration Flash** is an optional read-only check.
 
-With the ORIGINAL profile active, NanoQL may display `BL616 COMPANION NOT READY`. This is expected while programming: the BL616 exposes JTAG to the computer instead of providing Companion services to the FPGA.
+For recovery, use **External JTAG** in the same tab while the BL616 runs **Sipeed original** firmware. The assistant can then call openFPGALoader 1.1.1 or newer, or Gowin Programmer on Windows. With Sipeed firmware active, the display may report `BL616 COMPANION NOT READY`; this is expected because the BL616 is exposing JTAG to the computer.
 
 ```sh
 openFPGALoader -b tangnano20k -f /path/to/NanoQL-vX.Y.Z-FPGA.fs
@@ -284,15 +296,16 @@ Keep Gowin EDA's **Use JTAG as regular IO** option disabled.
 
 ### Program the BL616
 
-Do this after programming the FPGA. In **3. BL616**:
+On first installation, do this before programming the FPGA. In **2. BL616**:
 
 1. connect the Tang Nano 20K to the computer with a USB-C data cable; this step programs the BL616 over USB;
 2. select revision 3921 or 3923;
-3. select the **NanoQL** profile;
-4. disconnect the board;
-5. hold **UPDATE**, reconnect USB, then release **UPDATE**;
-6. click **Refresh**, then select the new bootloader serial port from the list;
-7. click **Flash firmware**.
+3. disconnect the board;
+4. hold **UPDATE**, reconnect USB, then release **UPDATE**;
+5. click **Refresh**, then select the new bootloader serial port;
+6. click **Install / update NanoQL firmware**.
+
+The second button, **Restore Sipeed original firmware**, is only for recovery or an external JTAG programmer. In both cases, **UPDATE** means the BL616 hardware button; **S1** is not used to flash BL616 firmware.
 
 The assistant automatically installs Bouffalo Lab's cross-platform `bflb-mcu-tool-uart` loader. On Python 3.13 or newer it also installs the compatibility module needed since `telnetlib` was removed. macOS uses 230400 baud; Windows and Linux use 2000000 baud with small acknowledged blocks for reliable USB transfers. After an interrupted attempt, disconnect the board and enter UPDATE mode again before retrying. Command-line equivalent:
 
@@ -304,19 +317,24 @@ Replace `PORT` with `COMx`, `/dev/ttyACMx`, `/dev/ttyUSBx`, `/dev/cu.usbmodem*`,
 
 ### Update NanoQL
 
-NanoQL BL616 firmware does not expose standard JTAG. To update persistent FPGA Flash:
+Select **Update NanoQL** under **Start here**. The normal path no longer replaces BL616 firmware twice:
 
-1. temporarily restore the BL616 **Original** profile;
-2. program the new `.fs`;
-3. reinstall the BL616 **NanoQL** profile.
+1. update NanoQL BL616 firmware from **2. BL616** with **UPDATE**;
+2. start NanoQL, briefly press **S1**, then program the new FPGA bitstream from **3. FPGA**.
 
-Cross-platform restore command:
+The microSD and its settings are preserved. If NanoQL Link is unavailable or FPGA Flash is damaged, restore Sipeed firmware with **UPDATE**, then use external JTAG:
 
 ```sh
 python3 tools/prepare_bl616_firmware.py --revision 3923 --profile original --flash --port PORT --yes
 ```
 
-For temporary testing without changing BL616 firmware, NanoQL Link can load the FPGA `.bin` file into SRAM.
+Direct command for a persistent update:
+
+```sh
+python3 tools/nanoql_link.py --port PORT fpga-flash path/to/NanoQL.bin --yes
+```
+
+Replace `fpga-flash` with `fpga` to program SRAM only.
 
 ### First boot
 
@@ -326,9 +344,9 @@ For temporary testing without changing BL616 firmware, NanoQL Link can load the 
 4. Power the board through USB-C.
 5. If NanoQL requests ROMs, open `F12`, select **QL ROM** and **IPC ROM**, then restart the QL.
 
-The QL must boot without a keyboard or hub. For development, connect the board to the computer, wait for FPGA startup, briefly press S1, and use the **4. Remote keyboard** tab. The remote keyboard works on Windows, macOS, and Linux. On macOS/Linux the script automatically installs `pynput` on first use. macOS may ask you to allow Terminal or Python under **System Settings > Privacy & Security > Input Monitoring** and **Accessibility**. If the console reports `This process is not trusted`, also add the actual Python executable shown by the command, for example the one under `venv/bin`, then fully quit and restart Terminal. On macOS, the authorized Quartz event tap prevents keys and control sequences from being echoed into Terminal. Pending events are flushed before `F6` returns control.
+The QL must boot without a keyboard or hub. For development, connect the board to the computer, wait for FPGA startup, briefly press S1, and use **4. NanoQL Link > Connection and remote keyboard**. The remote keyboard works on Windows, macOS, and Linux. On macOS/Linux the script automatically installs `pynput` on first use. macOS may ask you to allow Terminal or Python under **System Settings > Privacy & Security > Input Monitoring** and **Accessibility**. If the console reports `This process is not trusted`, also add the actual Python executable shown by the command, for example the one under `venv/bin`, then fully quit and restart Terminal. On macOS, the authorized Quartz event tap prevents keys and control sequences from being echoed into Terminal. Pending events are flushed before `F6` returns control.
 
-NanoQL provides six video profiles under `Display > Video mode`. The 50 Hz profiles use CEA VIC 19 and preserve the QL's native PAL cadence. The 60 Hz profiles use CEA VIC 4 for displays that reject 50 Hz; QL VRAM is still updated at 50 Hz, causing a periodic repeated frame during motion. `Sharp` displays 564×384, `Large` uses 844×576 and is the recommended compromise, while `Fit` uses 990×675 with a safety margin for overscan sometimes applied by TV-style 16:9 modes. All three are centered and reproduce the QL's approximately 4.4:3 historical geometry with non-square pixels.
+NanoQL provides six video profiles under `Display > Video mode`. The 50 Hz profiles use CEA VIC 19 and preserve the QL's native PAL cadence. The 60 Hz profiles use CEA VIC 4 for displays that reject 50 Hz; QL VRAM is still updated at 50 Hz, causing a periodic repeated frame during motion. `Sharp` uses 1024×698 and doubles every QL source column exactly, `Large` uses 844×576, while `Fit` uses 990×675 with a safety margin for overscan sometimes applied by TV-style 16:9 modes. All three are centered and reproduce the QL's approximately 4.4:3 historical geometry with non-square pixels.
 
 Both rates are true 74.25 MHz HDMI streams with a 16:9 AVI InfoFrame. If an older display disables its aspect control or distorts 720p50, try `60 Hz Large` first. Disable overscan, noise reduction, motion interpolation, and sharpness enhancement for faithful pixels.
 

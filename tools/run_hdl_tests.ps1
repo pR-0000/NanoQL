@@ -37,6 +37,7 @@ $sdArbiterOutput = Join-Path $env:TEMP "nanoql_sd_request_arbiter.vvp"
 $zx8301Output = Join-Path $env:TEMP "nanoql_zx8301.vvp"
 $qsoundOutput = Join-Path $env:TEMP "nanoql_qsound.vvp"
 $companionHidOutput = Join-Path $env:TEMP "nanoql_companion_hid.vvp"
+$ws2812Output = Join-Path $env:TEMP "nanoql_ws2812_status.vvp"
 $hdmiWindowOutput = Join-Path $env:TEMP "nanoql_hdmi_window.vvp"
 $hdmiVideoModesOutput = Join-Path $env:TEMP "nanoql_hdmi_video_modes.vvp"
 $ipcRomLoaderOutput = Join-Path $env:TEMP "nanoql_ipc_rom_loader.vvp"
@@ -90,6 +91,19 @@ if ($LASTEXITCODE -ne 0) {
 & $vvp $companionHidOutput
 if ($LASTEXITCODE -ne 0) {
     throw "Companion HID simulation failed."
+}
+
+& $iverilog -g2012 -s tb_ws2812_status -o $ws2812Output `
+    (Join-Path $projectRoot "sim\tb_ws2812_status.sv") `
+    (Join-Path $projectRoot "src\ws2812_status.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "WS2812 status simulation compilation failed."
+}
+
+& $vvp $ws2812Output
+if ($LASTEXITCODE -ne 0) {
+    throw "WS2812 status simulation failed."
 }
 
 & $iverilog -g2012 -s tb_ql_hdmi_window -o $hdmiWindowOutput `

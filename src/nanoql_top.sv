@@ -4,6 +4,7 @@ module nanoql_top(
     input  wire       clk_27m,
     input  wire       key_s1,
     output wire [5:0] leds_n,
+    output wire       ws2812_din,
 
     output wire       tmds_clk_n,
     output wire       tmds_clk_p,
@@ -177,6 +178,7 @@ module nanoql_top(
     wire [63:0] companion_keyboard_matrix;
     wire companion_key_event;
     wire companion_key_press_event;
+    wire companion_caps_lock_active;
     wire companion_miso;
     wire companion_sd_irq;
     wire companion_sd_iack;
@@ -543,7 +545,15 @@ module nanoql_top(
         .data_out(companion_hid_data),
         .matrix(companion_keyboard_matrix),
         .key_event(companion_key_event),
-        .key_press_event(companion_key_press_event)
+        .key_press_event(companion_key_press_event),
+        .caps_lock_active(companion_caps_lock_active)
+    );
+
+    ws2812_status caps_lock_led (
+        .clk_27m(clk_27m),
+        .reset(~pll_lock),
+        .caps_lock_active(companion_caps_lock_active),
+        .data_out(ws2812_din)
     );
 
     always @(posedge clk_pixel) begin
@@ -1673,18 +1683,11 @@ module nanoql_top(
     );
 
     reg [24:0] heartbeat = 25'd0;
-    reg [23:0] keyboard_activity = 24'd0;
     always @(posedge clk_pixel or negedge pll_lock) begin
-        if (!pll_lock) begin
+        if (!pll_lock)
             heartbeat <= 25'd0;
-            keyboard_activity <= 24'd0;
-        end else begin
+        else
             heartbeat <= heartbeat + 25'd1;
-            if (companion_key_event)
-                keyboard_activity <= 24'hffffff;
-            else if (keyboard_activity != 24'd0)
-                keyboard_activity <= keyboard_activity - 24'd1;
-        end
     end
 
     // Board LEDs are active-low on the Tang Nano 20K.
@@ -1697,8 +1700,10 @@ module nanoql_top(
     assign leds_n[2] = ~(fetch_underflow || memory_failure);
     assign leds_n[3] = ~blank_active;
     assign leds_n[4] = ~mode8_active;
+    // Mirror Caps Lock on a plain LED as an unambiguous fallback for the RGB
+    // LED. The diagnostic ROM keeps its frame activity indication.
     assign leds_n[5] = rom_is_diagnostic ? ~ql_native_frame_div[5] :
-                                             ~(|keyboard_activity);
+                                             ~companion_caps_lock_active;
 
 endmodule
 

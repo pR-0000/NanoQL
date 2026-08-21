@@ -72,6 +72,7 @@ PYTHON_URL = "https://www.python.org/downloads/"
 HOMEBREW_URL = "https://brew.sh/"
 AUTO_PORT = "Automatic detection"
 SELECT_PORT = "Select a serial port"
+WORKFLOW_REVISION = "5"
 BOARD_GUIDE_URL = (
     "https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html"
 )
@@ -91,13 +92,31 @@ TRANSLATIONS = {
         "Ready": "Prêt",
         "Complete": "Terminé",
         "Error": "Erreur",
+        "Progress": "Progression",
         "Start here": "Commencer",
+        "First installation": "Première installation",
+        "Update NanoQL": "Mettre NanoQL à jour",
+        "Installation path": "Type d'installation",
+        "Continue setup": "Continuer l'installation",
+        "Reset progress": "Réinitialiser la progression",
+        "Prepare the microSD card": "Préparer la carte microSD",
+        "Program the FPGA": "Programmer le FPGA",
+        "Install the NanoQL BL616 firmware": "Installer le firmware BL616 NanoQL",
+        "Update the NanoQL BL616 firmware": "Mettre à jour le firmware BL616 NanoQL",
+        "Restore the original BL616 firmware": "Restaurer le firmware BL616 d'origine",
+        "Program the updated FPGA core": "Programmer la mise à jour du core FPGA",
+        "First installation keeps the required order: microSD, NanoQL BL616 firmware, then FPGA Flash.": "La première installation respecte l'ordre requis : microSD, firmware BL616 NanoQL, puis Flash FPGA.",
+        "Update keeps the microSD contents. Update the NanoQL BL616 firmware first, then press S1 and program the FPGA directly through NanoQL Link.": "La mise à jour conserve le contenu de la microSD. Mettez d'abord à jour le firmware BL616 NanoQL, puis appuyez sur S1 et programmez directement le FPGA via NanoQL Link.",
         "1. ROMs and microSD": "1. ROM et carte microSD",
-        "2. FPGA": "2. FPGA",
-        "3. BL616": "3. BL616",
-        "4. Remote keyboard": "4. Clavier distant",
-        "5. Binary injection": "5. Injection de binaire",
+        "2. BL616": "2. BL616",
+        "3. FPGA": "3. FPGA",
+        "4. NanoQL Link": "4. NanoQL Link",
+        "Connection and remote keyboard": "Connexion et clavier distant",
+        "Microdrive synchronization": "Synchronisation Microdrive",
+        "Program injection": "Injection de programme",
         "Advanced": "Avancé",
+        "External JTAG (recovery)": "JTAG externe (récupération)",
+        "NanoQL Link (normal updates)": "NanoQL Link (mises à jour normales)",
         "Log": "Journal",
         "Language": "Langue",
         "Install NanoQL in three steps": "Installer NanoQL en trois étapes",
@@ -112,12 +131,10 @@ TRANSLATIONS = {
         "Hermes IPC": "IPC Hermes",
         "USB connection required": "Connexion USB requise",
         "Board revision": "Révision de la carte",
-        "Firmware mode": "Mode du firmware",
-        "NanoQL: normal operation and NanoQL Link": "NanoQL : utilisation normale et NanoQL Link",
-        "Original: Sipeed FPGA Partner and Companion": "Original : Sipeed FPGA Partner et Companion",
         "BL616 bootloader port": "Port du bootloader BL616",
         "Refresh": "Actualiser",
-        "Flash firmware": "Flasher le firmware",
+        "Install / update NanoQL firmware": "Installer / mettre à jour le firmware NanoQL",
+        "Restore Sipeed original firmware": "Restaurer le firmware Sipeed d'origine",
         "Advanced alternatives": "Solutions avancées",
         "Prepare files only": "Préparer uniquement les fichiers",
         "Open FlashCube fallback": "Ouvrir FlashCube (secours)",
@@ -130,18 +147,20 @@ TRANSLATIONS = {
         "Bitstream": "Bitstream FPGA",
         "Browse...": "Parcourir...",
         "FPGA programmer": "Outil de programmation FPGA",
-        "Programmer connection": "Connexion au programmateur",
-        "Requires the BL616 ORIGINAL / Sipeed FPGA Partner profile": "Nécessite le profil BL616 ORIGINAL / Sipeed FPGA Partner",
+        "NanoQL Link connection": "Connexion NanoQL Link",
         "Detect programmer": "Détecter le programmateur",
         "Install Windows JTAG driver": "Installer le pilote JTAG Windows",
         "Program SRAM (temporary)": "Programmer la SRAM (temporaire)",
         "Program Flash (permanent)": "Programmer la Flash (permanente)",
+        "Program SRAM through NanoQL Link": "Programmer la SRAM via NanoQL Link",
         "NanoQL Link port": "Port NanoQL Link",
         "QL ROM keyboard: automatic from the FPGA overlay": "Clavier de la ROM QL : réglage automatique depuis l'overlay",
         "Check connection": "Vérifier la connexion",
         "Start remote keyboard": "Démarrer le clavier distant",
         "Stop remote keyboard": "Arrêter le clavier distant",
         "30 s USB test": "Test USB de 30 s",
+        "Detect configuration Flash": "Détecter la Flash de configuration",
+        "Program Flash through NanoQL Link": "Programmer la Flash via NanoQL Link",
         "68000 binary file": "Fichier binaire 68000",
         "Load address": "Adresse de chargement",
         "Initial PC (empty = load address)": "PC initial (vide = adresse de chargement)",
@@ -154,6 +173,8 @@ TRANSLATIONS = {
         "Gowin compiler (gw_sh)": "Compilateur Gowin (gw_sh)",
         "Build FPGA core": "Compiler le core FPGA",
         "Prepare microSD and build": "Préparer la microSD et compiler",
+        "Program Flash with external JTAG": "Programmer la Flash avec le JTAG externe",
+        "Program SRAM with external JTAG": "Programmer la SRAM avec le JTAG externe",
         "PC folder synchronized as MDV1": "Dossier du PC synchronisé comme MDV1",
         "Medium name": "Nom du support",
         "Synchronize and mount MDV1": "Synchroniser et monter MDV1",
@@ -169,6 +190,8 @@ TRANSLATIONS = {
         "Important": "Important",
         "Boot mode": "Mode bootloader",
         "Compatibility": "Compatibilité",
+        "Normal use": "Utilisation normale",
+        "Recovery": "Récupération",
         "Temporary": "Temporaire",
         "Permanent": "Permanent",
         "Requirement": "Prérequis",
@@ -178,33 +201,42 @@ TRANSLATIONS = {
         "Program": "Programme",
         "Addresses": "Adresses",
         "Limits": "Limites",
+        "Safety": "Sécurité",
+        "Validation": "Validation",
         "Prepare the microSD with a QL ROM and an IPC firmware.": "Préparez la carte microSD avec une ROM QL et un firmware IPC.",
-        "Program NanoQL permanently into the FPGA while the original BL616 firmware is still installed.": "Programmez NanoQL de façon permanente dans le FPGA tant que le firmware BL616 original est encore installé.",
         "Install the NanoQL BL616 firmware last.": "Installez le firmware BL616 NanoQL en dernier.",
         "Connect the Tang Nano directly to the computer with a USB-C data cable.": "Connectez directement la Tang Nano à l'ordinateur avec un câble USB-C de données.",
         "Briefly press S1 after NanoQL has started to expose NanoQL Link.": "Appuyez brièvement sur S1 après le démarrage de NanoQL pour activer NanoQL Link.",
+        "After NanoQL starts, briefly press S1 once. NanoQL Link then remains active for the remote keyboard, MDV synchronization, and program injection.": "Après le démarrage de NanoQL, appuyez brièvement une seule fois sur S1. NanoQL Link reste ensuite actif pour le clavier distant, la synchronisation MDV et l'injection de programme.",
+        "Connect the Tang Nano to the computer with a USB-C data cable before using any of these tools.": "Connectez la Tang Nano à l'ordinateur avec un câble USB-C de données avant d'utiliser ces outils.",
+        "Alternative": "Alternative",
+        "Normal users can copy folders to NanoQL/Microdrives on the microSD and build MDV1 from the F12 overlay without NanoQL Link.": "Les utilisateurs peuvent copier leurs dossiers dans NanoQL/Microdrives sur la microSD et construire MDV1 depuis l'overlay F12 sans NanoQL Link.",
         "The remote keyboard uses the computer keyboard through NanoQL Link; it is separate from a physical USB keyboard connected through a hub.": "Le clavier distant utilise le clavier de l'ordinateur via NanoQL Link ; il est indépendant d'un clavier USB physique connecté par un hub.",
         "The QL ROM layout is selected automatically from the FPGA overlay. The computer layout is read by the operating system.": "La disposition de la ROM QL est sélectionnée automatiquement depuis l'overlay FPGA. La disposition du clavier de l'ordinateur est fournie par le système d'exploitation.",
         "Use the Stop button or F6 to return control to the assistant.": "Utilisez le bouton Arrêter ou F6 pour rendre le contrôle à l'assistant.",
-        "Program the FPGA Flash before installing the NanoQL BL616 firmware.": "Programmez la Flash FPGA avant d'installer le firmware BL616 NanoQL.",
+        "Detect configuration Flash is an optional check. It reads the JEDEC identifier without replacing the bitstream.": "Détecter la Flash de configuration est une vérification facultative. Cette commande lit l'identifiant JEDEC sans remplacer le bitstream.",
+        "Persistent programming erases, writes, and verifies the FPGA configuration Flash. Keep USB and power connected until NanoQL restarts.": "La programmation permanente efface, écrit et vérifie la Flash de configuration du FPGA. Laissez l'USB et l'alimentation connectés jusqu'au redémarrage de NanoQL.",
+        "After NanoQL starts, briefly press S1 once, then select the NanoQL Link port. S2 is not used.": "Après le démarrage de NanoQL, appuyez brièvement une fois sur S1, puis sélectionnez le port NanoQL Link. S2 n'est pas utilisé.",
         "Hold UPDATE while connecting USB, release it, refresh the ports, then select the new bootloader port.": "Maintenez UPDATE pendant la connexion USB, relâchez-le, actualisez les ports, puis sélectionnez le nouveau port du bootloader.",
         "Native BL616 flashing works on Windows, macOS, and Linux. FlashCube is only a Windows fallback.": "Le flash natif du BL616 fonctionne sous Windows, macOS et Linux. FlashCube est uniquement une solution de secours sous Windows.",
         "SRAM is lost when the board is powered off and is intended for testing.": "La SRAM est effacée lorsque la carte est éteinte et sert aux essais.",
         "Flash starts NanoQL automatically at every power-on.": "La Flash lance automatiquement NanoQL à chaque mise sous tension.",
-        "Keep the original Sipeed FPGA Partner firmware installed during this step.": "Conservez le firmware Sipeed FPGA Partner original pendant cette étape.",
+        "The NanoQL firmware provides the USB keyboard, microSD, overlay, NanoQL Link, and direct FPGA programming.": "Le firmware NanoQL fournit le clavier USB, la microSD, l'overlay, NanoQL Link et la programmation directe du FPGA.",
+        "The Sipeed original firmware is only needed for recovery or an external JTAG programmer.": "Le firmware Sipeed d'origine sert uniquement à la récupération ou à un programmateur JTAG externe.",
         "The selected QL and IPC ROMs are validated and copied to the card.": "Les ROM QL et IPC sélectionnées sont vérifiées puis copiées sur la carte.",
         "Prefer one FAT32 partition with an MBR partition table. exFAT is also supported.": "Préférez une partition FAT32 avec une table MBR. exFAT est également pris en charge.",
         "If writing stalls despite correct formatting, try another microSD card.": "Si l'écriture se bloque malgré un formatage correct, essayez une autre carte microSD.",
         "Select a raw big-endian 68000 program, then choose its load address, PC, and SSP.": "Sélectionnez un programme 68000 brut big-endian, puis choisissez son adresse de chargement, son PC et son SSP.",
         "NanoQL stops the CPU, writes and verifies the program, then executes it directly.": "NanoQL arrête le processeur, écrit et vérifie le programme, puis l'exécute directement.",
         "QDOS executable headers and relocation are not supported in this direct mode.": "Les en-têtes exécutables QDOS et la relocalisation ne sont pas pris en charge dans ce mode direct.",
-        "No board button is required here. Keep the original Sipeed FPGA Partner firmware installed.": "Aucun bouton de la carte n'est requis ici. Conservez le firmware Sipeed FPGA Partner original.",
+        "Start NanoQL normally, then briefly press the highlighted S1 button once.": "Démarrez NanoQL normalement, puis appuyez brièvement une fois sur le bouton S1 surligné.",
         "Hold the highlighted UPDATE button while connecting the USB cable.": "Maintenez le bouton UPDATE surligné pendant la connexion du câble USB.",
         "After NanoQL starts, briefly press the highlighted S1 button to enable NanoQL Link.": "Après le démarrage de NanoQL, appuyez brièvement sur le bouton S1 surligné pour activer NanoQL Link.",
         "Only HDL developers need these controls. Installing a NanoQL release uses its precompiled .fs file and does not require Gowin EDA.": "Seuls les développeurs HDL ont besoin de ces commandes. Une release NanoQL utilise son fichier .fs précompilé et ne nécessite pas Gowin EDA.",
+        "Use this section only for recovery. Restore the Sipeed original BL616 firmware first; S1 is not used.": "Utilisez cette section uniquement pour la récupération. Restaurez d'abord le firmware BL616 Sipeed d'origine ; S1 n'est pas utilisé.",
         "Optional developer workflow: start NanoQL, briefly press S1 to expose NanoQL Link, then synchronize. Normal users can instead copy folders to NanoQL/Microdrives on the microSD and select Build MDV1 from: in the F12 overlay. Synchronization mounts MDV1 without restarting QDOS; NanoQL Link and the remote keyboard remain available on the same serial port.": "Procédure développeur facultative : démarrez NanoQL, appuyez brièvement sur S1, puis synchronisez. Les utilisateurs peuvent aussi copier leurs dossiers dans NanoQL/Microdrives sur la microSD et choisir Build MDV1 from: dans l'overlay F12. La synchronisation monte MDV1 sans redémarrer QDOS.",
         "NanoQL does not redistribute Sinclair or third-party ROMs. Obtain files legally, then select them in the next tab.": "NanoQL ne redistribue pas les ROM Sinclair ou tierces. Obtenez-les légalement, puis sélectionnez-les dans l'onglet suivant.",
-        "After installing the NanoQL BL616 firmware, standard JTAG is no longer exposed. To update the persistent FPGA core later, use NanoQL Link's native flash command or temporarily restore the ORIGINAL BL616 profile.": "Après l'installation du firmware BL616 NanoQL, le JTAG standard n'est plus exposé. Pour mettre à jour le core FPGA permanent, utilisez la commande de flash native de NanoQL Link ou restaurez temporairement le profil BL616 ORIGINAL.",
+        "Normal FPGA updates now use NanoQL Link directly. Restore Sipeed firmware only for recovery or external JTAG tools.": "Les mises à jour FPGA normales utilisent désormais directement NanoQL Link. Restaurez le firmware Sipeed uniquement pour une récupération ou les outils JTAG externes.",
         "openFPGALoader on Windows needs WinUSB on JTAG interface A only. Interface B must keep its FTDI serial driver.": "Sous Windows, openFPGALoader nécessite WinUSB uniquement sur l'interface JTAG A. L'interface B doit conserver son pilote série FTDI.",
         "Repository": "Dépôt",
         "User settings": "Paramètres utilisateur",
@@ -242,14 +274,20 @@ TRANSLATIONS = {
         "FPGA programmer not found": "Programmateur FPGA introuvable",
         "Select a valid Gowin programmer_cli or openFPGALoader executable.": "Sélectionnez un exécutable programmer_cli de Gowin ou openFPGALoader valide.",
         "Missing bitstream": "Bitstream manquant",
+        "Missing binary bitstream": "Bitstream binaire manquant",
+        "Select a Gowin .bin bitstream, or keep the matching .bin file beside the selected .fs file.": "Sélectionnez un bitstream Gowin .bin, ou placez le fichier .bin correspondant à côté du fichier .fs sélectionné.",
         "Programmer detected": "Programmateur détecté",
         "Stopping remote keyboard": "Arrêt du clavier distant",
         "Checking NanoQL Link": "Vérification de NanoQL Link",
         "Testing NanoQL Link USB": "Test USB de NanoQL Link",
+        "Detecting FPGA configuration Flash": "Détection de la Flash de configuration FPGA",
+        "Programming FPGA Flash through NanoQL Link": "Programmation de la Flash FPGA via NanoQL Link",
+        "Programming FPGA SRAM through NanoQL Link": "Programmation de la SRAM FPGA via NanoQL Link",
         "Injecting binary": "Injection du binaire",
         "Restarting QDOS": "Redémarrage de QDOS",
         "Preparing BL616 firmware": "Préparation du firmware BL616",
-        "Flashing BL616 firmware": "Flash du firmware BL616",
+        "Installing NanoQL BL616 firmware": "Installation du firmware BL616 NanoQL",
+        "Restoring Sipeed BL616 firmware": "Restauration du firmware BL616 Sipeed",
         "Preparing microSD": "Préparation de la microSD",
         "Synchronizing MDV1": "Synchronisation de MDV1",
         "Building NanoQL": "Compilation de NanoQL",
@@ -271,12 +309,18 @@ TRANSLATIONS = {
         "Gowin Programmer could not detect USB Debugger A/1. Close other programmers, reconnect the board, and verify that the BL616 ORIGINAL profile is running.": "Gowin Programmer n'a pas détecté USB Debugger A/1. Fermez les autres programmateurs, reconnectez la carte et vérifiez que le profil BL616 ORIGINAL est actif.",
         "Serial ports refreshed": "Ports série actualisés",
         "detected": "détectés",
+        "Status": "État",
+        "NanoQL Link port detected: {port}": "Port NanoQL Link détecté : {port}",
+        "NanoQL Link port not detected": "Port NanoQL Link non détecté",
+        "Multiple NanoQL Link ports detected": "Plusieurs ports NanoQL Link détectés",
         "Could not start Zadig": "Impossible de démarrer Zadig",
         "Operating system": "Système d'exploitation",
         "ready": "prêt",
         "Selected FPGA programmer": "Programmateur FPGA sélectionné",
         "FPGA programmer": "Programmateur FPGA",
+        "External FPGA programmer (recovery)": "Programmateur FPGA externe (récupération)",
         "not found": "introuvable",
+        "optional": "facultatif",
         "version": "version",
         "BL616 tool": "Outil BL616",
         "installed": "installé",
@@ -520,6 +564,61 @@ class BoardGuide(ttk.Frame):
         self.after(450, self._blink)
 
 
+class ScrollableTab(ttk.Frame):
+    """Notebook page whose contents remain reachable on small displays."""
+
+    def __init__(self, parent) -> None:
+        super().__init__(parent)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        background = ttk.Style(self).lookup("TFrame", "background") or "#f0f0f0"
+        self.canvas = tk.Canvas(
+            self, highlightthickness=0, borderwidth=0, background=background
+        )
+        self.scrollbar = ttk.Scrollbar(
+            self, orient="vertical", command=self.canvas.yview
+        )
+        self.inner = ttk.Frame(self.canvas, padding=16)
+        self.window = self.canvas.create_window(
+            (0, 0), window=self.inner, anchor="nw"
+        )
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.scrollbar.grid(row=0, column=1, sticky="ns")
+
+        self.inner.bind("<Configure>", self._sync)
+        self.canvas.bind("<Configure>", self._sync)
+        self.after_idle(self._sync)
+
+    def _needs_scroll(self) -> bool:
+        return self.inner.winfo_reqheight() > self.canvas.winfo_height() + 2
+
+    def _sync(self, _event=None) -> None:
+        width = max(1, self.canvas.winfo_width())
+        self.canvas.itemconfigure(self.window, width=width)
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        if self._needs_scroll():
+            self.scrollbar.grid()
+        else:
+            self.scrollbar.grid_remove()
+            self.canvas.yview_moveto(0.0)
+
+    def contains_widget(self, widget) -> bool:
+        while widget is not None:
+            if widget is self:
+                return True
+            widget = getattr(widget, "master", None)
+        return False
+
+    def scroll_units(self, units: int) -> None:
+        if self._needs_scroll() and units:
+            self.canvas.yview_scroll(units, "units")
+
+    def scroll_to_top(self) -> None:
+        self.canvas.yview_moveto(0.0)
+
+
 class NanoQLSetup(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -532,6 +631,12 @@ class NanoQLSetup(tk.Tk):
 
         self.language = tk.StringVar(value="en")
         self.language_display = tk.StringVar(value=LANGUAGE_NAMES["en"])
+        self.setup_mode = tk.StringVar(value="install")
+        self.install_sd_done = tk.StringVar(value="0")
+        self.install_fpga_done = tk.StringVar(value="0")
+        self.install_bl616_done = tk.StringVar(value="0")
+        self.update_fpga_done = tk.StringVar(value="0")
+        self.update_bl616_done = tk.StringVar(value="0")
         self.revision = tk.StringVar(value="3923")
         self.firmware_mode = tk.StringVar(value="nanoql")
         self.bl616_port = tk.StringVar(value=SELECT_PORT)
@@ -551,10 +656,20 @@ class NanoQLSetup(tk.Tk):
         self.bitstream_path = tk.StringVar(value=find_precompiled_bitstream())
         self.port_devices: dict[str, str] = {}
         self.status = tk.StringVar(value="Ready")
+        self.link_detection_status = tk.StringVar()
+        self.port_poll_after: str | None = None
+        self._port_signature: tuple[tuple[object, ...], ...] = ()
+        self._last_ports: list[object] = []
         self.settings_file = settings_path()
         self.settings_save_after: str | None = None
         self.settings_variables = {
             "language": self.language,
+            "setup_mode": self.setup_mode,
+            "install_sd_done": self.install_sd_done,
+            "install_fpga_done": self.install_fpga_done,
+            "install_bl616_done": self.install_bl616_done,
+            "update_fpga_done": self.update_fpga_done,
+            "update_bl616_done": self.update_bl616_done,
             "revision": self.revision,
             "firmware_mode": self.firmware_mode,
             "bl616_port": self.bl616_port,
@@ -582,6 +697,7 @@ class NanoQLSetup(tk.Tk):
             variable.trace_add("write", self._schedule_settings_save)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.after(100, self._poll_events)
+        self.port_poll_after = self.after(1200, self._poll_serial_ports)
 
     def _load_settings(self) -> None:
         parser = configparser.ConfigParser(interpolation=None)
@@ -601,6 +717,22 @@ class NanoQLSetup(tk.Tk):
             self.firmware_mode.set("nanoql")
         if self.language.get() not in LANGUAGE_NAMES:
             self.language.set("en")
+        if self.setup_mode.get() not in ("install", "update"):
+            self.setup_mode.set("install")
+        for variable in (
+            self.install_sd_done, self.install_fpga_done,
+            self.install_bl616_done, self.update_fpga_done,
+            self.update_bl616_done,
+        ):
+            if variable.get() not in ("0", "1"):
+                variable.set("0")
+        if section.get("workflow_revision", "") != WORKFLOW_REVISION:
+            for variable in (
+                self.install_sd_done, self.install_fpga_done,
+                self.install_bl616_done, self.update_fpga_done,
+                self.update_bl616_done,
+            ):
+                variable.set("0")
 
     def _schedule_settings_save(self, *_args) -> None:
         if self.settings_save_after is not None:
@@ -614,6 +746,7 @@ class NanoQLSetup(tk.Tk):
             name: variable.get().strip()
             for name, variable in self.settings_variables.items()
         }
+        values["workflow_revision"] = WORKFLOW_REVISION
         # Store stable device paths rather than the descriptive combobox text.
         values["link_port"] = self._selected_port(self.link_port, allow_auto=True)
         values["bl616_port"] = self._selected_port(
@@ -633,6 +766,9 @@ class NanoQLSetup(tk.Tk):
     def _close(self) -> None:
         if self.settings_save_after is not None:
             self.after_cancel(self.settings_save_after)
+        if self.port_poll_after is not None:
+            self.after_cancel(self.port_poll_after)
+            self.port_poll_after = None
         self._save_settings()
         self.destroy()
 
@@ -666,6 +802,7 @@ class NanoQLSetup(tk.Tk):
 
         visit(self)
         self.status.set(self._t(getattr(self, "_status_source", "Ready")))
+        self._update_link_indicator(self._last_ports)
 
     def _change_language(self, _event=None) -> None:
         selected = self.language_display.get()
@@ -676,10 +813,36 @@ class NanoQLSetup(tk.Tk):
         self._translate_ui()
         self.refresh_ports()
         self.check_requirements()
+        self._refresh_workflow()
 
     def _set_status(self, text: str) -> None:
         self._status_source = text
         self.status.set(self._t(text))
+
+    def _on_tab_mousewheel(self, event):
+        selected = self.nametowidget(self.notebook.select())
+        hovered = self.winfo_containing(event.x_root, event.y_root)
+        if not isinstance(selected, ScrollableTab) or not selected.contains_widget(hovered):
+            return None
+        delta = getattr(event, "delta", 0)
+        if delta:
+            units = max(1, abs(int(delta / 120)))
+            selected.scroll_units(-units if delta > 0 else units)
+            return "break"
+        return None
+
+    def _on_tab_mousewheel_linux(self, event):
+        selected = self.nametowidget(self.notebook.select())
+        hovered = self.winfo_containing(event.x_root, event.y_root)
+        if not isinstance(selected, ScrollableTab) or not selected.contains_widget(hovered):
+            return None
+        selected.scroll_units(-1 if event.num == 4 else 1)
+        return "break"
+
+    def _on_notebook_tab_changed(self, _event=None) -> None:
+        selected = self.nametowidget(self.notebook.select())
+        if isinstance(selected, ScrollableTab):
+            self.after_idle(selected._sync)
 
     def _instruction(
         self,
@@ -706,57 +869,111 @@ class NanoQLSetup(tk.Tk):
         style.configure("Title.TLabel", font=("Segoe UI", 16, "bold"))
         style.configure("Section.TLabel", font=("Segoe UI", 10, "bold"))
         style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=8)
+        normal_check_foreground = (
+            style.lookup("TCheckbutton", "foreground")
+            or style.lookup("TLabel", "foreground")
+            or "#202020"
+        )
+        style.configure(
+            "ReadOnly.TCheckbutton", foreground=normal_check_foreground
+        )
+        style.map(
+            "ReadOnly.TCheckbutton",
+            foreground=[("disabled", normal_check_foreground)],
+        )
 
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=3)
-        self.rowconfigure(2, weight=2)
+        self.rowconfigure(1, weight=1)
+        self.rowconfigure(2, weight=0)
 
         header = ttk.Frame(self, padding=(16, 12))
         header.grid(row=0, column=0, sticky="ew")
         ttk.Label(header, text="NanoQL Setup Assistant", style="Title.TLabel").pack(
             side="left"
         )
-        ttk.Label(header, textvariable=self.status).pack(side="right")
 
-        notebook = ttk.Notebook(self)
-        notebook.grid(row=1, column=0, sticky="nsew", padx=12)
-        quick_tab = ttk.Frame(notebook, padding=16)
-        link_tab = ttk.Frame(notebook, padding=16)
-        firmware_tab = ttk.Frame(notebook, padding=16)
-        storage_tab = ttk.Frame(notebook, padding=16)
-        fpga_tab = ttk.Frame(notebook, padding=16)
-        binary_tab = ttk.Frame(notebook, padding=16)
-        advanced_tab = ttk.Frame(notebook, padding=16)
-        notebook.add(quick_tab, text="Start here")
-        notebook.add(storage_tab, text="1. ROMs and microSD")
-        notebook.add(fpga_tab, text="2. FPGA")
-        notebook.add(firmware_tab, text="3. BL616")
-        notebook.add(link_tab, text="4. Remote keyboard")
-        notebook.add(binary_tab, text="5. Binary injection")
-        notebook.add(advanced_tab, text="Advanced")
+        self.notebook = ttk.Notebook(self)
+        self.notebook.grid(row=1, column=0, sticky="nsew", padx=12)
+        self.quick_tab = ScrollableTab(self.notebook)
+        self.link_tab = ScrollableTab(self.notebook)
+        self.firmware_tab = ScrollableTab(self.notebook)
+        self.storage_tab = ScrollableTab(self.notebook)
+        self.fpga_tab = ScrollableTab(self.notebook)
+        self.advanced_tab = ScrollableTab(self.notebook)
+        self.notebook.add(self.quick_tab, text="Start here")
+        self.notebook.add(self.storage_tab, text="1. ROMs and microSD")
+        self.notebook.add(self.firmware_tab, text="2. BL616")
+        self.notebook.add(self.fpga_tab, text="3. FPGA")
+        self.notebook.add(self.link_tab, text="4. NanoQL Link")
+        self.notebook.add(self.advanced_tab, text="Advanced")
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_notebook_tab_changed)
 
-        self._build_quick_tab(quick_tab)
-        self._build_firmware_tab(firmware_tab)
-        self._build_storage_tab(storage_tab)
-        self._build_fpga_tab(fpga_tab)
-        self._build_link_tab(link_tab)
-        self._build_binary_tab(binary_tab)
-        self._build_advanced_tab(advanced_tab)
+        self._build_quick_tab(self.quick_tab.inner)
+        self._build_firmware_tab(self.firmware_tab.inner)
+        self._build_storage_tab(self.storage_tab.inner)
+        self._build_fpga_tab(self.fpga_tab.inner)
+        self._build_link_tab(self.link_tab.inner)
+        self._build_advanced_tab(self.advanced_tab.inner)
+
+        self.bind_all("<MouseWheel>", self._on_tab_mousewheel, add="+")
+        self.bind_all("<Button-4>", self._on_tab_mousewheel_linux, add="+")
+        self.bind_all("<Button-5>", self._on_tab_mousewheel_linux, add="+")
 
         log_frame = ttk.LabelFrame(self, text="Log", padding=8)
-        log_frame.grid(row=2, column=0, sticky="nsew", padx=12, pady=12)
+        log_frame.grid(row=2, column=0, sticky="ew", padx=12, pady=(8, 4))
+        log_frame.columnconfigure(0, weight=1)
+
+        progress_header = ttk.Frame(log_frame)
+        progress_header.grid(row=0, column=0, columnspan=2, sticky="ew")
+        ttk.Label(progress_header, text="Progress", style="Section.TLabel").pack(
+            side="left"
+        )
+        self.progress_text = tk.StringVar(value=self._t("Ready"))
+        ttk.Label(progress_header, textvariable=self.progress_text).pack(side="right")
+        self.progress_value = tk.DoubleVar(value=0.0)
+        self.progress = ttk.Progressbar(
+            log_frame, variable=self.progress_value, maximum=100.0,
+            mode="determinate",
+        )
+        self.progress.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 8))
+
         self.log = tk.Text(
             log_frame,
-            height=16,
+            height=10,
             wrap="word",
             state="disabled",
             font=("Consolas", 9),
         )
         scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=scrollbar.set)
-        self.log.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        self.log.grid(row=3, column=0, sticky="nsew")
+        scrollbar.grid(row=3, column=1, sticky="ns")
+
+        status_bar = ttk.Frame(self, padding=(12, 5, 12, 7))
+        status_bar.grid(row=3, column=0, sticky="ew")
+        status_bar.columnconfigure(1, weight=1)
+        ttk.Label(status_bar, text="Status", style="Section.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 7)
+        )
+        ttk.Label(status_bar, textvariable=self.status).grid(
+            row=0, column=1, sticky="w"
+        )
+        indicator = ttk.Frame(status_bar)
+        indicator.grid(row=0, column=2, sticky="e")
+        frame_background = style.lookup("TFrame", "background") or "#f0f0f0"
+        self.link_status_dot = tk.Canvas(
+            indicator, width=12, height=12, highlightthickness=0,
+            background=frame_background,
+        )
+        self.link_status_dot.pack(side="left", padx=(0, 6))
+        self.link_status_oval = self.link_status_dot.create_oval(
+            2, 2, 10, 10, outline="", fill="#8a8f98"
+        )
+        ttk.Label(indicator, textvariable=self.link_detection_status).pack(
+            side="left"
+        )
         self._translate_ui()
+        self._refresh_workflow()
         self._append_log(f"{self._t('Repository')}: {REPOSITORY}\n")
         self._append_log(f"{self._t('User settings')}: {self.settings_file}\n")
         self.after(200, self.check_requirements)
@@ -764,9 +981,10 @@ class NanoQLSetup(tk.Tk):
     def _build_quick_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
         parent.columnconfigure(1, weight=0)
+        self.workflow_title = tk.StringVar()
         ttk.Label(
             parent,
-            text="Install NanoQL in three steps",
+            textvariable=self.workflow_title,
             style="Title.TLabel",
         ).grid(row=0, column=0, sticky="w", pady=(0, 14))
 
@@ -785,24 +1003,51 @@ class NanoQLSetup(tk.Tk):
         language_combo.pack(side="left")
         language_combo.bind("<<ComboboxSelected>>", self._change_language)
 
-        self._instruction(
-            parent, 1, "Step 1",
-            "Prepare the microSD with a QL ROM and an IPC firmware.",
-            columnspan=2,
-        )
-        self._instruction(
-            parent, 2, "Step 2",
-            "Program NanoQL permanently into the FPGA while the original BL616 firmware is still installed.",
-            columnspan=2,
-        )
-        self._instruction(
-            parent, 3, "Step 3",
-            "Install the NanoQL BL616 firmware last.",
-            columnspan=2,
-        )
+        mode = ttk.LabelFrame(parent, text="Installation path", padding=12)
+        mode.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+        ttk.Radiobutton(
+            mode, text="First installation", variable=self.setup_mode,
+            value="install", command=self._refresh_workflow,
+        ).pack(side="left", padx=(0, 20))
+        ttk.Radiobutton(
+            mode, text="Update NanoQL", variable=self.setup_mode,
+            value="update", command=self._refresh_workflow,
+        ).pack(side="left")
+
+        self.workflow_description = tk.StringVar()
+        ttk.Label(
+            parent, textvariable=self.workflow_description,
+            justify="left", wraplength=760,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 10))
+
+        self.workflow_steps = ttk.Frame(parent)
+        self.workflow_steps.grid(row=3, column=0, columnspan=2, sticky="ew")
+        self.workflow_step_widgets: list[ttk.Checkbutton] = []
+        for row, (text, variable) in enumerate((
+            ("Prepare the microSD card", self.install_sd_done),
+            ("Install the NanoQL BL616 firmware", self.install_bl616_done),
+            ("Program the FPGA", self.install_fpga_done),
+        )):
+            check = ttk.Checkbutton(
+                self.workflow_steps, text=text, variable=variable,
+                onvalue="1", offvalue="0", state="disabled", takefocus=False,
+                style="ReadOnly.TCheckbutton",
+            )
+            check.grid(row=row, column=0, sticky="w", pady=2)
+            self.workflow_step_widgets.append(check)
+        workflow_actions = ttk.Frame(parent)
+        workflow_actions.grid(row=4, column=0, columnspan=2, sticky="w", pady=(12, 4))
+        self._button(
+            workflow_actions, "Continue setup", self._continue_setup,
+            style="Primary.TButton",
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            workflow_actions, text="Reset progress",
+            command=self._reset_workflow,
+        ).pack(side="left")
 
         requirements = ttk.LabelFrame(parent, text="Requirements", padding=12)
-        requirements.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(18, 10))
+        requirements.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(18, 10))
         requirements.columnconfigure(1, weight=1)
         self.requirements_text = tk.StringVar()
         ttk.Label(
@@ -818,11 +1063,6 @@ class NanoQLSetup(tk.Tk):
         )
         ttk.Button(
             actions,
-            text="Install openFPGALoader",
-            command=self.install_openfpgaloader,
-        ).pack(side="left", padx=(0, 8))
-        ttk.Button(
-            actions,
             text="Install Python",
             command=lambda: self._open_url(PYTHON_URL),
         ).pack(side="left", padx=(0, 8))
@@ -833,7 +1073,7 @@ class NanoQLSetup(tk.Tk):
         ).pack(side="left")
 
         sources = ttk.LabelFrame(parent, text="ROM sources", padding=12)
-        sources.grid(row=5, column=0, columnspan=2, sticky="ew", pady=10)
+        sources.grid(row=6, column=0, columnspan=2, sticky="ew", pady=10)
         ttk.Label(
             sources,
             text=(
@@ -855,10 +1095,82 @@ class NanoQLSetup(tk.Tk):
         ).pack(side="left")
 
         self._instruction(
-            parent, 6, "Important",
-            "After installing the NanoQL BL616 firmware, standard JTAG is no longer exposed. To update the persistent FPGA core later, use NanoQL Link's native flash command or temporarily restore the ORIGINAL BL616 profile.",
+            parent, 7, "Important",
+            "Normal FPGA updates now use NanoQL Link directly. Restore Sipeed firmware only for recovery or external JTAG tools.",
             columnspan=2,
         )
+
+    def _workflow_definition(self):
+        if self.setup_mode.get() == "update":
+            return (
+                ("Update the NanoQL BL616 firmware", self.update_bl616_done,
+                 self.firmware_tab),
+                ("Program the updated FPGA core", self.update_fpga_done,
+                 self.fpga_tab),
+            )
+        return (
+            ("Prepare the microSD card", self.install_sd_done,
+             self.storage_tab),
+            ("Install the NanoQL BL616 firmware", self.install_bl616_done,
+             self.firmware_tab),
+            ("Program the FPGA", self.install_fpga_done, self.fpga_tab),
+        )
+
+    def _refresh_workflow(self) -> None:
+        if not hasattr(self, "workflow_step_widgets"):
+            return
+        if self.setup_mode.get() == "update":
+            self.workflow_title.set(self._t("Update NanoQL"))
+            self.workflow_description.set(
+                self._t("Update keeps the microSD contents. Update the NanoQL BL616 firmware first, then press S1 and program the FPGA directly through NanoQL Link.")
+            )
+        else:
+            self.workflow_title.set(self._t("First installation"))
+            self.workflow_description.set(self._t(
+                "First installation keeps the required order: microSD, NanoQL BL616 firmware, then FPGA Flash."
+            ))
+        steps = self._workflow_definition()
+        for index, widget in enumerate(self.workflow_step_widgets):
+            if index < len(steps):
+                text, variable, _tab = steps[index]
+                widget.configure(text=self._t(text), variable=variable)
+                widget.grid()
+            else:
+                widget.grid_remove()
+
+    def _select_tab(self, tab: ScrollableTab) -> None:
+        self.notebook.select(tab)
+        tab.scroll_to_top()
+        self.after_idle(tab.scroll_to_top)
+
+    def _continue_setup(self) -> None:
+        for _text, variable, tab in self._workflow_definition():
+            if variable.get() != "1":
+                if tab is self.firmware_tab:
+                    self.firmware_mode.set("nanoql")
+                self._select_tab(tab)
+                return
+        self._select_tab(self.link_tab)
+
+    def _reset_workflow(self) -> None:
+        for _text, variable, _tab in self._workflow_definition():
+            variable.set("0")
+        self._refresh_workflow()
+
+    def _mark_workflow(self, step: str) -> None:
+        if step == "sd":
+            self.install_sd_done.set("1")
+        elif step == "fpga":
+            variable = (self.update_fpga_done if self.setup_mode.get() == "update"
+                        else self.install_fpga_done)
+            variable.set("1")
+        elif step == "bl616":
+            if self.firmware_mode.get() == "nanoql":
+                variable = (self.update_bl616_done
+                            if self.setup_mode.get() == "update"
+                            else self.install_bl616_done)
+                variable.set("1")
+        self._refresh_workflow()
 
     def _build_firmware_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -877,43 +1189,33 @@ class NanoQLSetup(tk.Tk):
         )
         revision.grid(row=1, column=1, sticky="w", pady=(0, 8))
 
-        ttk.Label(parent, text="Firmware mode", style="Section.TLabel").grid(
-            row=2, column=0, sticky="nw", pady=8
-        )
-        modes = ttk.Frame(parent)
-        modes.grid(row=2, column=1, sticky="w", pady=8)
-        ttk.Radiobutton(
-            modes,
-            text="NanoQL: normal operation and NanoQL Link",
-            variable=self.firmware_mode,
-            value="nanoql",
-        ).pack(anchor="w")
-        ttk.Radiobutton(
-            modes,
-            text="Original: Sipeed FPGA Partner and Companion",
-            variable=self.firmware_mode,
-            value="original",
-        ).pack(anchor="w")
-
         ttk.Label(parent, text="BL616 bootloader port", style="Section.TLabel").grid(
-            row=3, column=0, sticky="w", pady=8
+            row=2, column=0, sticky="w", pady=8
         )
         self.bl616_port_combo = ttk.Combobox(
             parent, textvariable=self.bl616_port, state="readonly", width=62
         )
-        self.bl616_port_combo.grid(row=3, column=1, sticky="ew", pady=8)
+        self.bl616_port_combo.grid(row=2, column=1, sticky="ew", pady=8)
         ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
-            row=3, column=2, padx=(8, 0), pady=8
+            row=2, column=2, padx=(8, 0), pady=8
         )
 
         actions = ttk.Frame(parent)
-        actions.grid(row=4, column=0, columnspan=2, sticky="w", pady=(18, 8))
+        actions.grid(row=3, column=0, columnspan=3, sticky="w", pady=(18, 8))
         self._button(
-            actions, "Flash firmware", self.flash_bl616, style="Primary.TButton"
+            actions,
+            "Install / update NanoQL firmware",
+            lambda: self.flash_bl616_profile("nanoql"),
+            style="Primary.TButton",
+        ).pack(side="left", padx=(0, 10))
+        self._button(
+            actions,
+            "Restore Sipeed original firmware",
+            lambda: self.flash_bl616_profile("original"),
         ).pack(side="left")
 
         alternatives = ttk.LabelFrame(parent, text="Advanced alternatives", padding=8)
-        alternatives.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        alternatives.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         self._button(alternatives, "Prepare files only", self.prepare_firmware).pack(
             side="left", padx=(0, 8)
         )
@@ -922,19 +1224,24 @@ class NanoQLSetup(tk.Tk):
         ).pack(side="left")
 
         self._instruction(
-            parent, 6, "Required order",
-            "Program the FPGA Flash before installing the NanoQL BL616 firmware.",
-            columnspan=2, wraplength=430,
+            parent, 5, "Normal use",
+            "The NanoQL firmware provides the USB keyboard, microSD, overlay, NanoQL Link, and direct FPGA programming.",
+            columnspan=3, wraplength=560,
+        )
+        self._instruction(
+            parent, 6, "Recovery",
+            "The Sipeed original firmware is only needed for recovery or an external JTAG programmer.",
+            columnspan=3, wraplength=560,
         )
         self._instruction(
             parent, 7, "Boot mode",
             "Hold UPDATE while connecting USB, release it, refresh the ports, then select the new bootloader port.",
-            columnspan=2, wraplength=430,
+            columnspan=3, wraplength=560,
         )
         self._instruction(
             parent, 8, "Compatibility",
             "Native BL616 flashing works on Windows, macOS, and Linux. FlashCube is only a Windows fallback.",
-            columnspan=2, wraplength=430,
+            columnspan=3, wraplength=560,
         )
 
         BoardGuide(
@@ -984,83 +1291,150 @@ class NanoQLSetup(tk.Tk):
             "Connect the Tang Nano directly to the computer with a USB-C data cable.",
         )
 
+        ttk.Label(
+            parent, text="NanoQL Link (normal updates)", style="Section.TLabel"
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 6))
         ttk.Label(parent, text="Bitstream", style="Section.TLabel").grid(
-            row=1, column=0, sticky="w", pady=8
+            row=2, column=0, sticky="w", pady=8
         )
         ttk.Entry(parent, textvariable=self.bitstream_path).grid(
-            row=1, column=1, sticky="ew", padx=8, pady=8
+            row=2, column=1, sticky="ew", padx=8, pady=8
         )
         ttk.Button(parent, text="Browse...", command=self._browse_bitstream).grid(
-            row=1, column=2, pady=8
+            row=2, column=2, pady=8
         )
-        self._path_row(
-            parent, 2, "FPGA programmer", self.loader_path, self._browse_loader
-        )
-        ttk.Label(parent, text="Programmer connection", style="Section.TLabel").grid(
+        ttk.Label(parent, text="NanoQL Link port", style="Section.TLabel").grid(
             row=3, column=0, sticky="w", pady=8
         )
-        ttk.Label(
-            parent,
-            text="Requires the BL616 ORIGINAL / Sipeed FPGA Partner profile",
-        ).grid(row=3, column=1, sticky="w", padx=8, pady=8)
-        self._button(parent, "Detect programmer", self.detect_fpga).grid(
+        self.fpga_link_port_combo = ttk.Combobox(
+            parent, textvariable=self.link_port, state="readonly", width=62
+        )
+        self.fpga_link_port_combo.grid(
+            row=3, column=1, sticky="ew", padx=8, pady=8
+        )
+        ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
             row=3, column=2, pady=8
         )
 
-        if platform.system() == "Windows":
-            ttk.Label(
-                parent,
-                text=(
-                    "openFPGALoader on Windows needs WinUSB on JTAG interface A "
-                    "only. Interface B must keep its FTDI serial driver."
-                ),
-                wraplength=360,
-            ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 8))
-            ttk.Button(
-                parent,
-                text="Install Windows JTAG driver",
-                command=self.install_windows_jtag_driver,
-            ).grid(row=4, column=2, pady=(4, 8))
-            action_row = 5
-        else:
-            action_row = 4
-
         actions = ttk.Frame(parent)
-        actions.grid(row=action_row, column=0, columnspan=3, sticky="w", pady=(18, 8))
+        actions.grid(row=4, column=0, columnspan=3, sticky="w", pady=(18, 8))
         self._button(
-            actions, "Program SRAM (temporary)", lambda: self.program_fpga(False),
-            style="Primary.TButton",
-        ).pack(
-            side="left", padx=(0, 8)
-        )
+            actions, "Program SRAM (temporary)",
+            self.program_fpga_sram_via_link,
+        ).pack(side="left", padx=(0, 8))
         self._button(
-            actions, "Program Flash (permanent)", lambda: self.program_fpga(True),
+            actions, "Program Flash (permanent)",
+            self.program_fpga_flash_via_link,
             style="Primary.TButton",
         ).pack(side="left")
+        self._button(
+            actions, "Detect configuration Flash", self.probe_fpga_flash
+        ).pack(side="left", padx=(8, 0))
 
         self._instruction(
-            parent, action_row + 1, "Temporary",
+            parent, 5, "Activation",
+            "After NanoQL starts, briefly press S1 once, then select the NanoQL Link port. S2 is not used.",
+            columnspan=3, wraplength=600,
+        )
+        self._instruction(
+            parent, 6, "Temporary",
             "SRAM is lost when the board is powered off and is intended for testing.",
-            columnspan=3, wraplength=450,
+            columnspan=3, wraplength=600,
         )
         self._instruction(
-            parent, action_row + 2, "Permanent",
-            "Flash starts NanoQL automatically at every power-on.",
-            columnspan=3, wraplength=450,
+            parent, 7, "Permanent",
+            "Persistent programming erases, writes, and verifies the FPGA configuration Flash. Keep USB and power connected until NanoQL restarts.",
+            columnspan=3, wraplength=600,
         )
         self._instruction(
-            parent, action_row + 3, "Requirement",
-            "Keep the original Sipeed FPGA Partner firmware installed during this step.",
-            columnspan=3, wraplength=450,
+            parent, 8, "Validation",
+            "Detect configuration Flash is an optional check. It reads the JEDEC identifier without replacing the bitstream.",
+            columnspan=3, wraplength=600,
         )
 
         BoardGuide(
             parent,
-            None,
-            "No board button is required here. Keep the original Sipeed FPGA Partner firmware installed.",
-        ).grid(row=1, column=3, rowspan=action_row + 3, sticky="ne", padx=(18, 0))
+            "s1",
+            "Start NanoQL normally, then briefly press the highlighted S1 button once.",
+        ).grid(row=2, column=3, rowspan=7, sticky="ne", padx=(18, 0))
+
+        recovery = ttk.LabelFrame(
+            parent,
+            text="External JTAG (recovery)",
+            padding=10,
+        )
+        recovery.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(18, 0))
+        recovery.columnconfigure(1, weight=1)
+        self._path_row(
+            recovery, 0, "FPGA programmer", self.loader_path, self._browse_loader
+        )
+        recovery_actions = ttk.Frame(recovery)
+        recovery_actions.grid(
+            row=1, column=0, columnspan=3, sticky="w", pady=(10, 6)
+        )
+        self._button(
+            recovery_actions, "Detect programmer", self.detect_fpga
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8), pady=(0, 6))
+        self._button(
+            recovery_actions,
+            "Program SRAM with external JTAG",
+            lambda: self.program_fpga(False),
+        ).grid(row=0, column=1, sticky="w", pady=(0, 6))
+        self._button(
+            recovery_actions,
+            "Program Flash with external JTAG",
+            lambda: self.program_fpga(True),
+        ).grid(row=1, column=0, columnspan=2, sticky="w")
+        if platform.system() == "Windows":
+            ttk.Button(
+                recovery,
+                text="Install Windows JTAG driver",
+                command=self.install_windows_jtag_driver,
+            ).grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(4, 8))
+        ttk.Button(
+            recovery,
+            text="Install openFPGALoader",
+            command=self.install_openfpgaloader,
+        ).grid(row=2, column=0, sticky="w", pady=(4, 8))
+        self._instruction(
+            recovery, 3, "Recovery",
+            "Use this section only for recovery. Restore the Sipeed original BL616 firmware first; S1 is not used.",
+            columnspan=3, wraplength=820,
+        )
 
     def _build_link_tab(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(2, weight=1)
+        self._instruction(
+            parent, 0, "Connection",
+            "Connect the Tang Nano to the computer with a USB-C data cable before using any of these tools.",
+            wraplength=650,
+        )
+        self._instruction(
+            parent, 1, "Activation",
+            "After NanoQL starts, briefly press S1 once. NanoQL Link then remains active for the remote keyboard, MDV synchronization, and program injection.",
+            wraplength=650,
+        )
+
+        notebook = ttk.Notebook(parent)
+        notebook.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
+        connection = ttk.Frame(notebook, padding=14)
+        microdrive = ttk.Frame(notebook, padding=14)
+        binary = ttk.Frame(notebook, padding=14)
+        notebook.add(connection, text="Connection and remote keyboard")
+        notebook.add(microdrive, text="Microdrive synchronization")
+        notebook.add(binary, text="Program injection")
+        self._build_link_connection_tab(connection)
+        self._build_microdrive_tab(microdrive)
+        self._build_binary_tab(binary)
+
+        BoardGuide(
+            parent,
+            "s1",
+            "After NanoQL starts, briefly press the highlighted S1 button to enable NanoQL Link.",
+        ).grid(row=0, column=1, rowspan=3, sticky="ne", padx=(18, 0))
+
+    def _build_link_connection_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
         ttk.Label(parent, text="NanoQL Link port", style="Section.TLabel").grid(
             row=0, column=0, sticky="w", pady=8
@@ -1102,26 +1476,15 @@ class NanoQLSetup(tk.Tk):
             columnspan=3, wraplength=440,
         )
         self._instruction(
-            parent, 5, "Activation",
-            "Briefly press S1 after NanoQL has started to expose NanoQL Link.",
-            columnspan=3, wraplength=440,
-        )
-        self._instruction(
-            parent, 6, "Layout",
+            parent, 5, "Layout",
             "The QL ROM layout is selected automatically from the FPGA overlay. The computer layout is read by the operating system.",
             columnspan=3, wraplength=440,
         )
         self._instruction(
-            parent, 7, "Stop",
+            parent, 6, "Stop",
             "Use the Stop button or F6 to return control to the assistant.",
             columnspan=3, wraplength=440,
         )
-
-        BoardGuide(
-            parent,
-            "s1",
-            "After NanoQL starts, briefly press the highlighted S1 button to enable NanoQL Link.",
-        ).grid(row=0, column=3, rowspan=8, sticky="ne", padx=(18, 0))
 
     def _build_binary_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -1174,16 +1537,7 @@ class NanoQLSetup(tk.Tk):
         )
 
     def _build_advanced_tab(self, parent: ttk.Frame) -> None:
-        parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(0, weight=1)
-        notebook = ttk.Notebook(parent)
-        notebook.grid(row=0, column=0, sticky="nsew")
-        microdrive = ttk.Frame(notebook, padding=14)
-        build = ttk.Frame(notebook, padding=14)
-        notebook.add(microdrive, text="Synchronize MDV1")
-        notebook.add(build, text="Build core from source")
-        self._build_microdrive_tab(microdrive)
-        self._build_source_tab(build)
+        self._build_source_tab(parent)
 
     def _build_source_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -1212,6 +1566,7 @@ class NanoQLSetup(tk.Tk):
             wraplength=760,
         ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
+
     def _build_microdrive_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
         self._path_row(
@@ -1237,17 +1592,11 @@ class NanoQLSetup(tk.Tk):
         self._button(parent, "Synchronize and mount MDV1", self.sync_microdrive).grid(
             row=3, column=0, columnspan=3, sticky="w", pady=(18, 8)
         )
-        ttk.Label(
-            parent,
-            text=(
-                "Optional developer workflow: start NanoQL, briefly press S1 to expose "
-                "NanoQL Link, then synchronize. Normal users can instead copy folders to "
-                "NanoQL/Microdrives on the microSD and select Build MDV1 from: in the F12 "
-                "overlay. Synchronization mounts MDV1 without restarting QDOS; NanoQL "
-                "Link and the remote keyboard remain available on the same serial port."
-            ),
-            wraplength=760,
-        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        self._instruction(
+            parent, 4, "Alternative",
+            "Normal users can copy folders to NanoQL/Microdrives on the microSD and build MDV1 from the F12 overlay without NanoQL Link.",
+            columnspan=3, wraplength=720,
+        )
 
     def _path_row(
         self,
@@ -1343,13 +1692,75 @@ class NanoQLSetup(tk.Tk):
     def _open_url(self, url: str) -> None:
         webbrowser.open(url)
 
-    def refresh_ports(self) -> None:
+    @staticmethod
+    def _serial_port_signature(ports) -> tuple[tuple[object, ...], ...]:
+        return tuple(sorted(
+            (
+                port.device,
+                getattr(port, "vid", None),
+                getattr(port, "pid", None),
+                getattr(port, "serial_number", None),
+                getattr(port, "description", None),
+            )
+            for port in ports
+        ))
+
+    @staticmethod
+    def _is_nanoql_link_port(port) -> bool:
+        if getattr(port, "vid", None) == 0xFFFF and getattr(port, "pid", None) == 0x4E51:
+            return True
+        identity = " ".join(str(value or "") for value in (
+            getattr(port, "device", ""),
+            getattr(port, "description", ""),
+            getattr(port, "manufacturer", ""),
+            getattr(port, "product", ""),
+            getattr(port, "interface", ""),
+            getattr(port, "serial_number", ""),
+        )).lower()
+        return "nanoql" in identity or "usbmodemnql" in identity
+
+    def _update_link_indicator(self, ports) -> None:
+        if not hasattr(self, "link_status_dot"):
+            return
+        nanoql_ports = [port for port in ports if self._is_nanoql_link_port(port)]
+        if len(nanoql_ports) == 1:
+            text = self._t("NanoQL Link port detected: {port}").format(
+                port=nanoql_ports[0].device
+            )
+            color = "#1f9d55"
+        elif len(nanoql_ports) > 1:
+            text = self._t("Multiple NanoQL Link ports detected")
+            color = "#d18b00"
+        else:
+            text = self._t("NanoQL Link port not detected")
+            color = "#8a8f98"
+        self.link_detection_status.set(text)
+        self.link_status_dot.itemconfigure(self.link_status_oval, fill=color)
+
+    def _poll_serial_ports(self) -> None:
+        self.port_poll_after = None
+        try:
+            ports = list(list_ports.comports())
+            signature = self._serial_port_signature(ports)
+            if signature != self._port_signature:
+                self.refresh_ports(log=False, ports=ports)
+            else:
+                self._update_link_indicator(ports)
+        except (OSError, TypeError):
+            self._update_link_indicator(())
+        finally:
+            if self.winfo_exists():
+                self.port_poll_after = self.after(1500, self._poll_serial_ports)
+
+    def refresh_ports(self, *, log: bool = True, ports=None) -> None:
         selected_devices = {
             "link": self._selected_port(self.link_port, allow_auto=True),
             "bl616": self._selected_port(self.bl616_port, allow_auto=False),
         }
+        if ports is None:
+            ports = list(list_ports.comports())
         ports = sorted(
-            list_ports.comports(),
+            ports,
             key=lambda port: (
                 not any(word in (port.description or "").lower()
                         for word in ("nanoql", "bouffalo", "usb", "serial")),
@@ -1370,6 +1781,7 @@ class NanoQLSetup(tk.Tk):
         link_values = (auto_port, *labels)
         bl616_values = (select_port, *labels)
         self.link_port_combo.configure(values=link_values)
+        self.fpga_link_port_combo.configure(values=link_values)
         self.mdv_port_combo.configure(values=link_values)
         self.binary_port_combo.configure(values=link_values)
         self.bl616_port_combo.configure(values=bl616_values)
@@ -1384,10 +1796,14 @@ class NanoQLSetup(tk.Tk):
              if device == selected_devices["bl616"]),
             select_port,
         ))
-        self._append_log(
-            f"{self._t('Serial ports refreshed')}: {len(labels)} "
-            f"{self._t('detected')}.\n"
-        )
+        self._last_ports = list(ports)
+        self._port_signature = self._serial_port_signature(ports)
+        self._update_link_indicator(ports)
+        if log:
+            self._append_log(
+                f"{self._t('Serial ports refreshed')}: {len(labels)} "
+                f"{self._t('detected')}.\n"
+            )
 
     def _selected_port(self, variable: tk.StringVar, allow_auto: bool) -> str:
         value = variable.get().strip()
@@ -1491,8 +1907,9 @@ class NanoQLSetup(tk.Tk):
         system = platform.system()
         python_state = f"Python {platform.python_version()}: {self._t('ready')}"
         programmer_state = (
-            f"{self._t('Selected FPGA programmer')}: {programmer}"
-            if programmer else f"{self._t('FPGA programmer')}: {self._t('not found')}"
+            f"{self._t('External FPGA programmer (recovery)')}: "
+            + (programmer or self._t("not found"))
+            + f" ({self._t('optional')})"
         )
         alternatives = (
             f"Gowin Programmer: {gowin or self._t('not found')}\n"
@@ -1540,6 +1957,49 @@ class NanoQLSetup(tk.Tk):
 
     def link_stress(self) -> None:
         self._run(self._link_command("link-stress"), "Testing NanoQL Link USB")
+
+    def probe_fpga_flash(self) -> None:
+        self._run(
+            self._link_command("fpga-flash-probe"),
+            "Detecting FPGA configuration Flash",
+        )
+
+    def _selected_binary_bitstream(self) -> Path | None:
+        bitstream = Path(self.bitstream_path.get()).expanduser()
+        if bitstream.suffix.lower() == ".bin" and bitstream.is_file():
+            return bitstream
+        if bitstream.suffix.lower() == ".fs":
+            binary = bitstream.with_suffix(".bin")
+            if binary.is_file():
+                return binary
+        messagebox.showerror(
+            self._t("Missing binary bitstream"),
+            self._t(
+                "Select a Gowin .bin bitstream, or keep the matching .bin file "
+                "beside the selected .fs file."
+            ),
+        )
+        return None
+
+    def program_fpga_flash_via_link(self) -> None:
+        bitstream = self._selected_binary_bitstream()
+        if bitstream is None:
+            return
+        command = self._link_command("fpga-flash")
+        command.extend([str(bitstream), "--yes"])
+        self._run(
+            command,
+            "Programming FPGA Flash through NanoQL Link",
+            lambda: self._mark_workflow("fpga"),
+        )
+
+    def program_fpga_sram_via_link(self) -> None:
+        bitstream = self._selected_binary_bitstream()
+        if bitstream is None:
+            return
+        command = self._link_command("fpga")
+        command.append(str(bitstream))
+        self._run(command, "Programming FPGA SRAM through NanoQL Link")
 
     def inject_binary(self) -> None:
         binary = Path(self.binary_path.get()).expanduser()
@@ -1621,7 +2081,17 @@ class NanoQLSetup(tk.Tk):
             "230400" if platform.system() == "Darwin" else "2000000",
             "--yes",
         ]
-        self._run(command, "Flashing BL616 firmware")
+        self._run(
+            command,
+            ("Installing NanoQL BL616 firmware"
+             if self.firmware_mode.get() == "nanoql"
+             else "Restoring Sipeed BL616 firmware"),
+            lambda: self._mark_workflow("bl616"),
+        )
+
+    def flash_bl616_profile(self, profile: str) -> None:
+        self.firmware_mode.set(profile)
+        self.flash_bl616()
 
     def _open_flashcube(self) -> None:
         config = self._selected_config()
@@ -1662,7 +2132,10 @@ class NanoQLSetup(tk.Tk):
                 "--mdv-folder", self.mdv_folder.get(),
                 "--mdv-name", self.mdv_name.get(),
             ])
-        self._run(command, "Preparing microSD")
+        self._run(
+            command, "Preparing microSD",
+            lambda: self._mark_workflow("sd"),
+        )
 
     def sync_microdrive(self) -> None:
         if not self.mdv_folder.get():
@@ -1787,7 +2260,11 @@ class NanoQLSetup(tk.Tk):
                     "--channel", "1",
                     "--location", str(location),
                 ]
-        self._run(command, "Programming Flash" if persistent else "Programming SRAM")
+        self._run(
+            command,
+            "Programming Flash" if persistent else "Programming SRAM",
+            lambda: self._mark_workflow("fpga") if persistent else None,
+        )
 
     def detect_fpga(self) -> None:
         loader = self.loader_path.get()
@@ -1818,10 +2295,47 @@ class NanoQLSetup(tk.Tk):
     def _run(self, command: list[str], title: str, callback=None) -> None:
         self._run_commands([command], title, callback)
 
+    @staticmethod
+    def _progress_from_output(line: str) -> tuple[float, str] | None:
+        clean = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line).strip()
+        match = re.search(r"(\d+(?:[.,]\d+)?)\s*%\s*$", clean)
+        if not match:
+            return None
+        prefix = clean[:match.start()]
+        if not (
+            re.search(
+                r"\b(upload|download|transfer|programming|verifying|sending|"
+                r"receiving|writing|erasing|creating|progress)\b",
+                prefix,
+                flags=re.IGNORECASE,
+            )
+            or re.search(r"\[[#=+> .-]+\]", prefix)
+        ):
+            return None
+        percent = max(0.0, min(100.0, float(match.group(1).replace(",", "."))))
+        label = prefix.strip()
+        label = re.sub(r"\[[#=+> .-]+\]\s*$", "", label).rstrip(": -")
+        return percent, label
+
+    def _start_progress(self, title: str) -> None:
+        self.progress.stop()
+        self.progress.configure(mode="indeterminate", maximum=100.0)
+        self.progress_value.set(0.0)
+        self.progress_text.set(f"{self._t(title)}...")
+        self.progress.start(12)
+
+    def _show_progress(self, percent: float, label: str) -> None:
+        self.progress.stop()
+        self.progress.configure(mode="determinate", maximum=100.0)
+        self.progress_value.set(percent)
+        description = label or self._t(getattr(self, "_status_source", "Ready"))
+        self.progress_text.set(f"{description} {percent:.0f}%")
+
     def _run_commands(
         self, commands: list[list[str]], title: str, callback=None
     ) -> None:
         self._set_status(title)
+        self._start_progress(title)
         for widget in self.busy_widgets:
             widget.configure(state="disabled")
 
@@ -1864,7 +2378,11 @@ class NanoQLSetup(tk.Tk):
                         watchdog.start()
                     for line in process.stdout:
                         output_lines.append(line)
-                        self.events.put(("log", line))
+                        progress = self._progress_from_output(line)
+                        if progress is None:
+                            self.events.put(("log", line))
+                        else:
+                            self.events.put(("progress", progress))
                         if is_gowin_cli and re.search(
                             r"\bCost\s+[0-9.]+\s+second\(s\)", line
                         ):
@@ -1905,6 +2423,9 @@ class NanoQLSetup(tk.Tk):
                 event, payload = self.events.get_nowait()
                 if event == "log":
                     self._append_log(str(payload))
+                elif event == "progress":
+                    percent, label = payload
+                    self._show_progress(percent, label)
                 elif event == "done":
                     title, callback = payload
                     self._finish_busy("Complete")
@@ -1922,6 +2443,10 @@ class NanoQLSetup(tk.Tk):
 
     def _finish_busy(self, status: str) -> None:
         self._set_status(status)
+        self.progress.stop()
+        self.progress.configure(mode="determinate", maximum=100.0)
+        self.progress_value.set(100.0 if status == "Complete" else 0.0)
+        self.progress_text.set(self._t(status))
         for widget in self.busy_widgets:
             widget.configure(state="normal")
 

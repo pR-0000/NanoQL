@@ -33,6 +33,7 @@
 #include "../sdc.h"
 #include "../spi.h"
 #include "../sysctrl.h"
+#include "nanoql_flash.h"
 #include "nanoql_usb.h"
 
 #define USB_BUS_ID 0
@@ -75,6 +76,9 @@
 #define NANOQL_CMD_FPGA_PROGRAM 0xf2
 #define NANOQL_CMD_FPGA_FLASH_BEGIN 0xf3
 #define NANOQL_CMD_FPGA_FLASH_PROGRAM 0xf4
+#define NANOQL_CMD_FPGA_FLASH_PROBE 0xf5
+#define NANOQL_CMD_FPGA_FLASH_DIAGNOSTIC 0xf6
+#define NANOQL_CMD_FPGA_JTAG_DIAGNOSTIC 0xf7
 #define NANOQL_FPGA_MAX_SIZE (2u * 1024u * 1024u)
 
 #define NANOQL_FS_ROOT CARD_MOUNTPOINT "/NanoQL/Drive1"
@@ -94,6 +98,7 @@ static TaskHandle_t development_watch_task_handle;
 static bool development_active;
 
 extern TaskHandle_t com_task_handle;
+extern void nanoql_companion_start(void);
 
 static USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t usb_read_buffer[512];
 static USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t usb_write_buffer[256];
@@ -103,14 +108,18 @@ static volatile uint16_t rx_tail;
 static volatile bool usb_ready;
 static volatile bool usb_tx_busy;
 static volatile bool usb_rx_reset_requested;
+static bool recovery_mode;
 static bool fpga_upload_open;
+static bool fpga_upload_flash;
 static bool companion_suspended_for_upload;
 static bool companion_resume_after_tx;
+static bool companion_start_after_tx;
 static bool microdrive_sync_active;
 static uint32_t fpga_upload_size;
 static uint32_t fpga_upload_received;
 static uint32_t fpga_upload_crc;
 static uint32_t fpga_upload_expected_crc;
+static uint32_t fpga_upload_gowin_checksum;
 static bool return_to_companion_pending;
 static bool microdrive_reset_pending;
 
@@ -161,7 +170,7 @@ static const uint8_t device_qualifier_descriptor[] = {
 static const char *string_descriptors[] = {
     (const char[]){0x09, 0x04},
     "NanoQL",
-    "NanoQL Link v0.3.0",
+    "NanoQL Link v0.3.1",
     "NQL0001"
 };
 
@@ -202,7 +211,32 @@ bool nanoql_development_requested(void)
     bool fpga_ready = false;
 
     for (unsigned attempt = 0; attempt < 150; ++attempt) {
-        if (sys_status_is_valid()) {
+        unsigned char received = 0;
+        unsigned char status0 = 0;
+        unsigned char status1 = 0;
+        bool transaction_began = mcu_hw_spi_begin_timeout(2);
+        bool transaction_ok = transaction_began;
+
+        if (transaction_ok)
+            transaction_ok = mcu_hw_spi_tx_u08_timeout(
+                SPI_TARGET_SYS, 2, &received);
+        if (transaction_ok)
+            transaction_ok = mcu_hw_spi_tx_u08_timeout(
+                SPI_SYS_STATUS, 2, &received);
+        if (transaction_ok)
+            transaction_ok = mcu_hw_spi_tx_u08_timeout(0, 2, &received);
+        if (transaction_ok)
+            transaction_ok = mcu_hw_spi_tx_u08_timeout(0, 2, &status0);
+        if (transaction_ok)
+            transaction_ok = mcu_hw_spi_tx_u08_timeout(0, 2, &status1);
+        if (transaction_ok)
+            transaction_ok = mcu_hw_spi_tx_u08_timeout(0, 2, &received);
+        if (transaction_ok)
+            transaction_ok = mcu_hw_spi_tx_u08_timeout(0, 2, &received);
+        if (transaction_began)
+            mcu_hw_spi_end();
+
+        if (transaction_ok && status0 == 0x5c && status1 == 0x42) {
             fpga_ready = true;
             break;
         }
@@ -210,8 +244,12 @@ bool nanoql_development_requested(void)
     }
 
     if (!fpga_ready) {
-        debugf("NanoQL: FPGA not ready, selecting autonomous USB mode");
-        return false;
+        /* A blank or partially programmed configuration Flash cannot expose
+           S1 through the Companion protocol. Enter CDC recovery mode
+           automatically so NanoQL Link can repair the FPGA Flash. */
+        debugf("NanoQL: FPGA not ready, selecting recovery CDC mode");
+        recovery_mode = true;
+        return true;
     }
 
     /* Live takeover is handled by development_watch_task. Sampling once
@@ -229,6 +267,11 @@ bool nanoql_development_requested(void)
 bool nanoql_usb_is_active(void)
 {
     return development_active;
+}
+
+bool nanoql_usb_is_recovery(void)
+{
+    return recovery_mode;
 }
 
 static void prioritize_link_over_companion(void)
@@ -540,6 +583,19 @@ static uint8_t fs_command(
     *response_length = 0;
 
     switch (payload[0]) {
+    case NANOQL_CMD_FPGA_JTAG_DIAGNOSTIC: {
+        if (length != 1)
+            return 3;
+        uint32_t status = gowin_stream_last_status();
+        response[0] = 0;
+        response[1] = (uint8_t)(status >> 24);
+        response[2] = (uint8_t)(status >> 16);
+        response[3] = (uint8_t)(status >> 8);
+        response[4] = (uint8_t)status;
+        *response_length = 5;
+        return 0;
+    }
+
     case NANOQL_CMD_FS_INFO:
         if (length != 1)
             return 3;
@@ -1018,8 +1074,12 @@ static void fpga_upload_abort(void)
 {
     if (!fpga_upload_open)
         return;
-    gowin_stream_abort();
+    if (fpga_upload_flash)
+        nanoql_flash_abort();
+    else
+        gowin_stream_abort();
     fpga_upload_open = false;
+    fpga_upload_flash = false;
     if (companion_suspended_for_upload) {
         vTaskResume(com_task_handle);
         companion_suspended_for_upload = false;
@@ -1058,14 +1118,52 @@ static void fpga_upload_resume_companion(void)
 }
 
 static uint8_t fpga_upload_command(
-    const uint8_t *payload, uint8_t length, uint8_t *response)
+    const uint8_t *payload, uint8_t length, uint8_t *response,
+    uint8_t *response_length)
 {
+    *response_length = 1;
     switch (payload[0]) {
-    case NANOQL_CMD_FPGA_FLASH_BEGIN:
-    case NANOQL_CMD_FPGA_FLASH_PROGRAM:
-        return 13;
+    case NANOQL_CMD_FPGA_FLASH_DIAGNOSTIC: {
+        if (length != 1)
+            return 3;
+        nanoql_flash_diagnostic_t diagnostic;
+        nanoql_flash_get_diagnostic(&diagnostic);
+        response[0] = 0;
+        response[1] = diagnostic.stage;
+        response[2] = diagnostic.status;
+        response[3] = diagnostic.expected;
+        response[4] = diagnostic.actual;
+        response[5] = (uint8_t)(diagnostic.address >> 24);
+        response[6] = (uint8_t)(diagnostic.address >> 16);
+        response[7] = (uint8_t)(diagnostic.address >> 8);
+        response[8] = (uint8_t)diagnostic.address;
+        *response_length = 9;
+        return 0;
+    }
 
-    case NANOQL_CMD_FPGA_BEGIN:
+    case NANOQL_CMD_FPGA_FLASH_PROBE: {
+        if (length != 1)
+            return 3;
+        fpga_upload_abort();
+        if (!fpga_upload_suspend_companion())
+            return 5;
+        uint32_t jedec_id = 0;
+        uint8_t flash_status = 0;
+        bool detected = nanoql_flash_probe(&jedec_id, &flash_status);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        fpga_upload_resume_companion();
+        if (!detected)
+            return 10;
+        response[0] = 0;
+        response[1] = (uint8_t)(jedec_id >> 16);
+        response[2] = (uint8_t)(jedec_id >> 8);
+        response[3] = (uint8_t)jedec_id;
+        response[4] = flash_status;
+        *response_length = 5;
+        return 0;
+    }
+
+    case NANOQL_CMD_FPGA_FLASH_BEGIN: {
         if (length != 9)
             return 3;
         fpga_upload_abort();
@@ -1075,11 +1173,44 @@ static uint8_t fpga_upload_command(
             return 4;
         if (!fpga_upload_suspend_companion())
             return 5;
+        uint32_t jedec_id = 0;
+        uint8_t flash_status = 0;
+        if (!nanoql_flash_begin(
+                fpga_upload_size, &jedec_id, &flash_status)) {
+            fpga_upload_resume_companion();
+            return 10;
+        }
+        fpga_upload_open = true;
+        fpga_upload_flash = true;
+        fpga_upload_received = 0;
+        fpga_upload_crc = UINT32_C(0xffffffff);
+        response[0] = 0;
+        response[1] = (uint8_t)(jedec_id >> 16);
+        response[2] = (uint8_t)(jedec_id >> 8);
+        response[3] = (uint8_t)jedec_id;
+        response[4] = flash_status;
+        *response_length = 5;
+        return 0;
+    }
+
+    case NANOQL_CMD_FPGA_BEGIN:
+        if (length != 9 && length != 13)
+            return 3;
+        fpga_upload_abort();
+        fpga_upload_size = read_be32(&payload[1]);
+        fpga_upload_expected_crc = read_be32(&payload[5]);
+        fpga_upload_gowin_checksum = length == 13
+            ? read_be32(&payload[9]) : UINT32_C(0xffffffff);
+        if (!fpga_upload_size || fpga_upload_size > NANOQL_FPGA_MAX_SIZE)
+            return 4;
+        if (!fpga_upload_suspend_companion())
+            return 5;
         if (!gowin_stream_begin()) {
             fpga_upload_resume_companion();
             return 5;
         }
         fpga_upload_open = true;
+        fpga_upload_flash = false;
         fpga_upload_received = 0;
         fpga_upload_crc = UINT32_C(0xffffffff);
         response[0] = 0;
@@ -1090,10 +1221,13 @@ static uint8_t fpga_upload_command(
             fpga_upload_received + length - 1 > fpga_upload_size)
             return 6;
         bool last = fpga_upload_received + length - 1 == fpga_upload_size;
-        bool written = gowin_stream_data(&payload[1], length - 1, last);
+        bool was_flash = fpga_upload_flash;
+        bool written = fpga_upload_flash
+            ? nanoql_flash_write(&payload[1], length - 1)
+            : gowin_stream_data(&payload[1], length - 1, last);
         if (!written) {
             fpga_upload_abort();
-            return 7;
+            return was_flash ? 11 : 7;
         }
         fpga_upload_crc = crc32_update(
             fpga_upload_crc, &payload[1], length - 1);
@@ -1102,7 +1236,7 @@ static uint8_t fpga_upload_command(
         return 0;
 
     case NANOQL_CMD_FPGA_PROGRAM: {
-        if (length != 1 || !fpga_upload_open)
+        if (length != 1 || !fpga_upload_open || fpga_upload_flash)
             return 6;
         bool valid = fpga_upload_received == fpga_upload_size &&
                      (fpga_upload_crc ^ UINT32_C(0xffffffff)) ==
@@ -1114,11 +1248,44 @@ static uint8_t fpga_upload_command(
 
         debugf("NanoQL: finalizing %lu streamed FPGA bytes",
                (unsigned long)fpga_upload_size);
-        bool programmed = gowin_stream_end();
+        bool programmed = gowin_stream_end(fpga_upload_gowin_checksum);
         fpga_upload_open = false;
         if (!programmed) {
             fpga_upload_resume_companion();
             return 9;
+        }
+        if (recovery_mode) {
+            /* A BL616 watchdog reset makes this board reload the damaged
+               external configuration Flash and discards the valid SRAM core.
+               Keep USB alive and start Companion directly after the reply. */
+            recovery_mode = false;
+            companion_start_after_tx = true;
+        } else {
+            return_to_companion_pending = true;
+        }
+        response[0] = 0;
+        return 0;
+    }
+
+    case NANOQL_CMD_FPGA_FLASH_PROGRAM: {
+        if (length != 1 || !fpga_upload_open || !fpga_upload_flash)
+            return 6;
+        bool valid = fpga_upload_received == fpga_upload_size &&
+                     (fpga_upload_crc ^ UINT32_C(0xffffffff)) ==
+                         fpga_upload_expected_crc;
+        if (!valid) {
+            fpga_upload_abort();
+            return 8;
+        }
+
+        debugf("NanoQL: finalizing %lu persistent FPGA bytes",
+               (unsigned long)fpga_upload_size);
+        bool programmed = nanoql_flash_finish();
+        fpga_upload_open = false;
+        fpga_upload_flash = false;
+        if (!programmed) {
+            fpga_upload_resume_companion();
+            return 12;
         }
         return_to_companion_pending = true;
         response[0] = 0;
@@ -1248,12 +1415,11 @@ static void process_frame(
     uint8_t response_length;
     if (payload[0] >= NANOQL_CMD_FPGA_BEGIN) {
         uint8_t error = fpga_upload_command(
-            payload, length, spi_response);
+            payload, length, spi_response, &response_length);
         if (error) {
             send_error(sequence, error);
             return;
         }
-        response_length = 1;
     } else if (payload[0] >= NANOQL_CMD_FS_INFO) {
         uint8_t error = fs_command(
             payload, length, spi_response, &response_length);
@@ -1379,6 +1545,12 @@ static void link_task(void *argument)
                 companion_resume_after_tx = false;
                 (void)usb_wait_for_tx(20);
                 fpga_upload_resume_companion();
+            }
+            if (companion_start_after_tx) {
+                companion_start_after_tx = false;
+                (void)usb_wait_for_tx(20);
+                debugf("NanoQL: starting Companion after SRAM recovery");
+                nanoql_companion_start();
             }
             break;
         }

@@ -15,7 +15,10 @@ module tb_ql_companion_hid;
 
     always #5 clk = ~clk;
 
-    ql_companion_hid #(.CAPS_PULSE_CYCLES(8)) dut (
+    ql_companion_hid #(
+        .CAPS_PULSE_CYCLES(8),
+        .KEY_MIN_HOLD_TICKS(0)
+    ) dut (
         .clk(clk),
         .reset(reset),
         .data_strobe(data_strobe),
@@ -118,6 +121,7 @@ module tb_ql_companion_hid;
                 $fatal(1, "usage %02x produced wrong shift state",
                        raw_usage);
             send_hid({1'b1, raw_usage});
+            repeat (10) @(negedge clk);
             if (matrix[matrix_bit] || matrix[56])
                 $fatal(1, "usage %02x did not release cleanly", raw_usage);
         end
@@ -171,6 +175,32 @@ module tb_ql_companion_hid;
         send_hid(8'h9e);
         send_hid(8'he9);
 
+        // Some USB stacks report Shift-up before the ordinary key-up. The
+        // stored semantic binding must keep the original QL contact until
+        // that ordinary key is actually released.
+        send_hid(8'h69);
+        send_hid(8'h1e); // AZERTY Shift+1 -> English digit 1
+        send_hid(8'he9);
+        if (!matrix[35] || matrix[56])
+            $fatal(1, "Shift-first release changed a held semantic key");
+        send_hid(8'h9e);
+        repeat (10) @(negedge clk);
+        if (matrix[35] || matrix[56])
+            $fatal(1, "stored semantic key did not release cleanly");
+
+        // Letters use the same stored contact and modifier state. This keeps
+        // a short physical USB press visible to the IPC and prevents a
+        // Shift-up report from changing an uppercase key before key-up.
+        send_hid(8'h69);
+        send_hid(8'h04); // AZERTY A position -> English QL Q
+        send_hid(8'he9);
+        if (!matrix[51] || !matrix[56])
+            $fatal(1, "Shift-first release changed a held letter");
+        send_hid(8'h84);
+        repeat (10) @(negedge clk);
+        if (matrix[51] || matrix[56])
+            $fatal(1, "stored letter did not release cleanly");
+
         // A PC AZERTY Caps Lock also exposes digits on the number row.
         // This host-layout convenience is separate from the QL IPC's own
         // letter-only Caps Lock behavior.
@@ -199,6 +229,14 @@ module tb_ql_companion_hid;
         if (!matrix[33] || matrix[56])
             $fatal(1, "USB idle snapshot incorrectly cleared AZERTY Caps Lock");
         send_hid(8'ha0);
+        // With PC Caps Lock active, Shift restores the AZERTY punctuation
+        // layer instead of leaving the number layer selected.
+        send_hid(8'h69);
+        send_hid(8'h1e);
+        if (!matrix[7] || !matrix[56] || matrix[35])
+            $fatal(1, "AZERTY Caps+Shift+1 did not produce ampersand");
+        send_hid(8'h9e);
+        send_hid(8'he9);
         send_caps_state(1'b0);
         if (!matrix[25])
             $fatal(1, "Caps Lock release did not pulse the QL contact");

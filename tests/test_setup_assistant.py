@@ -23,9 +23,11 @@ class SetupAssistantTests(unittest.TestCase):
         source = GUI.read_text(encoding="utf-8")
         self.assertIn("Program SRAM (temporary)", source)
         self.assertIn("Program Flash (permanent)", source)
-        self.assertIn('text="4. Remote keyboard"', source)
-        self.assertIn('text="5. Binary injection"', source)
-        self.assertIn('"Flash firmware", self.flash_bl616', source)
+        self.assertIn('text="2. BL616"', source)
+        self.assertIn('text="3. FPGA"', source)
+        self.assertIn('text="4. NanoQL Link"', source)
+        self.assertIn('text="Program injection"', source)
+        self.assertIn('"Install / update NanoQL firmware",', source)
         self.assertNotIn("messagebox.askyesno", source)
         self.assertTrue((REPOSITORY / "tools" / "nanoql_setup.py").is_file())
 
@@ -34,10 +36,12 @@ class SetupAssistantTests(unittest.TestCase):
         translations = namespace["TRANSLATIONS"]["fr"]
         for text in (
             "Start here",
-            "4. Remote keyboard",
+            "2. BL616",
+            "3. FPGA",
+            "4. NanoQL Link",
             "Program SRAM (temporary)",
             "Program Flash (permanent)",
-            "Flash firmware",
+            "Install / update NanoQL firmware",
             "Inject and execute",
         ):
             self.assertIn(text, translations)

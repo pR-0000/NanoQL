@@ -8,7 +8,7 @@ Le transport suit ce chemin : PC en USB CDC, BL616, SPI interne cible 4, arbitre
 
 S1 est aussi la broche MODE0 du FPGA Gowin. Ne le maintenez pas pendant la mise sous tension. Appuyez brièvement sur S1 seulement après l'apparition de l'image HDMI ou l'allumage des LED NanoQL. S2 n'est pas utilisé par NanoQL Link.
 
-Ce mode CDC n'est pas le périphérique double canal `SIPEED USB Debugger` du firmware FPGA Partner officiel et ne peut donc pas être utilisé directement par Gowin Programmer. Pour le développement courant, la commande `fpga` ci-dessous programme la SRAM du FPGA sans changer de firmware BL616. Gowin Programmer nécessite de restaurer temporairement le profil FPGA Partner officiel.
+Ce mode CDC n'est pas le périphérique double canal `SIPEED USB Debugger` du firmware FPGA Partner officiel et ne peut donc pas être utilisé directement par Gowin Programmer. NanoQL Link dispose toutefois de ses propres commandes pour programmer directement la SRAM et la Flash de configuration du FPGA. Le profil Sipeed officiel ne sert plus qu'à la récupération ou aux outils JTAG externes.
 
 Carte mémoire v1 :
 
@@ -132,13 +132,13 @@ python tools/nanoql_link.py --port COMx fpga impl/pnr/NanoQL_sd_rom.bin
 
 Le bitstream passe directement de l'USB au moteur JTAG du BL616, sans fichier temporaire et sans écriture sur la microSD. Sa taille et son CRC sont vérifiés avant la finalisation du FPGA. Après l'accusé de réception, le BL616 redémarre automatiquement en mode Companion et le port COM disparaît. Cette commande est destinée aux essais de développement ; après une coupure d'alimentation, le bitstream conservé dans la Flash FPGA redémarre.
 
-La programmation persistante ne passe pas par le moteur SPI expérimental du BL616. Restaurez temporairement le profil BL616 `ORIGINAL` correspondant à la révision de la carte, fermez Gowin Programmer s'il est ouvert, puis utilisez le fichier `.fs` validé :
+Pour programmer la Flash de configuration de façon permanente avec le même firmware BL616 NanoQL :
 
 ```text
-python tools/nanoql_link.py fpga-flash-native impl/pnr/NanoQL_sd_rom.fs --yes
+python tools/nanoql_link.py --port COMx fpga-flash impl/pnr/NanoQL_sd_rom.bin --yes
 ```
 
-Sous Windows, le script utilise Gowin Programmer et sélectionne par défaut `USB Debugger A/1`. L'option `--location` permet d'indiquer l'identifiant du câble si sa détection automatique échoue. Sous Linux et macOS, openFPGALoader est utilisé lorsqu'il est installé. Après la programmation, réinstallez le profil BL616 `NANOQL` pour retrouver le clavier USB, la microSD et NanoQL Link.
+Cette commande identifie la Flash SPI, efface les blocs nécessaires, programme et vérifie le bitstream, puis recharge le FPGA. Ne coupez pas l'USB ou l'alimentation avant la fin. La commande facultative `fpga-flash-probe` vérifie l'identifiant JEDEC sans remplacer le bitstream. `fpga-flash-native` reste disponible comme solution de récupération avec le firmware Sipeed d'origine et un programmateur JTAG externe.
 
 ## English
 
@@ -148,7 +148,7 @@ The transport path is PC USB CDC, BL616, internal SPI target 4, SDRAM arbiter, t
 
 S1 is also the Gowin FPGA MODE0 pin. Do not hold it while powering the board. Briefly press S1 only after the HDMI image appears or the NanoQL LEDs turn on. S2 is not used by NanoQL Link.
 
-This CDC device is not the official FPGA Partner firmware's dual-channel `SIPEED USB Debugger`, so Gowin Programmer cannot use it directly. For normal development, the `fpga` command below programs FPGA SRAM without changing BL616 firmware. Gowin Programmer requires temporarily restoring the official FPGA Partner profile.
+This CDC device is not the official FPGA Partner firmware's dual-channel `SIPEED USB Debugger`, so Gowin Programmer cannot use it directly. NanoQL Link instead provides its own direct commands for FPGA SRAM and configuration Flash. The official Sipeed profile is now only needed for recovery or external JTAG tools.
 
 The PC utility is `tools/nanoql_link.py`. Unified firmware sources are in `firmware/bl616/nanoql_companion` and support board revisions 3921 and 3923.
 
@@ -223,10 +223,10 @@ To load a numbered SuperBASIC text file, leave the QL at its SuperBASIC prompt a
 
 The command `python tools/nanoql_link.py --port COMx fpga impl/pnr/NanoQL_sd_rom.bin` streams Gowin's `.bin` output directly from USB into FPGA SRAM through the BL616 JTAG engine, without writing the microSD. After acknowledging completion, the BL616 automatically restarts in Companion mode and the COM port disappears. It is temporary development programming; the FPGA Flash bitstream returns after power cycling.
 
-Persistent programming does not use the experimental BL616 SPI engine. Temporarily restore the `ORIGINAL` BL616 profile for the board revision, close Gowin Programmer if it is open, and program the validated `.fs` file:
+To program FPGA configuration Flash permanently with the same NanoQL BL616 firmware:
 
 ```text
-python tools/nanoql_link.py fpga-flash-native impl/pnr/NanoQL_sd_rom.fs --yes
+python tools/nanoql_link.py --port COMx fpga-flash impl/pnr/NanoQL_sd_rom.bin --yes
 ```
 
-On Windows, the script uses Gowin Programmer and selects `USB Debugger A/1` by default. Use `--location` if automatic cable-location detection fails. On Linux and macOS, it uses openFPGALoader when installed. Reinstall the `NANOQL` BL616 profile afterward to restore the USB keyboard, microSD, and NanoQL Link.
+This command identifies SPI Flash, erases the required blocks, programs and verifies the bitstream, then reloads the FPGA. Do not disconnect USB or power before completion. The optional `fpga-flash-probe` command checks the JEDEC identifier without replacing the bitstream. `fpga-flash-native` remains available as a recovery route with Sipeed original firmware and an external JTAG programmer.

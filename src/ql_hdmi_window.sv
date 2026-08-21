@@ -27,10 +27,14 @@ module ql_hdmi_window(
     always @* begin
         case (video_mode)
             3'd0, 3'd3: begin
-                ql_left = 11'd358;
-                ql_width = 11'd564;
-                ql_top = 10'd168;
-                ql_height = 10'd384;
+                // Sharp gives every QL source column exactly two HDMI
+                // pixels.  The vertical size retains the corrected QL pixel
+                // aspect ratio; its fractional scaling is much less visible
+                // than irregular character and stipple widths.
+                ql_left = 11'd128;
+                ql_width = 11'd1024;
+                ql_top = 10'd11;
+                ql_height = 10'd698;
             end
             3'd1, 3'd4: begin
                 ql_left = 11'd218;

@@ -48,6 +48,9 @@ FIRMWARE_ERRORS = {
     7: "direct FPGA transfer failed",
     8: "invalid FPGA bitstream size or CRC",
     9: "FPGA JTAG programming failed",
+    10: "FPGA configuration Flash was not detected or is protected",
+    11: "FPGA configuration Flash erase, write, or verification failed",
+    12: "FPGA configuration Flash finalization failed",
     20: "microSD filesystem is not ready",
     21: "invalid Drive1 path",
     22: "another microSD file operation is active",
@@ -112,6 +115,27 @@ CMD_FS_MDV_CONTROL = 0xEC
 CMD_FPGA_BEGIN = 0xF0
 CMD_FPGA_DATA = 0xF1
 CMD_FPGA_PROGRAM = 0xF2
+CMD_FPGA_FLASH_BEGIN = 0xF3
+CMD_FPGA_FLASH_PROGRAM = 0xF4
+CMD_FPGA_FLASH_PROBE = 0xF5
+CMD_FPGA_FLASH_DIAGNOSTIC = 0xF6
+CMD_FPGA_JTAG_DIAGNOSTIC = 0xF7
+
+FPGA_FLASH_STAGES = {
+    0: "no recorded failure",
+    1: "write-enable command",
+    2: "write-enable status",
+    3: "64-KiB block-erase command",
+    4: "64-KiB block-erase completion",
+    5: "64-KiB block-erase verification",
+    6: "page-program command",
+    7: "page-program completion",
+    8: "Flash readback command",
+    9: "page readback verification",
+    10: "write-disable command",
+    11: "write-disable status",
+    12: "JEDEC identification",
+}
 
 MOD_LEFT_CTRL = 0x68
 MOD_LEFT_SHIFT = 0x69
@@ -1192,7 +1216,7 @@ class NanoQLLink:
     def qdos(self) -> None:
         self.transact(bytes((CMD_QDOS,)))
 
-    def program_fpga(self, bitstream: bytes) -> None:
+    def program_fpga(self, bitstream: bytes, gowin_checksum: int) -> None:
         if not bitstream or len(bitstream) > 2 * 1024 * 1024:
             raise ValueError("The FPGA bitstream must be between 1 byte and 2 MiB.")
         checksum = zlib.crc32(bitstream) & 0xFFFFFFFF
@@ -1200,7 +1224,7 @@ class NanoQLLink:
         try:
             self.transact(
                 bytes((CMD_FPGA_BEGIN,)) +
-                struct.pack(">II", len(bitstream), checksum)
+                struct.pack(">III", len(bitstream), checksum, gowin_checksum)
             )
             sent = 0
             for offset in range(0, len(bitstream), MAX_LINK_PAYLOAD - 1):
@@ -1212,9 +1236,133 @@ class NanoQLLink:
             print()
 
             self.serial.timeout = 120
-            self.transact(bytes((CMD_FPGA_PROGRAM,)))
+            try:
+                self.transact(bytes((CMD_FPGA_PROGRAM,)))
+            except RuntimeError as error:
+                try:
+                    response = self.transact(bytes((CMD_FPGA_JTAG_DIAGNOSTIC,)))
+                    if len(response) == 5 and response[0] == 0:
+                        status = int.from_bytes(response[1:5], "big")
+                        raise RuntimeError(
+                            f"{error} Gowin status register: 0x{status:08x}."
+                        ) from error
+                except RuntimeError as diagnostic_error:
+                    if "Gowin status register" in str(diagnostic_error):
+                        raise
+                raise
         finally:
-            self.serial.timeout = previous_timeout
+            try:
+                self.serial.timeout = previous_timeout
+            except (serial.SerialException, PermissionError, OSError):
+                # FPGA configuration may intentionally change or remove the
+                # CDC endpoint before pyserial restores its timeout.
+                pass
+
+    def probe_fpga_flash(self) -> tuple[int, int]:
+        previous_timeout = self.serial.timeout
+        try:
+            self.serial.timeout = 15
+            try:
+                response = self.transact(bytes((CMD_FPGA_FLASH_PROBE,)))
+            except RuntimeError as error:
+                try:
+                    diagnostic = self.fpga_flash_diagnostic()
+                except (RuntimeError, serial.SerialException, OSError) as diag_error:
+                    diagnostic = f"unavailable ({diag_error})"
+                raise RuntimeError(
+                    f"{error} Flash diagnostic: {diagnostic}."
+                ) from error
+        finally:
+            try:
+                self.serial.timeout = previous_timeout
+            except (serial.SerialException, PermissionError, OSError):
+                pass
+        if len(response) != 5 or response[0] != 0:
+            raise RuntimeError("Incomplete FPGA configuration-Flash probe response.")
+        return int.from_bytes(response[1:4], "big"), response[4]
+
+    def fpga_flash_diagnostic(self) -> str:
+        response = self.transact(bytes((CMD_FPGA_FLASH_DIAGNOSTIC,)))
+        if len(response) != 9 or response[0] != 0:
+            return "diagnostic response is incomplete"
+        stage = response[1]
+        status = response[2]
+        expected = response[3]
+        actual = response[4]
+        address = int.from_bytes(response[5:9], "big")
+        stage_name = FPGA_FLASH_STAGES.get(stage, f"unknown stage {stage}")
+        location = (
+            f"FPGA-status=0x{address:08x}"
+            if stage == 12 else f"address=0x{address:06x}"
+        )
+        return (
+            f"stage={stage_name}, {location}, "
+            f"status=0x{status:02x}, expected=0x{expected:02x}, "
+            f"actual=0x{actual:02x}"
+        )
+
+    def program_fpga_flash(self, bitstream: bytes) -> tuple[int, int]:
+        if not bitstream or len(bitstream) > 2 * 1024 * 1024:
+            raise ValueError("The FPGA bitstream must be between 1 byte and 2 MiB.")
+        checksum = zlib.crc32(bitstream) & 0xFFFFFFFF
+        previous_timeout = self.serial.timeout
+        try:
+            self.serial.timeout = 15
+            response = self.transact(
+                bytes((CMD_FPGA_FLASH_BEGIN,)) +
+                struct.pack(">II", len(bitstream), checksum)
+            )
+            if len(response) != 5 or response[0] != 0:
+                raise RuntimeError(
+                    "Incomplete FPGA configuration-Flash initialization response."
+                )
+            jedec_id = int.from_bytes(response[1:4], "big")
+            flash_status = response[4]
+            print(
+                f"FPGA configuration Flash: JEDEC 0x{jedec_id:06x}, "
+                f"status 0x{flash_status:02x}."
+            )
+
+            sent = 0
+            for offset in range(0, len(bitstream), MAX_LINK_PAYLOAD - 1):
+                block = bitstream[offset:offset + MAX_LINK_PAYLOAD - 1]
+                try:
+                    self.transact(bytes((CMD_FPGA_DATA,)) + block)
+                except RuntimeError as error:
+                    try:
+                        diagnostic = self.fpga_flash_diagnostic()
+                    except (RuntimeError, serial.SerialException, OSError) as diag_error:
+                        diagnostic = f"unavailable ({diag_error})"
+                    raise RuntimeError(
+                        f"{error} Flash diagnostic: {diagnostic}."
+                    ) from error
+                sent += len(block)
+                percent = sent * 100 // len(bitstream)
+                print(
+                    f"\rProgramming and verifying FPGA Flash: {percent:3d}%",
+                    end="", flush=True,
+                )
+            print()
+
+            self.serial.timeout = 30
+            try:
+                self.transact(bytes((CMD_FPGA_FLASH_PROGRAM,)))
+            except RuntimeError as error:
+                try:
+                    diagnostic = self.fpga_flash_diagnostic()
+                except (RuntimeError, serial.SerialException, OSError) as diag_error:
+                    diagnostic = f"unavailable ({diag_error})"
+                raise RuntimeError(
+                    f"{error} Flash diagnostic: {diagnostic}."
+                ) from error
+            return jedec_id, flash_status
+        finally:
+            try:
+                self.serial.timeout = previous_timeout
+            except (serial.SerialException, PermissionError, OSError):
+                # Successful persistent programming resets the FPGA and may
+                # remove the CDC port before pyserial restores its timeout.
+                pass
 
     def key_event(self, usage: int, pressed: bool) -> None:
         if not 0 <= usage <= 0x7F:
@@ -1534,8 +1682,12 @@ def interactive_keyboard_pynput(link: NanoQLLink,
             modifier_usages[key] = usage
 
     input_events: queue.Queue[tuple[bool, object]] = queue.Queue()
-    active_keys: dict[object, tuple[set[int], bool, float]] = {}
-    active_modifiers: dict[object, tuple[int, float]] = {}
+    # pynput may expose the same macOS key as a character on key-down and as
+    # a virtual-key object on key-up, especially while Shift is changing.
+    # Key state must therefore use the stable hardware virtual key whenever
+    # one is available rather than the callback object's textual identity.
+    active_keys: dict[object, tuple[set[int], bool, float, int | None]] = {}
+    active_modifiers: dict[int, tuple[float, int | None]] = {}
     pending_releases: dict[object, float] = {}
     remote_pressed: set[int] = set()
     stopping = False
@@ -1575,15 +1727,19 @@ def interactive_keyboard_pynput(link: NanoQLLink,
     def on_release(key) -> None:
         input_events.put((False, key))
 
+    def key_identity(key) -> object:
+        virtual_key = mac_virtual_key(key)
+        return ("vk", virtual_key) if virtual_key is not None else key
+
     def reconcile() -> None:
         nonlocal remote_pressed
         desired: set[int] = set()
         translated_active = False
-        for usages, translated, _pressed_at in active_keys.values():
+        for usages, translated, _pressed_at, _virtual_key in active_keys.values():
             desired.update(usages)
             translated_active |= translated
         if not translated_active:
-            desired.update(usage for usage, _pressed_at in active_modifiers.values())
+            desired.update(active_modifiers)
 
         ql_modifiers = {0x68, 0x69, 0x6A, 0x6C, 0x6D, 0x6E}
         releases = remote_pressed - desired
@@ -1633,8 +1789,8 @@ def interactive_keyboard_pynput(link: NanoQLLink,
             return False
         now = time.monotonic()
         changed = False
-        for key, (_usages, _translated, pressed_at) in tuple(active_keys.items()):
-            virtual_key = mac_virtual_key(key)
+        for key_id, (_usages, _translated, pressed_at,
+                     virtual_key) in tuple(active_keys.items()):
             if virtual_key is None or now - pressed_at < 0.15:
                 continue
             try:
@@ -1644,11 +1800,10 @@ def interactive_keyboard_pynput(link: NanoQLLink,
             except Exception:
                 return False
             if not physically_pressed:
-                pending_releases.pop(key, None)
-                active_keys.pop(key, None)
+                pending_releases.pop(key_id, None)
+                active_keys.pop(key_id, None)
                 changed = True
-        for key, (_usage, pressed_at) in tuple(active_modifiers.items()):
-            virtual_key = mac_virtual_key(key)
+        for usage, (pressed_at, virtual_key) in tuple(active_modifiers.items()):
             if virtual_key is None or now - pressed_at < 0.15:
                 continue
             try:
@@ -1658,7 +1813,7 @@ def interactive_keyboard_pynput(link: NanoQLLink,
             except Exception:
                 return False
             if not physically_pressed:
-                active_modifiers.pop(key, None)
+                active_modifiers.pop(usage, None)
                 changed = True
         if changed:
             reconcile()
@@ -1692,12 +1847,15 @@ def interactive_keyboard_pynput(link: NanoQLLink,
             modifier = modifier_usages.get(key)
             if modifier is not None:
                 if pressed:
-                    active_modifiers[key] = (modifier, time.monotonic())
+                    active_modifiers.setdefault(
+                        modifier, (time.monotonic(), mac_virtual_key(key))
+                    )
                 else:
-                    active_modifiers.pop(key, None)
+                    active_modifiers.pop(modifier, None)
             elif pressed:
-                pending_releases.pop(key, None)
-                if key in active_keys:
+                key_id = key_identity(key)
+                pending_releases.pop(key_id, None)
+                if key_id in active_keys:
                     continue
                 usages: set[int] = set()
                 translated = False
@@ -1712,15 +1870,18 @@ def interactive_keyboard_pynput(link: NanoQLLink,
                 if not usages and key in special_usages:
                     usages = {special_usages[key]}
                 if usages:
-                    active_keys[key] = (usages, translated, time.monotonic())
+                    active_keys[key_id] = (
+                        usages, translated, time.monotonic(), mac_virtual_key(key)
+                    )
             else:
-                binding = active_keys.get(key)
+                key_id = key_identity(key)
+                binding = active_keys.get(key_id)
                 if binding is not None:
                     deadline = binding[2] + minimum_hold_time
                     if deadline > time.monotonic():
-                        pending_releases[key] = deadline
+                        pending_releases[key_id] = deadline
                     else:
-                        active_keys.pop(key, None)
+                        active_keys.pop(key_id, None)
             reconcile()
         listener.stop()
         listener.join(timeout=1.0)
@@ -2171,6 +2332,21 @@ def main() -> int:
     )
     fpga_parser.add_argument("bitstream", type=Path)
 
+    subparsers.add_parser(
+        "fpga-flash-probe",
+        help="detect the FPGA configuration Flash through NanoQL Link",
+    )
+
+    link_flash_parser = subparsers.add_parser(
+        "fpga-flash",
+        help="program FPGA configuration Flash through NanoQL Link",
+    )
+    link_flash_parser.add_argument("bitstream", type=Path)
+    link_flash_parser.add_argument(
+        "--yes", action="store_true",
+        help="confirm replacement of the persistent FPGA bitstream",
+    )
+
     native_flash_parser = subparsers.add_parser(
         "fpga-flash-native",
         help="program SPI Flash with Gowin Programmer or openFPGALoader",
@@ -2197,6 +2373,10 @@ def main() -> int:
         help="confirm replacement of the previous persistent bitstream",
     )
     args = parser.parse_args()
+    if args.command == "fpga-flash" and not args.yes:
+        raise RuntimeError(
+            "Add --yes to confirm replacement of the persistent bitstream."
+        )
     if args.command == "fpga-flash-native":
         if not args.yes:
             raise RuntimeError(
@@ -2229,7 +2409,16 @@ def main() -> int:
                 # profile from the active Windows keyboard layout.
                 link.ql_layout = default_ql_layout()
         if args.command == "status":
-            print(f"NanoQL Link status: 0x{link.status():02x}")
+            try:
+                print(f"NanoQL Link status: 0x{link.status():02x}")
+            except RuntimeError as error:
+                if str(error) != "The bitstream did not respond as NanoQL Link v1.":
+                    raise
+                print(
+                    "NanoQL Link recovery mode: the BL616 is connected, but "
+                    "the FPGA bitstream is missing or invalid. Load a .bin "
+                    "bitstream with the 'fpga' command."
+                )
         elif args.command == "cpu-status":
             cpu_speed, cpu_rate = link.measure_cpu_rate()
             cpu_labels = {0: "QL", 1: "16 MHz", 2: "24 MHz"}
@@ -2448,13 +2637,62 @@ def main() -> int:
                     "Use the .bin file generated by Gowin, not the .fs file."
                 )
             data = args.bitstream.read_bytes()
-            destination = "SRAM"
-            print(f"Sending {len(data)} bytes to FPGA {destination} through the BL616...")
-            link.program_fpga(data)
-            print(
-                f"FPGA programmed in {destination}. The BL616 automatically "
-                "returns to Companion mode; the serial port disappearing is normal."
+            fs_path = args.bitstream.with_suffix(".fs")
+            if not fs_path.is_file():
+                raise FileNotFoundError(
+                    f"The matching Gowin file is required to finalize SRAM "
+                    f"programming: {fs_path}"
+                )
+            header = fs_path.read_bytes()[:4096].decode("ascii", errors="ignore")
+            checksum_match = re.search(
+                r"^//CheckSum:\s*0x([0-9a-fA-F]+)\s*$", header, re.MULTILINE
             )
+            if checksum_match is None:
+                raise ValueError(f"No Gowin CheckSum was found in {fs_path}.")
+            gowin_checksum = int(checksum_match.group(1), 16)
+            destination = "SRAM"
+            print(
+                f"Sending {len(data)} bytes to FPGA {destination} through the "
+                f"BL616 (Gowin checksum 0x{gowin_checksum:04x})..."
+            )
+            link.program_fpga(data, gowin_checksum)
+            print(
+                f"FPGA programmed in {destination}. The Companion is starting; "
+                "NanoQL Link may remain connected while recovering an invalid "
+                "persistent bitstream."
+            )
+        elif args.command == "fpga-flash-probe":
+            jedec_id, flash_status = link.probe_fpga_flash()
+            capacity_code = jedec_id & 0xFF
+            capacity = (1 << capacity_code) if capacity_code < 32 else 0
+            capacity_text = (
+                f"{capacity // (1024 * 1024)} MiB"
+                if capacity else "unknown capacity"
+            )
+            print(
+                f"FPGA configuration Flash detected: JEDEC 0x{jedec_id:06x}, "
+                f"status 0x{flash_status:02x}, {capacity_text}."
+            )
+            print("Write-enable and write-disable checks completed successfully.")
+            print("The FPGA reloaded its existing persistent bitstream.")
+        elif args.command == "fpga-flash":
+            if args.bitstream.suffix.lower() != ".bin":
+                raise ValueError(
+                    "NanoQL Link persistent programming requires Gowin's .bin file."
+                )
+            data = args.bitstream.read_bytes()
+            print(
+                f"Sending {len(data)} bytes to FPGA configuration Flash "
+                "through NanoQL Link. Do not disconnect USB or power."
+            )
+            flash_started = time.monotonic()
+            link.program_fpga_flash(data)
+            flash_elapsed = time.monotonic() - flash_started
+            print(
+                "FPGA Flash programmed and verified. The FPGA and BL616 are "
+                "restarting; the serial port disappearing is normal."
+            )
+            print(f"Persistent programming completed in {flash_elapsed:.1f} seconds.")
         else:
             data = args.binary.read_bytes()
             pc = args.address if args.pc is None else args.pc

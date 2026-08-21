@@ -45,6 +45,8 @@ jobs:
           git -C "$RUNNER_TEMP/fpga_companion" submodule update --init --recursive --depth 1
           cp firmware/bl616/nanoql_companion/nanoql_drive.c "$RUNNER_TEMP/fpga_companion/src/bl616/"
           cp firmware/bl616/nanoql_companion/nanoql_drive.h "$RUNNER_TEMP/fpga_companion/src/bl616/"
+          cp firmware/bl616/nanoql_companion/nanoql_flash.c "$RUNNER_TEMP/fpga_companion/src/bl616/"
+          cp firmware/bl616/nanoql_companion/nanoql_flash.h "$RUNNER_TEMP/fpga_companion/src/bl616/"
           cp firmware/bl616/nanoql_companion/nanoql_usb.c "$RUNNER_TEMP/fpga_companion/src/bl616/"
           cp firmware/bl616/nanoql_companion/nanoql_usb.h "$RUNNER_TEMP/fpga_companion/src/bl616/"
           git -C "$RUNNER_TEMP/fpga_companion" apply "$GITHUB_WORKSPACE/firmware/bl616/nanoql_companion/fpga-companion.patch"

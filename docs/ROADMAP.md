@@ -10,10 +10,10 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 15 381 / 20 736 cellules logiques utilisées (75 %), dont 14 384 LUT.
+- FPGA : 15 872 / 20 736 cellules logiques utilisées (77 %), dont 14 762 LUT.
 - BSRAM : 21 / 46 blocs utilisés (46 %), dont les tampons sectoriels QL-SD et Microdrive et la ROM QSound optionnelle.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
-- Domaine système : 48 MHz, avec une Fmax mesurée de 61,663 MHz.
+- Domaine système : 48 MHz, avec une Fmax estimée de 57,378 MHz.
 - HDMI : 720p50 natif et 720p60 de compatibilité avec audio PCM 48 kHz fonctionnel.
 
 Le pourcentage de LUT restant ne suffit pas à garantir toutes les extensions. La migration de la ROM QL dynamique vers une zone réservée de la SDRAM a toutefois libéré 32 blocs BSRAM pour les ROM et tampons des fonctions suivantes. La fréquence du domaine système devient maintenant la contrainte principale pour les modes CPU rapides.
@@ -80,12 +80,13 @@ Le support d'une vraie seconde carte QL-SD nécessitera un connecteur microSD su
 - Le BL616 convertit de façon autonome un dossier de `NanoQL/Microdrives` en image QLAY depuis l'overlay, sans mode développeur. La conversion, le montage, `DIR`, `LOAD` et `LRUN` sont validés physiquement dans les modes CPU QL et 16 MHz.
 - Les commandes `WRITE` et `ERASE` du ZX8302, les tampons modifiables, la normalisation QLAY et la persistance dans `MDV1.mdv` sont validés physiquement, y compris après reset et aux deux vitesses CPU actuelles.
 - Le flux matériel corrige aussi à la volée le checksum nul du secteur de carte et les motifs de fin de secteur absents de certaines images QLAY créées pour Q-emuLator.
-- L'assistant Tkinter guide maintenant l'installation dans l'ordre microSD, FPGA, puis BL616, détecte openFPGALoader et expose la connexion, le clavier distant et le test USB NanoQL Link.
+- L'assistant Tkinter distingue la première installation de la mise à jour et enregistre leur progression. Les deux parcours présentent la microSD, le firmware BL616 NanoQL, puis le FPGA dans cet ordre. Il regroupe aussi le clavier distant, la synchronisation MDV et l'injection de programme sous NanoQL Link, avec une activation S1 unique après le démarrage.
 - Le guide d'installation documente Windows, macOS et Linux sans présenter FlashCube comme multiplateforme.
 - Ajouter ensuite une resynchronisation sûre des modifications de l'image vers le dossier source.
 - Le flash BL616 natif est intégré à l'assistant Python sous Windows, Linux et macOS avec l'outil UART officiel de Bouffalo Lab ; il reste à valider physiquement sur chaque système et révision.
 - Détecter la révision 3921/3923 et vérifier le firmware après programmation.
 - Garder une procédure de récupération explicite ; l'entrée dans le bootloader BL616 pourra toujours nécessiter le bouton `UPDATE`.
+- La programmation directe de la SRAM et de la Flash FPGA par NanoQL Link est validée sur révision 3923. L'installation et les mises à jour utilisent d'abord le firmware BL616 NanoQL, puis programment le FPGA ; le profil Sipeed reste réservé à la récupération JTAG externe.
 
 #### 7. Capture d'écran et vidéo
 
@@ -134,10 +135,10 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 15,381 / 20,736 logic cells used (75%), including 14,384 LUTs.
+- FPGA: 15,872 / 20,736 logic cells used (77%), including 14,762 LUTs.
 - BSRAM: 21 / 46 blocks used (46%), including QL-SD and Microdrive sector buffers and the optional QSound ROM.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
-- System domain: 48 MHz, with a measured Fmax of 61.663 MHz.
+- System domain: 48 MHz, with an estimated Fmax of 57.378 MHz.
 - HDMI: working native 720p50 and compatibility 720p60 output with 48 kHz PCM audio.
 
 The remaining LUT percentage alone does not guarantee that every extension will fit. Moving the dynamic QL ROM to a reserved SDRAM area has nevertheless freed 32 BSRAM blocks for future ROMs and buffers. System-domain timing is now the main constraint for faster CPU modes.
@@ -204,12 +205,13 @@ A real secondary QL-SD card requires an additional microSD connector on an exter
 - The BL616 autonomously converts a folder under `NanoQL/Microdrives` to a QLAY image from the overlay without development mode. Conversion, mounting, `DIR`, `LOAD`, and `LRUN` are physically validated in both QL and 16 MHz CPU modes.
 - ZX8302 `WRITE` and `ERASE`, writable buffers, QLAY normalization, and persistence to `MDV1.mdv` are physically validated across reset and at both current CPU speeds.
 - The hardware stream also repairs the zero map-sector checksum and missing physical sector-tail patterns found in some QLAY images created for Q-emuLator.
-- The Tkinter assistant now guides installation in microSD, FPGA, then BL616 order, detects openFPGALoader, and exposes NanoQL Link connection, remote keyboard, and USB test controls.
+- The Tkinter assistant distinguishes first installation from update and stores progress for both. Installation and updates follow the microSD, NanoQL BL616, then FPGA order. Restoring the Sipeed firmware is reserved for external-JTAG recovery. The assistant also groups the remote keyboard, MDV synchronization, and program injection under NanoQL Link, with a single S1 activation after startup.
 - The installation guide covers Windows, macOS, and Linux without presenting FlashCube as cross-platform.
 - Add safe synchronization of image changes back to the source folder afterward.
 - Native BL616 flashing is integrated into the Python assistant on Windows, Linux, and macOS through Bouffalo Lab's official UART tool; physical validation remains required on each operating system and board revision.
 - Detect revisions 3921/3923 and verify firmware after programming.
 - Keep an explicit recovery path; entering the BL616 bootloader may still require the `UPDATE` button.
+- Investigate a unified BL616 firmware exposing both NanoQL Link and JTAG programming, or a reliable persistent programmer controlled through NanoQL Link. This is required for a genuinely automated update without restoring the BL616 twice.
 
 #### 7. Screenshot and video capture
 

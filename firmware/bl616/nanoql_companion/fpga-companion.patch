@@ -23,11 +23,12 @@ index e659f09..56a0b1d 100644
  # wifi support
  set(CONFIG_LWIP 1)
  set(CONFIG_WIFI6 1)
-@@ -128,6 +133,8 @@ sdk_add_include_directories(. ../u8g2/csrc)
+@@ -128,6 +133,9 @@ sdk_add_include_directories(. ../u8g2/csrc)
  
  target_sources(app PRIVATE
     	mcu_hw.c
 +    nanoql_drive.c
++    nanoql_flash.c
 +    nanoql_usb.c
     	../hidparser.c
     	../hid.c
@@ -219,21 +220,41 @@ diff --git a/src/gowin.c b/src/gowin.c
 index f2bbfd3..c4da798 100644
 --- a/src/gowin.c
 +++ b/src/gowin.c
-@@ -16,6 +16,7 @@
+@@ -16,6 +16,8 @@
  
  // idcode is stored globally so the FPGA routines can address the right FPGA
  static uint32_t idcode = 0;
 +static bool gowin_stream_active = false;
++static uint32_t gowin_stream_status = 0;
  
  static void gowin_printStatusReg(uint32_t status) {
      if (status & GOWIN_STATUS_CRC_ERROR)            gowin_debugf("Bit 0: CRC ERROR detected");
-@@ -252,6 +253,78 @@ static bool gowin_open(void) {
+@@ -212,12 +214,16 @@ static void gowin_writeSRAM_transfer(uint8_t *data, uint16_t len, bool last) {
+ }
+ #endif
+ 
+-static bool gowin_writeSRAM_postproc(__attribute__((unused)) uint32_t checksum) {
++static bool gowin_writeSRAM_postproc(uint32_t checksum) {
++  jtag_command_u08(GOWIN_COMMAND_UNKNOWN2);
++  jtag_shiftDR((uint8_t *)&checksum, NULL, 32);
++  jtag_command_u08(GOWIN_COMMAND_UNKNOWN1);
+   jtag_command_u08(GOWIN_COMMAND_CONFIG_DISABLE);
+   jtag_command_u08(GOWIN_COMMAND_NOOP);
+ 
+   uint32_t status_reg = gowin_readStatusReg();
+   status_reg = gowin_readStatusReg(); // read twice to get updated status
++  gowin_stream_status = status_reg;
+   if(!(status_reg & GOWIN_STATUS_DONE_FINAL)) {
+     gowin_printStatusReg(status_reg);
+     fatal_debugf("Failed to write SRAM");
+@@ -252,6 +258,83 @@ static bool gowin_open(void) {
           idcode == IDCODE_GW5AST138);
  }
  
 +bool gowin_stream_begin(void) {
 +  if(gowin_stream_active)
 +    gowin_stream_abort();
++  gowin_stream_status = 0;
 +
 +  if(!gowin_open()) {
 +    gowin_debugf("FPGA not detected");
@@ -283,15 +304,19 @@ index f2bbfd3..c4da798 100644
 +#endif
 +}
 +
-+bool gowin_stream_end(void) {
++bool gowin_stream_end(uint32_t checksum) {
 +  if(!gowin_stream_active)
 +    return false;
 +
 +  gowin_stream_leave_shift();
-+  bool success = gowin_writeSRAM_postproc(0xffffffff);
++  bool success = gowin_writeSRAM_postproc(checksum);
 +  jtag_close();
 +  gowin_stream_active = false;
 +  return success;
++}
++
++uint32_t gowin_stream_last_status(void) {
++  return gowin_stream_status;
 +}
 +
 +void gowin_stream_abort(void) {
@@ -310,13 +335,14 @@ diff --git a/src/gowin.h b/src/gowin.h
 index bf062aa..21409f7 100644
 --- a/src/gowin.h
 +++ b/src/gowin.h
-@@ -85,6 +85,10 @@
+@@ -85,6 +85,11 @@
  #define IDCODE_GW5A25     0x1281b
  
  bool gowin_upload_core(const char *name);
 +bool gowin_stream_begin(void);
 +bool gowin_stream_data(const uint8_t *data, uint16_t length, bool last);
-+bool gowin_stream_end(void);
++bool gowin_stream_end(uint32_t checksum);
++uint32_t gowin_stream_last_status(void);
 +void gowin_stream_abort(void);
  void gowin_fpgaReset(void);
  
@@ -749,15 +775,30 @@ index 7880ac8..9ed8b21 100644
      }
    }
  
-@@ -129,7 +144,14 @@ int main( void )
+@@ -120,6 +135,16 @@ static void com_task(__attribute__((unused)) void *p ) {
+   }
+ }
+ 
++#if defined(TANG_NANO20K) || defined(TANG_NANO20K_V3923)
++void nanoql_companion_start(void) {
++  if(com_task_handle != NULL)
++    return;
++  UBaseType_t priority = nanoql_usb_is_active() ?
++      configMAX_PRIORITIES - 3 : CONFIG_MAX_PRIORITY - 1;
++  xTaskCreate(com_task, "FPGA Com", 4096, NULL, priority, &com_task_handle);
++}
++#endif
++
+ #ifdef ESP_PLATFORM
+ void app_main( void )
+ #else
+@@ -129,7 +154,12 @@ int main( void )
    mcu_hw_init();
    
    // run FPGA com thread
 +#if defined(TANG_NANO20K) || defined(TANG_NANO20K_V3923)
-+  UBaseType_t com_priority = nanoql_usb_is_active() ?
-+      configMAX_PRIORITIES - 3 : CONFIG_MAX_PRIORITY - 1;
-+  xTaskCreate(com_task, "FPGA Com", 4096, NULL,
-+              com_priority, &com_task_handle);
++  if(!nanoql_usb_is_recovery())
++    nanoql_companion_start();
 +#else
    xTaskCreate( com_task, "FPGA Com", 4096, NULL, CONFIG_MAX_PRIORITY-1, &com_task_handle );
 +#endif
