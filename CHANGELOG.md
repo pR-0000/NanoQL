@@ -2,6 +2,9 @@
 
 ## v0.3.1 - 2026-08-21
 
+- Hotfix (2026-08-22): lets the Setup Assistant select one extracted Complete release folder from Start, then automatically fills the revision-matched BL616 `.bin` and FPGA `.fs` fields in their respective tabs while retaining independent advanced selectors.
+- Hotfix (2026-08-22): accepts Gowin `.fs` files directly through NanoQL Link by validating and decoding their binary payload and checksum.
+- Hotfix (2026-08-22): rejects BL616 firmware, malformed binaries, and bitstreams for another FPGA before any SRAM or persistent-Flash programming begins.
 - Programs the FPGA SRAM or persistent configuration Flash directly through the NanoQL BL616 firmware, with JEDEC detection, erase/program/readback verification, diagnostics, and automatic recovery when the persistent core is missing or invalid.
 - Speeds up persistent FPGA updates with native 64 KiB block erases and page programming, while preserving the Sipeed firmware and external JTAG route as a recovery option.
 - Reorders the graphical setup workflow around the required BL616-first installation, separates normal updates from recovery tools, and accepts precompiled `.bin`/`.fs` release files without requiring Gowin EDA.

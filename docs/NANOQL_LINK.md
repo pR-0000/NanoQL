@@ -124,18 +124,18 @@ python tools/nanoql_link.py --port COMx benchmark
 
 Ses sept tests durent chacun 20 secondes. La saisie de longs listings par clavier distant reste un outil de développement ; préférez QL-SD pour transférer et exécuter des programmes de façon fiable.
 
-Pour reconfigurer temporairement la SRAM du FPGA sans remplacer le firmware BL616, utilisez le fichier `.bin` produit par Gowin :
+Pour reconfigurer temporairement la SRAM du FPGA sans remplacer le firmware BL616, indiquez le dossier extrait de la release ou un fichier Gowin `.fs`/`.bin` :
 
 ```text
-python tools/nanoql_link.py --port COMx fpga impl/pnr/NanoQL_sd_rom.bin
+python tools/nanoql_link.py --port COMx fpga chemin/vers/NanoQL-vX.Y.Z-Complete-3923
 ```
 
-Le bitstream passe directement de l'USB au moteur JTAG du BL616, sans fichier temporaire et sans écriture sur la microSD. Sa taille et son CRC sont vérifiés avant la finalisation du FPGA. Après l'accusé de réception, le BL616 redémarre automatiquement en mode Companion et le port COM disparaît. Cette commande est destinée aux essais de développement ; après une coupure d'alimentation, le bitstream conservé dans la Flash FPGA redémarre.
+Le script choisit uniquement le fichier FPGA du dossier, décode directement le `.fs` si nécessaire et refuse les firmwares BL616 ou un binaire sans signature Gowin GW2AR-18. Le bitstream passe ensuite directement de l'USB au moteur JTAG du BL616, sans écriture sur la microSD. Après l'accusé de réception, le BL616 redémarre automatiquement en mode Companion et le port COM disparaît. Cette commande est destinée aux essais de développement ; après une coupure d'alimentation, le bitstream conservé dans la Flash FPGA redémarre.
 
 Pour programmer la Flash de configuration de façon permanente avec le même firmware BL616 NanoQL :
 
 ```text
-python tools/nanoql_link.py --port COMx fpga-flash impl/pnr/NanoQL_sd_rom.bin --yes
+python tools/nanoql_link.py --port COMx fpga-flash chemin/vers/NanoQL-vX.Y.Z-Complete-3923 --yes
 ```
 
 Cette commande identifie la Flash SPI, efface les blocs nécessaires, programme et vérifie le bitstream, puis recharge le FPGA. Ne coupez pas l'USB ou l'alimentation avant la fin. La commande facultative `fpga-flash-probe` vérifie l'identifiant JEDEC sans remplacer le bitstream. `fpga-flash-native` reste disponible comme solution de récupération avec le firmware Sipeed d'origine et un programmateur JTAG externe.
@@ -221,12 +221,12 @@ QDOS file bytes are preserved exactly. `nanoql_manifest.json` also records their
 
 To load a numbered SuperBASIC text file, leave the QL at its SuperBASIC prompt and run `python tools/nanoql_link.py --port COMx basic path/to/program_bas`. NanoQL Link enters `NEW`, sends every source line through the remote keyboard so QDOS performs its own ROM-compatible tokenization, and then enters `RUN`. Add `--no-run` to load only. The included MIT-licensed benchmark has the experimental shortcut `python tools/nanoql_link.py --port COMx benchmark`. Remote typing is a development convenience; prefer QL-SD for reliable program transfer and execution.
 
-The command `python tools/nanoql_link.py --port COMx fpga impl/pnr/NanoQL_sd_rom.bin` streams Gowin's `.bin` output directly from USB into FPGA SRAM through the BL616 JTAG engine, without writing the microSD. After acknowledging completion, the BL616 automatically restarts in Companion mode and the COM port disappears. It is temporary development programming; the FPGA Flash bitstream returns after power cycling.
+The command `python tools/nanoql_link.py --port PORT fpga path/to/NanoQL-vX.Y.Z-Complete-3923` selects the FPGA file from an extracted release folder and streams it directly into FPGA SRAM through the BL616 JTAG engine. A Gowin `.fs` or `.bin` file may also be supplied directly. The script decodes `.fs` data and rejects BL616 firmware or a binary without the GW2AR-18 Gowin signature before programming. After acknowledging completion, BL616 automatically restarts in Companion mode and the serial port disappears. It is temporary development programming; the FPGA Flash bitstream returns after power cycling.
 
 To program FPGA configuration Flash permanently with the same NanoQL BL616 firmware:
 
 ```text
-python tools/nanoql_link.py --port COMx fpga-flash impl/pnr/NanoQL_sd_rom.bin --yes
+python tools/nanoql_link.py --port PORT fpga-flash path/to/NanoQL-vX.Y.Z-Complete-3923 --yes
 ```
 
 This command identifies SPI Flash, erases the required blocks, programs and verifies the bitstream, then reloads the FPGA. Do not disconnect USB or power before completion. The optional `fpga-flash-probe` command checks the JEDEC identifier without replacing the bitstream. `fpga-flash-native` remains available as a recovery route with Sipeed original firmware and an external JTAG programmer.

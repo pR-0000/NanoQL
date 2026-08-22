@@ -71,6 +71,8 @@ Sous macOS/Linux, utilisez `python3` si nécessaire. L'assistant installe automa
 
 Le sélecteur **Language** du premier onglet bascule immédiatement toute l'interface entre le français et l'anglais. Ce choix est mémorisé avec les autres réglages. Les illustrations intégrées montrent les boutons **UPDATE** et **S1** à utiliser ; aucun fichier image externe n'est requis.
 
+Dans **Commencer**, sélectionnez une seule fois le dossier extrait `NanoQL-vX.Y.Z-Complete-3921` ou `NanoQL-vX.Y.Z-Complete-3923`. Après le choix de la révision de carte, l'assistant renseigne automatiquement le firmware BL616 `.bin` et le bitstream FPGA `.fs` dans leurs onglets respectifs. Les sélecteurs manuels de chaque onglet restent disponibles pour les utilisateurs avancés.
+
 ### Ordre de première installation
 
 Respectez cet ordre pour une première installation :
@@ -102,11 +104,11 @@ Pour une mise à jour normale, laissez le firmware BL616 **NanoQL** installé :
 
 1. démarrez NanoQL et attendez l'image HDMI ou les LED ;
 2. appuyez brièvement une fois sur **S1**, sans le maintenir au démarrage ;
-3. dans **3. FPGA**, sélectionnez le bitstream de la release ; le fichier `.bin` doit être présent à côté du `.fs` si vous sélectionnez ce dernier ;
+3. dans **3. FPGA**, vérifiez le fichier `.fs` renseigné automatiquement depuis le dossier choisi dans **Commencer** ; vous pouvez aussi le remplacer manuellement ;
 4. choisissez le port **NanoQL Link** ;
 5. cliquez sur **Programmer la Flash (permanente)**, ou sur **Programmer la SRAM (temporaire)** pour un essai qui disparaîtra à la prochaine coupure d'alimentation.
 
-La programmation permanente efface, écrit et vérifie la Flash de configuration, puis redémarre NanoQL. Ne débranchez ni l'USB ni l'alimentation pendant cette opération. Le bouton **Détecter la Flash de configuration** est une vérification facultative sans écriture.
+La programmation permanente efface, écrit et vérifie la Flash de configuration, puis redémarre NanoQL. Ne débranchez ni l'USB ni l'alimentation pendant cette opération. Le bouton **Détecter la Flash de configuration** est une vérification facultative sans écriture. Un fichier `.fs` peut aussi être choisi directement : NanoQL Link le valide et le convertit sans Gowin EDA. Les firmwares `BL616-3921.bin` et `BL616-3923.bin` sont refusés dans cet onglet.
 
 Pour une récupération, utilisez la section **JTAG externe** du même onglet avec le firmware BL616 **Sipeed d'origine**. L'assistant peut alors appeler openFPGALoader 1.1.1 ou plus récent, ou Gowin Programmer sous Windows. Avec le profil Sipeed actif, l'écran peut afficher `BL616 COMPANION NOT READY` : c'est normal, car le BL616 expose alors le JTAG au PC.
 
@@ -124,10 +126,11 @@ Lors de la première installation, effectuez cette opération avant le FPGA. Dan
 
 1. reliez la Tang Nano 20K à l'ordinateur avec un câble USB-C de données ; cette étape programme le BL616 par USB ;
 2. sélectionnez la révision 3921 ou 3923 ;
-3. débranchez la carte ;
-4. maintenez **UPDATE**, reconnectez l'USB puis relâchez **UPDATE** ;
-5. cliquez sur **Actualiser**, puis choisissez le nouveau port série du bootloader ;
-6. cliquez sur **Installer / mettre à jour le firmware NanoQL**.
+3. vérifiez que le champ **Firmware BL616 NanoQL** contient le `.bin` détecté dans le dossier de release ;
+4. débranchez la carte ;
+5. maintenez **UPDATE**, reconnectez l'USB puis relâchez **UPDATE** ;
+6. cliquez sur **Actualiser**, puis choisissez le nouveau port série du bootloader ;
+7. cliquez sur **Installer / mettre à jour le firmware NanoQL**.
 
 Le second bouton, **Restaurer le firmware Sipeed d'origine**, sert uniquement à une récupération ou à l'utilisation d'un programmateur JTAG externe. Dans les deux cas, **UPDATE** désigne le bouton matériel du BL616 ; **S1** n'est pas utilisé pour flasher le BL616.
 
@@ -155,7 +158,7 @@ python3 tools/prepare_bl616_firmware.py --revision 3923 --profile original --fla
 Commande directe équivalente pour une mise à jour permanente :
 
 ```sh
-python3 tools/nanoql_link.py --port PORT fpga-flash path/to/NanoQL.bin --yes
+python3 tools/nanoql_link.py --port PORT fpga-flash path/to/extracted-release-folder --yes
 ```
 
 Remplacez `fpga-flash` par `fpga` pour programmer uniquement la SRAM.
@@ -247,6 +250,8 @@ Use `python3` on macOS/Linux when needed. The assistant installs PySerial automa
 
 The first tab's **Language** selector immediately switches the complete interface between English and French. The choice is stored with the other settings. Embedded illustrations identify the **UPDATE** and **S1** buttons; no external image file is required.
 
+In **Start here**, select the extracted `NanoQL-vX.Y.Z-Complete-3921` or `NanoQL-vX.Y.Z-Complete-3923` folder once. After selecting the board revision, the assistant automatically fills the matching BL616 `.bin` and FPGA `.fs` fields in their respective tabs. Independent manual selectors remain available for advanced users.
+
 ### First-install order
 
 Follow this order for first installation:
@@ -278,11 +283,11 @@ For a normal update, leave the **NanoQL** BL616 firmware installed:
 
 1. start NanoQL and wait for HDMI output or the LEDs;
 2. briefly press **S1** once; do not hold it during power-on;
-3. in **3. FPGA**, select the release bitstream; when selecting `.fs`, keep the matching `.bin` beside it;
+3. in **3. FPGA**, verify the `.fs` file automatically filled from the folder selected under **Start here**; you may also replace it manually;
 4. select the **NanoQL Link** port;
 5. click **Program Flash (permanent)**, or **Program SRAM (temporary)** for a test that disappears after power-off.
 
-Persistent programming erases, writes, and verifies configuration Flash, then restarts NanoQL. Keep USB and power connected throughout the operation. **Detect configuration Flash** is an optional read-only check.
+Persistent programming erases, writes, and verifies configuration Flash, then restarts NanoQL. Keep USB and power connected throughout the operation. **Detect configuration Flash** is an optional read-only check. You may also select a `.fs` file directly: NanoQL Link validates and converts it without Gowin EDA. `BL616-3921.bin` and `BL616-3923.bin` firmware files are rejected in this tab.
 
 For recovery, use **External JTAG** in the same tab while the BL616 runs **Sipeed original** firmware. The assistant can then call openFPGALoader 1.1.1 or newer, or Gowin Programmer on Windows. With Sipeed firmware active, the display may report `BL616 COMPANION NOT READY`; this is expected because the BL616 is exposing JTAG to the computer.
 
@@ -300,10 +305,11 @@ On first installation, do this before programming the FPGA. In **2. BL616**:
 
 1. connect the Tang Nano 20K to the computer with a USB-C data cable; this step programs the BL616 over USB;
 2. select revision 3921 or 3923;
-3. disconnect the board;
-4. hold **UPDATE**, reconnect USB, then release **UPDATE**;
-5. click **Refresh**, then select the new bootloader serial port;
-6. click **Install / update NanoQL firmware**.
+3. verify that **NanoQL BL616 firmware** contains the `.bin` detected in the release folder;
+4. disconnect the board;
+5. hold **UPDATE**, reconnect USB, then release **UPDATE**;
+6. click **Refresh**, then select the new bootloader serial port;
+7. click **Install / update NanoQL firmware**.
 
 The second button, **Restore Sipeed original firmware**, is only for recovery or an external JTAG programmer. In both cases, **UPDATE** means the BL616 hardware button; **S1** is not used to flash BL616 firmware.
 
@@ -331,7 +337,7 @@ python3 tools/prepare_bl616_firmware.py --revision 3923 --profile original --fla
 Direct command for a persistent update:
 
 ```sh
-python3 tools/nanoql_link.py --port PORT fpga-flash path/to/NanoQL.bin --yes
+python3 tools/nanoql_link.py --port PORT fpga-flash path/to/extracted-release-folder --yes
 ```
 
 Replace `fpga-flash` with `fpga` to program SRAM only.

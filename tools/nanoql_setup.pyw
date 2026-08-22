@@ -72,7 +72,7 @@ PYTHON_URL = "https://www.python.org/downloads/"
 HOMEBREW_URL = "https://brew.sh/"
 AUTO_PORT = "Automatic detection"
 SELECT_PORT = "Select a serial port"
-WORKFLOW_REVISION = "5"
+WORKFLOW_REVISION = "6"
 BOARD_GUIDE_URL = (
     "https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html"
 )
@@ -97,6 +97,12 @@ TRANSLATIONS = {
         "First installation": "Première installation",
         "Update NanoQL": "Mettre NanoQL à jour",
         "Installation path": "Type d'installation",
+        "NanoQL release": "Release NanoQL",
+        "Extracted release folder": "Dossier de release extrait",
+        "Select release folder...": "Choisir le dossier de release...",
+        "Select an extracted NanoQL release folder.": "Sélectionnez un dossier de release NanoQL extrait.",
+        "Release files were not detected for the selected board revision.": "Les fichiers de release n'ont pas été détectés pour la révision de carte sélectionnée.",
+        "BL616 firmware and FPGA bitstream detected.": "Firmware BL616 et bitstream FPGA détectés.",
         "Continue setup": "Continuer l'installation",
         "Reset progress": "Réinitialiser la progression",
         "Prepare the microSD card": "Préparer la carte microSD",
@@ -131,6 +137,7 @@ TRANSLATIONS = {
         "Hermes IPC": "IPC Hermes",
         "USB connection required": "Connexion USB requise",
         "Board revision": "Révision de la carte",
+        "NanoQL BL616 firmware": "Firmware BL616 NanoQL",
         "BL616 bootloader port": "Port du bootloader BL616",
         "Refresh": "Actualiser",
         "Install / update NanoQL firmware": "Installer / mettre à jour le firmware NanoQL",
@@ -216,6 +223,7 @@ TRANSLATIONS = {
         "Use the Stop button or F6 to return control to the assistant.": "Utilisez le bouton Arrêter ou F6 pour rendre le contrôle à l'assistant.",
         "Detect configuration Flash is an optional check. It reads the JEDEC identifier without replacing the bitstream.": "Détecter la Flash de configuration est une vérification facultative. Cette commande lit l'identifiant JEDEC sans remplacer le bitstream.",
         "Persistent programming erases, writes, and verifies the FPGA configuration Flash. Keep USB and power connected until NanoQL restarts.": "La programmation permanente efface, écrit et vérifie la Flash de configuration du FPGA. Laissez l'USB et l'alimentation connectés jusqu'au redémarrage de NanoQL.",
+        "Select the extracted NanoQL release folder. The assistant automatically chooses the FPGA bitstream and never the BL616 firmware.": "Sélectionnez le dossier extrait de la release NanoQL. L'assistant choisit automatiquement le bitstream FPGA et jamais le firmware BL616.",
         "After NanoQL starts, briefly press S1 once, then select the NanoQL Link port. S2 is not used.": "Après le démarrage de NanoQL, appuyez brièvement une fois sur S1, puis sélectionnez le port NanoQL Link. S2 n'est pas utilisé.",
         "Hold UPDATE while connecting USB, release it, refresh the ports, then select the new bootloader port.": "Maintenez UPDATE pendant la connexion USB, relâchez-le, actualisez les ports, puis sélectionnez le nouveau port du bootloader.",
         "Native BL616 flashing works on Windows, macOS, and Linux. FlashCube is only a Windows fallback.": "Le flash natif du BL616 fonctionne sous Windows, macOS et Linux. FlashCube est uniquement une solution de secours sous Windows.",
@@ -251,6 +259,11 @@ TRANSLATIONS = {
         "Select gw_sh": "Sélectionnez gw_sh",
         "Select Gowin programmer_cli or openFPGALoader": "Sélectionnez programmer_cli de Gowin ou openFPGALoader",
         "Select a precompiled NanoQL FPGA bitstream": "Sélectionnez un bitstream FPGA NanoQL précompilé",
+        "Select the extracted NanoQL release folder": "Sélectionnez le dossier extrait de la release NanoQL",
+        "Select the NanoQL BL616 firmware": "Sélectionnez le firmware BL616 NanoQL",
+        "Release folder or FPGA file": "Dossier de release ou fichier FPGA",
+        "Select folder...": "Choisir le dossier...",
+        "Select file...": "Choisir un fichier...",
         "Select a raw 68000 binary": "Sélectionnez un binaire 68000 brut",
         "Compatible openFPGALoader is already installed.": "Une version compatible d'openFPGALoader est déjà installée.",
         "Homebrew required": "Homebrew requis",
@@ -274,8 +287,14 @@ TRANSLATIONS = {
         "FPGA programmer not found": "Programmateur FPGA introuvable",
         "Select a valid Gowin programmer_cli or openFPGALoader executable.": "Sélectionnez un exécutable programmer_cli de Gowin ou openFPGALoader valide.",
         "Missing bitstream": "Bitstream manquant",
-        "Missing binary bitstream": "Bitstream binaire manquant",
-        "Select a Gowin .bin bitstream, or keep the matching .bin file beside the selected .fs file.": "Sélectionnez un bitstream Gowin .bin, ou placez le fichier .bin correspondant à côté du fichier .fs sélectionné.",
+        "Incomplete release": "Release incomplète",
+        "The folder must contain the FPGA .fs file and the NanoQL BL616 .bin file for the selected 3921/3923 revision.": "Le dossier doit contenir le fichier FPGA .fs et le fichier BL616 NanoQL .bin correspondant à la révision 3921/3923 sélectionnée.",
+        "Missing firmware": "Firmware manquant",
+        "Select an existing NanoQL BL616 .bin file.": "Sélectionnez un fichier .bin BL616 NanoQL existant.",
+        "The selected file is not NanoQL BL616 firmware.": "Le fichier sélectionné n'est pas un firmware BL616 NanoQL.",
+        "This BL616 firmware belongs to the other board revision.": "Ce firmware BL616 correspond à l'autre révision de la carte.",
+        "No NanoQL FPGA bitstream was found. Select the extracted release folder, NanoQL-*-FPGA.fs, or NanoQL-*-FPGA.bin.": "Aucun bitstream FPGA NanoQL n'a été trouvé. Sélectionnez le dossier extrait de la release, NanoQL-*-FPGA.fs ou NanoQL-*-FPGA.bin.",
+        "The selected file is BL616 firmware, not an FPGA bitstream. Select the release folder instead.": "Le fichier sélectionné est un firmware BL616 et non un bitstream FPGA. Sélectionnez plutôt le dossier de la release.",
         "Programmer detected": "Programmateur détecté",
         "Stopping remote keyboard": "Arrêt du clavier distant",
         "Checking NanoQL Link": "Vérification de NanoQL Link",
@@ -304,7 +323,6 @@ TRANSLATIONS = {
         "FlashCube is available on Windows only.": "FlashCube est uniquement disponible sous Windows.",
         "Select this configuration in FlashCube": "Sélectionnez cette configuration dans FlashCube",
         "The path has been copied.": "Le chemin a été copié.",
-        "The selected bitstream does not exist. Select the precompiled NanoQL-*-FPGA.fs file from the release, or build NanoQL first.": "Le bitstream sélectionné n'existe pas. Sélectionnez le fichier NanoQL-*-FPGA.fs précompilé de la release, ou compilez d'abord NanoQL.",
         "Gowin Programmer could not detect USB Debugger A/1. Close other programmers, reconnect the board, and verify the BL616 ORIGINAL profile.": "Gowin Programmer n'a pas détecté USB Debugger A/1. Fermez les autres programmateurs, reconnectez la carte et vérifiez le profil BL616 ORIGINAL.",
         "Gowin Programmer could not detect USB Debugger A/1. Close other programmers, reconnect the board, and verify that the BL616 ORIGINAL profile is running.": "Gowin Programmer n'a pas détecté USB Debugger A/1. Fermez les autres programmateurs, reconnectez la carte et vérifiez que le profil BL616 ORIGINAL est actif.",
         "Serial ports refreshed": "Ports série actualisés",
@@ -430,15 +448,115 @@ def find_homebrew() -> str:
 def find_precompiled_bitstream() -> str:
     preferred = REPOSITORY / "impl" / "pnr" / "NanoQL_sd_rom.fs"
     if preferred.is_file():
-        return str(preferred)
+        return str(preferred.parent)
     candidates: list[Path] = []
     for folder in (REPOSITORY, Path.cwd(), Path.home() / "Downloads"):
         if folder.is_dir():
             candidates.extend(folder.glob("NanoQL*-FPGA.fs"))
             candidates.extend(folder.glob("NanoQL*/NanoQL*-FPGA.fs"))
     if candidates:
-        return str(max(candidates, key=lambda path: path.stat().st_mtime))
-    return str(preferred)
+        return str(max(candidates, key=lambda path: path.stat().st_mtime).parent)
+    return str(preferred.parent)
+
+
+def default_bl616_firmware(revision: str) -> Path:
+    filename = (
+        "nanoql_companion_nano20k.bin"
+        if revision == "3921"
+        else "nanoql_companion_nano20k_v3923.bin"
+    )
+    return REPOSITORY / "firmware" / "bl616" / "package" / filename
+
+
+def _release_search_roots(folder: Path) -> list[Path]:
+    roots = [folder]
+    roots.extend(sorted(path for path in folder.iterdir() if path.is_dir()))
+    return roots
+
+
+def resolve_setup_fpga_source(selection: str, require_fs: bool = False) -> Path:
+    path = Path(selection).expanduser()
+    if path.is_dir():
+        patterns = (
+            "NanoQL-v*-FPGA.fs",
+            "NanoQL*-FPGA.fs",
+            "NanoQL_sd_rom.fs",
+            "NanoQL-v*-FPGA.bin",
+            "NanoQL-v*-FPGA-SRAM.bin",
+            "NanoQL_sd_rom.bin",
+        )
+        candidates: list[Path] = []
+        for root in _release_search_roots(path):
+            for pattern in patterns:
+                candidates.extend(sorted(root.glob(pattern)))
+        if not candidates:
+            raise FileNotFoundError(path)
+        source = candidates[0]
+    else:
+        source = path
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    if "bl616" in source.name.lower():
+        raise ValueError("BL616")
+    if source.suffix.lower() not in (".fs", ".bin"):
+        raise ValueError("FPGA")
+    if require_fs and source.suffix.lower() != ".fs":
+        fs_candidates = [source.with_suffix(".fs")]
+        if source.name.endswith("-FPGA-SRAM.bin"):
+            fs_candidates.append(
+                source.with_name(
+                    source.name[:-len("-FPGA-SRAM.bin")] + "-FPGA.fs"
+                )
+            )
+        source = next((candidate for candidate in fs_candidates if candidate.is_file()), source)
+        if source.suffix.lower() != ".fs":
+            raise FileNotFoundError(source)
+    return source.resolve()
+
+
+def validate_bl616_firmware(selection: str, revision: str) -> Path:
+    source = Path(selection).expanduser()
+    if not source.is_file() or source.suffix.lower() != ".bin":
+        raise FileNotFoundError(source)
+    with source.open("rb") as stream:
+        signature = stream.read(4)
+    if signature != b"BFNP":
+        raise ValueError("BL616")
+    lowered = source.name.lower()
+    other_revision = "3921" if revision == "3923" else "3923"
+    if other_revision in lowered:
+        raise ValueError("REVISION")
+    return source.resolve()
+
+
+def resolve_release_bl616(folder: str, revision: str) -> Path:
+    root = Path(folder).expanduser()
+    if not root.is_dir():
+        raise FileNotFoundError(root)
+    packaged_names = {
+        "3921": "nanoql_companion_nano20k.bin",
+        "3923": "nanoql_companion_nano20k_v3923.bin",
+    }
+    patterns = (
+        f"NanoQL-v*-BL616-{revision}.bin",
+        f"NanoQL*-BL616-{revision}.bin",
+        packaged_names[revision],
+    )
+    for search_root in _release_search_roots(root):
+        for pattern in patterns:
+            for candidate in sorted(search_root.glob(pattern)):
+                try:
+                    return validate_bl616_firmware(str(candidate), revision)
+                except (FileNotFoundError, ValueError):
+                    continue
+    raise FileNotFoundError(root)
+
+
+def resolve_release_bundle(folder: str, revision: str) -> tuple[Path, Path]:
+    return (
+        resolve_release_bl616(folder, revision),
+        resolve_setup_fpga_source(folder),
+    )
 
 
 def command_failure_message(command: list[str], output: str, code: int) -> str:
@@ -640,6 +758,10 @@ class NanoQLSetup(tk.Tk):
         self.revision = tk.StringVar(value="3923")
         self.firmware_mode = tk.StringVar(value="nanoql")
         self.bl616_port = tk.StringVar(value=SELECT_PORT)
+        self.release_path = tk.StringVar()
+        self.bl616_firmware_path = tk.StringVar(
+            value=str(default_bl616_firmware("3923"))
+        )
         self.rom_path = tk.StringVar()
         self.qsound_rom_path = tk.StringVar()
         self.sd_path = tk.StringVar()
@@ -657,6 +779,9 @@ class NanoQLSetup(tk.Tk):
         self.port_devices: dict[str, str] = {}
         self.status = tk.StringVar(value="Ready")
         self.link_detection_status = tk.StringVar()
+        self.release_detection_status = tk.StringVar(
+            value="Select an extracted NanoQL release folder."
+        )
         self.port_poll_after: str | None = None
         self._port_signature: tuple[tuple[object, ...], ...] = ()
         self._last_ports: list[object] = []
@@ -673,6 +798,8 @@ class NanoQLSetup(tk.Tk):
             "revision": self.revision,
             "firmware_mode": self.firmware_mode,
             "bl616_port": self.bl616_port,
+            "release_path": self.release_path,
+            "bl616_firmware_path": self.bl616_firmware_path,
             "rom_path": self.rom_path,
             "qsound_rom_path": self.qsound_rom_path,
             "sd_path": self.sd_path,
@@ -689,6 +816,7 @@ class NanoQLSetup(tk.Tk):
             "bitstream_path": self.bitstream_path,
         }
         self._load_settings()
+        self._load_release_selection()
         self.language_display.set(LANGUAGE_NAMES[self.language.get()])
 
         self._build_ui()
@@ -713,12 +841,18 @@ class NanoQLSetup(tk.Tk):
                 variable.set(section[name])
         if self.revision.get() not in ("3921", "3923"):
             self.revision.set("3923")
+        if "bl616_firmware_path" not in section:
+            self.bl616_firmware_path.set(
+                str(default_bl616_firmware(self.revision.get()))
+            )
         if self.firmware_mode.get() not in ("nanoql", "original"):
             self.firmware_mode.set("nanoql")
         if self.language.get() not in LANGUAGE_NAMES:
             self.language.set("en")
         if self.setup_mode.get() not in ("install", "update"):
             self.setup_mode.set("install")
+        if "bl616" in Path(self.bitstream_path.get()).name.lower():
+            self.bitstream_path.set(find_precompiled_bitstream())
         for variable in (
             self.install_sd_done, self.install_fpga_done,
             self.install_bl616_done, self.update_fpga_done,
@@ -733,6 +867,15 @@ class NanoQLSetup(tk.Tk):
                 self.update_bl616_done,
             ):
                 variable.set("0")
+
+    def _load_release_selection(self) -> None:
+        folder = self.release_path.get().strip()
+        if not folder:
+            self.release_detection_status.set(
+                self._t("Select an extracted NanoQL release folder.")
+            )
+            return
+        self._apply_release_folder(folder, show_error=False)
 
     def _schedule_settings_save(self, *_args) -> None:
         if self.settings_save_after is not None:
@@ -814,6 +957,7 @@ class NanoQLSetup(tk.Tk):
         self.refresh_ports()
         self.check_requirements()
         self._refresh_workflow()
+        self._load_release_selection()
 
     def _set_status(self, text: str) -> None:
         self._status_source = text
@@ -1014,14 +1158,31 @@ class NanoQLSetup(tk.Tk):
             value="update", command=self._refresh_workflow,
         ).pack(side="left")
 
+        release = ttk.LabelFrame(parent, text="NanoQL release", padding=12)
+        release.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+        release.columnconfigure(1, weight=1)
+        ttk.Label(release, text="Extracted release folder").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Entry(release, textvariable=self.release_path).grid(
+            row=0, column=1, sticky="ew", padx=8
+        )
+        self._button(
+            release, "Select release folder...", self._browse_release_folder
+        ).grid(row=0, column=2)
+        ttk.Label(
+            release, textvariable=self.release_detection_status,
+            justify="left", wraplength=700,
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
+
         self.workflow_description = tk.StringVar()
         ttk.Label(
             parent, textvariable=self.workflow_description,
             justify="left", wraplength=760,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
         self.workflow_steps = ttk.Frame(parent)
-        self.workflow_steps.grid(row=3, column=0, columnspan=2, sticky="ew")
+        self.workflow_steps.grid(row=4, column=0, columnspan=2, sticky="ew")
         self.workflow_step_widgets: list[ttk.Checkbutton] = []
         for row, (text, variable) in enumerate((
             ("Prepare the microSD card", self.install_sd_done),
@@ -1036,7 +1197,7 @@ class NanoQLSetup(tk.Tk):
             check.grid(row=row, column=0, sticky="w", pady=2)
             self.workflow_step_widgets.append(check)
         workflow_actions = ttk.Frame(parent)
-        workflow_actions.grid(row=4, column=0, columnspan=2, sticky="w", pady=(12, 4))
+        workflow_actions.grid(row=5, column=0, columnspan=2, sticky="w", pady=(12, 4))
         self._button(
             workflow_actions, "Continue setup", self._continue_setup,
             style="Primary.TButton",
@@ -1047,7 +1208,7 @@ class NanoQLSetup(tk.Tk):
         ).pack(side="left")
 
         requirements = ttk.LabelFrame(parent, text="Requirements", padding=12)
-        requirements.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(18, 10))
+        requirements.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(18, 10))
         requirements.columnconfigure(1, weight=1)
         self.requirements_text = tk.StringVar()
         ttk.Label(
@@ -1073,7 +1234,7 @@ class NanoQLSetup(tk.Tk):
         ).pack(side="left")
 
         sources = ttk.LabelFrame(parent, text="ROM sources", padding=12)
-        sources.grid(row=6, column=0, columnspan=2, sticky="ew", pady=10)
+        sources.grid(row=7, column=0, columnspan=2, sticky="ew", pady=10)
         ttk.Label(
             sources,
             text=(
@@ -1095,7 +1256,7 @@ class NanoQLSetup(tk.Tk):
         ).pack(side="left")
 
         self._instruction(
-            parent, 7, "Important",
+            parent, 8, "Important",
             "Normal FPGA updates now use NanoQL Link directly. Restore Sipeed firmware only for recovery or external JTAG tools.",
             columnspan=2,
         )
@@ -1188,20 +1349,31 @@ class NanoQLSetup(tk.Tk):
             parent, textvariable=self.revision, values=("3921", "3923"), state="readonly", width=12
         )
         revision.grid(row=1, column=1, sticky="w", pady=(0, 8))
+        revision.bind("<<ComboboxSelected>>", self._revision_changed)
+
+        ttk.Label(parent, text="NanoQL BL616 firmware", style="Section.TLabel").grid(
+            row=2, column=0, sticky="w", pady=8
+        )
+        ttk.Entry(parent, textvariable=self.bl616_firmware_path).grid(
+            row=2, column=1, sticky="ew", pady=8
+        )
+        self._button(
+            parent, "Select file...", self._browse_bl616_firmware
+        ).grid(row=2, column=2, padx=(8, 0), pady=8)
 
         ttk.Label(parent, text="BL616 bootloader port", style="Section.TLabel").grid(
-            row=2, column=0, sticky="w", pady=8
+            row=3, column=0, sticky="w", pady=8
         )
         self.bl616_port_combo = ttk.Combobox(
             parent, textvariable=self.bl616_port, state="readonly", width=62
         )
-        self.bl616_port_combo.grid(row=2, column=1, sticky="ew", pady=8)
+        self.bl616_port_combo.grid(row=3, column=1, sticky="ew", pady=8)
         ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
-            row=2, column=2, padx=(8, 0), pady=8
+            row=3, column=2, padx=(8, 0), pady=8
         )
 
         actions = ttk.Frame(parent)
-        actions.grid(row=3, column=0, columnspan=3, sticky="w", pady=(18, 8))
+        actions.grid(row=4, column=0, columnspan=3, sticky="w", pady=(18, 8))
         self._button(
             actions,
             "Install / update NanoQL firmware",
@@ -1215,7 +1387,7 @@ class NanoQLSetup(tk.Tk):
         ).pack(side="left")
 
         alternatives = ttk.LabelFrame(parent, text="Advanced alternatives", padding=8)
-        alternatives.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        alternatives.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         self._button(alternatives, "Prepare files only", self.prepare_firmware).pack(
             side="left", padx=(0, 8)
         )
@@ -1224,22 +1396,22 @@ class NanoQLSetup(tk.Tk):
         ).pack(side="left")
 
         self._instruction(
-            parent, 5, "Normal use",
+            parent, 6, "Normal use",
             "The NanoQL firmware provides the USB keyboard, microSD, overlay, NanoQL Link, and direct FPGA programming.",
             columnspan=3, wraplength=560,
         )
         self._instruction(
-            parent, 6, "Recovery",
+            parent, 7, "Recovery",
             "The Sipeed original firmware is only needed for recovery or an external JTAG programmer.",
             columnspan=3, wraplength=560,
         )
         self._instruction(
-            parent, 7, "Boot mode",
+            parent, 8, "Boot mode",
             "Hold UPDATE while connecting USB, release it, refresh the ports, then select the new bootloader port.",
             columnspan=3, wraplength=560,
         )
         self._instruction(
-            parent, 8, "Compatibility",
+            parent, 9, "Compatibility",
             "Native BL616 flashing works on Windows, macOS, and Linux. FlashCube is only a Windows fallback.",
             columnspan=3, wraplength=560,
         )
@@ -1248,7 +1420,7 @@ class NanoQLSetup(tk.Tk):
             parent,
             "update",
             "Hold the highlighted UPDATE button while connecting the USB cable.",
-        ).grid(row=1, column=3, rowspan=8, sticky="ne", padx=(18, 0))
+        ).grid(row=1, column=3, rowspan=9, sticky="ne", padx=(18, 0))
 
     def _build_storage_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -1294,15 +1466,22 @@ class NanoQLSetup(tk.Tk):
         ttk.Label(
             parent, text="NanoQL Link (normal updates)", style="Section.TLabel"
         ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 6))
-        ttk.Label(parent, text="Bitstream", style="Section.TLabel").grid(
+        ttk.Label(
+            parent, text="Release folder or FPGA file", style="Section.TLabel"
+        ).grid(
             row=2, column=0, sticky="w", pady=8
         )
         ttk.Entry(parent, textvariable=self.bitstream_path).grid(
             row=2, column=1, sticky="ew", padx=8, pady=8
         )
-        ttk.Button(parent, text="Browse...", command=self._browse_bitstream).grid(
-            row=2, column=2, pady=8
-        )
+        bitstream_browse = ttk.Frame(parent)
+        bitstream_browse.grid(row=2, column=2, pady=8)
+        self._button(
+            bitstream_browse, "Select folder...", self._browse_bitstream
+        ).pack(side="left")
+        self._button(
+            bitstream_browse, "Select file...", self._browse_bitstream_file
+        ).pack(side="left", padx=(6, 0))
         ttk.Label(parent, text="NanoQL Link port", style="Section.TLabel").grid(
             row=3, column=0, sticky="w", pady=8
         )
@@ -1337,17 +1516,22 @@ class NanoQLSetup(tk.Tk):
             columnspan=3, wraplength=600,
         )
         self._instruction(
-            parent, 6, "Temporary",
+            parent, 6, "Files",
+            "Select the extracted NanoQL release folder. The assistant automatically chooses the FPGA bitstream and never the BL616 firmware.",
+            columnspan=3, wraplength=600,
+        )
+        self._instruction(
+            parent, 7, "Temporary",
             "SRAM is lost when the board is powered off and is intended for testing.",
             columnspan=3, wraplength=600,
         )
         self._instruction(
-            parent, 7, "Permanent",
+            parent, 8, "Permanent",
             "Persistent programming erases, writes, and verifies the FPGA configuration Flash. Keep USB and power connected until NanoQL restarts.",
             columnspan=3, wraplength=600,
         )
         self._instruction(
-            parent, 8, "Validation",
+            parent, 9, "Validation",
             "Detect configuration Flash is an optional check. It reads the JEDEC identifier without replacing the bitstream.",
             columnspan=3, wraplength=600,
         )
@@ -1356,14 +1540,14 @@ class NanoQLSetup(tk.Tk):
             parent,
             "s1",
             "Start NanoQL normally, then briefly press the highlighted S1 button once.",
-        ).grid(row=2, column=3, rowspan=7, sticky="ne", padx=(18, 0))
+        ).grid(row=2, column=3, rowspan=8, sticky="ne", padx=(18, 0))
 
         recovery = ttk.LabelFrame(
             parent,
             text="External JTAG (recovery)",
             padding=10,
         )
-        recovery.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(18, 0))
+        recovery.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(18, 0))
         recovery.columnconfigure(1, weight=1)
         self._path_row(
             recovery, 0, "FPGA programmer", self.loader_path, self._browse_loader
@@ -1667,16 +1851,140 @@ class NanoQLSetup(tk.Tk):
         if path:
             self.loader_path.set(path)
 
+    def _apply_release_folder(
+        self, folder: str, show_error: bool = True,
+        infer_revision: bool = True,
+    ) -> bool:
+        selected_revision = self.revision.get()
+        try:
+            firmware, bitstream = resolve_release_bundle(
+                folder, selected_revision
+            )
+        except (FileNotFoundError, ValueError):
+            other_revision = "3921" if selected_revision == "3923" else "3923"
+            if infer_revision:
+                try:
+                    firmware, bitstream = resolve_release_bundle(
+                        folder, other_revision
+                    )
+                except (FileNotFoundError, ValueError):
+                    pass
+                else:
+                    selected_revision = other_revision
+                    self.revision.set(selected_revision)
+                    return self._finish_release_selection(
+                        folder, firmware, bitstream
+                    )
+            self.bl616_firmware_path.set("")
+            self.release_detection_status.set(
+                self._t(
+                    "Release files were not detected for the selected board revision."
+                )
+            )
+            if show_error:
+                messagebox.showerror(
+                    self._t("Incomplete release"),
+                    self._t(
+                        "The folder must contain the FPGA .fs file and the NanoQL "
+                        "BL616 .bin file for the selected 3921/3923 revision."
+                    ),
+                )
+            return False
+        return self._finish_release_selection(folder, firmware, bitstream)
+
+    def _finish_release_selection(
+        self, folder: str, firmware: Path, bitstream: Path
+    ) -> bool:
+        self.release_path.set(str(Path(folder).expanduser().resolve()))
+        self.bl616_firmware_path.set(str(firmware))
+        self.bitstream_path.set(str(bitstream))
+        self.release_detection_status.set(
+            f"{self._t('BL616 firmware and FPGA bitstream detected.')} "
+            f"({self.revision.get()})"
+        )
+        if hasattr(self, "log"):
+            self._append_log(f"Release folder: {self.release_path.get()}\n")
+            self._append_log(f"BL616 firmware: {firmware}\n")
+            self._append_log(f"FPGA bitstream: {bitstream}\n")
+        return True
+
+    def _browse_release_folder(self) -> None:
+        path = filedialog.askdirectory(
+            title=self._t("Select the extracted NanoQL release folder")
+        )
+        if path:
+            self._apply_release_folder(path)
+
+    def _revision_changed(self, _event=None) -> None:
+        folder = self.release_path.get().strip()
+        if folder:
+            self._apply_release_folder(
+                folder, show_error=False, infer_revision=False
+            )
+        else:
+            self.bl616_firmware_path.set(
+                str(default_bl616_firmware(self.revision.get()))
+            )
+
+    def _browse_bl616_firmware(self) -> None:
+        path = filedialog.askopenfilename(
+            title=self._t("Select the NanoQL BL616 firmware"),
+            filetypes=(("NanoQL BL616 firmware", "*.bin"), ("All files", "*")),
+        )
+        if not path:
+            return
+        try:
+            firmware = validate_bl616_firmware(path, self.revision.get())
+        except FileNotFoundError:
+            detail = "Select an existing NanoQL BL616 .bin file."
+        except ValueError as error:
+            detail = (
+                "This BL616 firmware belongs to the other board revision."
+                if str(error) == "REVISION"
+                else "The selected file is not NanoQL BL616 firmware."
+            )
+        else:
+            self.bl616_firmware_path.set(str(firmware))
+            return
+        messagebox.showerror(self._t("Missing firmware"), self._t(detail))
+
     def _browse_bitstream(self) -> None:
+        path = filedialog.askdirectory(
+            title=self._t("Select the extracted NanoQL release folder")
+        )
+        if path:
+            try:
+                source = resolve_setup_fpga_source(path)
+            except (FileNotFoundError, ValueError):
+                messagebox.showerror(
+                    self._t("Missing bitstream"),
+                    self._t(
+                        "No NanoQL FPGA bitstream was found. Select the extracted "
+                        "release folder, NanoQL-*-FPGA.fs, or NanoQL-*-FPGA.bin."
+                    ),
+                )
+            else:
+                self.bitstream_path.set(str(source))
+
+    def _browse_bitstream_file(self) -> None:
         path = filedialog.askopenfilename(
             title=self._t("Select a precompiled NanoQL FPGA bitstream"),
             filetypes=(
-                ("Gowin bitstreams", "*.fs *.bin"),
+                ("NanoQL FPGA", ("*.fs", "*.bin")),
                 ("All files", "*"),
             ),
         )
         if path:
-            self.bitstream_path.set(path)
+            if "bl616" in Path(path).name.lower():
+                messagebox.showerror(
+                    self._t("Missing bitstream"),
+                    self._t(
+                        "The selected file is BL616 firmware, not an FPGA bitstream. "
+                        "Select the release folder instead."
+                    ),
+                )
+            else:
+                self.bitstream_path.set(path)
 
     def _browse_binary(self) -> None:
         path = filedialog.askopenfilename(
@@ -1964,25 +2272,32 @@ class NanoQLSetup(tk.Tk):
             "Detecting FPGA configuration Flash",
         )
 
-    def _selected_binary_bitstream(self) -> Path | None:
-        bitstream = Path(self.bitstream_path.get()).expanduser()
-        if bitstream.suffix.lower() == ".bin" and bitstream.is_file():
-            return bitstream
-        if bitstream.suffix.lower() == ".fs":
-            binary = bitstream.with_suffix(".bin")
-            if binary.is_file():
-                return binary
-        messagebox.showerror(
-            self._t("Missing binary bitstream"),
-            self._t(
-                "Select a Gowin .bin bitstream, or keep the matching .bin file "
-                "beside the selected .fs file."
-            ),
-        )
+    def _selected_fpga_source(self, require_fs: bool = False) -> Path | None:
+        try:
+            return resolve_setup_fpga_source(
+                self.bitstream_path.get(), require_fs=require_fs
+            )
+        except ValueError as error:
+            if str(error) == "BL616":
+                detail = (
+                    "The selected file is BL616 firmware, not an FPGA bitstream. "
+                    "Select the release folder instead."
+                )
+            else:
+                detail = (
+                    "No NanoQL FPGA bitstream was found. Select the extracted "
+                    "release folder, NanoQL-*-FPGA.fs, or NanoQL-*-FPGA.bin."
+                )
+        except FileNotFoundError:
+            detail = (
+                "No NanoQL FPGA bitstream was found. Select the extracted "
+                "release folder, NanoQL-*-FPGA.fs, or NanoQL-*-FPGA.bin."
+            )
+        messagebox.showerror(self._t("Missing bitstream"), self._t(detail))
         return None
 
     def program_fpga_flash_via_link(self) -> None:
-        bitstream = self._selected_binary_bitstream()
+        bitstream = self._selected_fpga_source()
         if bitstream is None:
             return
         command = self._link_command("fpga-flash")
@@ -1994,7 +2309,7 @@ class NanoQLSetup(tk.Tk):
         )
 
     def program_fpga_sram_via_link(self) -> None:
-        bitstream = self._selected_binary_bitstream()
+        bitstream = self._selected_fpga_source()
         if bitstream is None:
             return
         command = self._link_command("fpga")
@@ -2047,6 +2362,29 @@ class NanoQLSetup(tk.Tk):
             / filename
         )
 
+    def _selected_bl616_firmware(self) -> Path | None:
+        try:
+            return validate_bl616_firmware(
+                self.bl616_firmware_path.get(), self.revision.get()
+            )
+        except FileNotFoundError:
+            detail = "Select an existing NanoQL BL616 .bin file."
+        except ValueError as error:
+            detail = (
+                "This BL616 firmware belongs to the other board revision."
+                if str(error) == "REVISION"
+                else "The selected file is not NanoQL BL616 firmware."
+            )
+        messagebox.showerror(self._t("Missing firmware"), self._t(detail))
+        return None
+
+    def _append_bl616_override(self, command: list[str]) -> bool:
+        firmware = self._selected_bl616_firmware()
+        if firmware is None:
+            return False
+        command.extend([f"--unified-{self.revision.get()}", str(firmware)])
+        return True
+
     def prepare_firmware(self, callback=None) -> None:
         command = [
             sys.executable,
@@ -2054,6 +2392,8 @@ class NanoQLSetup(tk.Tk):
             "--revision",
             self.revision.get(),
         ]
+        if not self._append_bl616_override(command):
+            return
         self._run(command, "Preparing BL616 firmware", callback)
 
     def prepare_and_open_flashcube(self) -> None:
@@ -2081,6 +2421,9 @@ class NanoQLSetup(tk.Tk):
             "230400" if platform.system() == "Darwin" else "2000000",
             "--yes",
         ]
+        if self.firmware_mode.get() == "nanoql":
+            if not self._append_bl616_override(command):
+                return
         self._run(
             command,
             ("Installing NanoQL BL616 firmware"
@@ -2206,18 +2549,14 @@ class NanoQLSetup(tk.Tk):
 
     def program_fpga(self, persistent: bool) -> None:
         loader = self.loader_path.get()
-        bitstream = Path(self.bitstream_path.get())
         if not loader or not Path(loader).is_file():
             messagebox.showerror(
                 self._t("FPGA programmer not found"),
                 self._t("Select a valid Gowin programmer_cli or openFPGALoader executable."),
             )
             return
-        if not bitstream.is_file():
-            messagebox.showerror(
-                self._t("Missing bitstream"),
-                self._t("The selected bitstream does not exist. Select the precompiled NanoQL-*-FPGA.fs file from the release, or build NanoQL first."),
-            )
+        bitstream = self._selected_fpga_source(require_fs=True)
+        if bitstream is None:
             return
         if "openfpgaloader" in Path(loader).name.lower():
             command = [loader, "-b", "tangnano20k"]

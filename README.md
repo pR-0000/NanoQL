@@ -63,7 +63,7 @@ python tools/nanoql_setup.pyw
 
 Sous Windows, vous pouvez aussi double-cliquer sur `tools/nanoql_setup.pyw` : aucune console ne reste ouverte. L'assistant mémorise automatiquement les chemins, paramètres et la langue choisie dans un fichier INI propre à l'utilisateur. Son sélecteur **English / Français** traduit immédiatement toute l'interface. L'onglet **Injection de binaire** charge, vérifie et exécute directement un binaire 68000 avec des adresses de chargement, PC et SSP configurables.
 
-L'assistant accepte les fichiers FPGA `.fs`/`.bin` précompilés d'une release, détecte les ports USB/série dans des listes déroulantes et peut installer openFPGALoader avec Homebrew sous macOS. Gowin EDA n'est pas requis pour installer une release.
+Dans **Commencer**, sélectionnez une seule fois le dossier extrait `NanoQL-vX.Y.Z-Complete-3921/3923`. L'assistant détecte le firmware BL616 `.bin` adapté à la carte et le bitstream FPGA `.fs`, puis renseigne le bon champ dans chaque onglet. Chaque onglet conserve un sélecteur manuel indépendant. Les signatures sont vérifiées avant le flash afin qu'un firmware BL616 ne puisse pas être pris pour un bitstream FPGA. L'assistant détecte aussi les ports USB/série et peut installer openFPGALoader avec Homebrew sous macOS. Gowin EDA n'est pas requis pour installer une release.
 
 Pour une première installation :
 
@@ -180,7 +180,7 @@ python tools/nanoql_setup.pyw
 
 On Windows, you can also double-click `tools/nanoql_setup.pyw`, which opens no console window. The assistant automatically remembers paths, settings, and the selected language in a per-user INI file. Its **English / Français** selector translates the complete interface immediately. The **Binary injection** tab directly loads, verifies, and executes a 68000 binary with configurable load, PC, and SSP addresses.
 
-The assistant accepts a release's precompiled FPGA `.fs`/`.bin` files, detects USB/serial ports in drop-down lists, and can install openFPGALoader through Homebrew on macOS. Gowin EDA is not required to install a release.
+In **Start here**, select the extracted `NanoQL-vX.Y.Z-Complete-3921/3923` folder once. The assistant detects the board-specific BL616 `.bin` and the FPGA `.fs`, then fills the correct field in each tab. Each tab still offers an independent manual file selector. File signatures are checked before flashing, so BL616 firmware cannot be mistaken for an FPGA bitstream. The assistant also detects USB/serial ports and can install openFPGALoader through Homebrew on macOS. Gowin EDA is not required to install a release.
 
 For first installation:
 

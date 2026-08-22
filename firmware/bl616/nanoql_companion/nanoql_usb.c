@@ -79,6 +79,7 @@
 #define NANOQL_CMD_FPGA_FLASH_PROBE 0xf5
 #define NANOQL_CMD_FPGA_FLASH_DIAGNOSTIC 0xf6
 #define NANOQL_CMD_FPGA_JTAG_DIAGNOSTIC 0xf7
+#define NANOQL_FPGA_MIN_SIZE (256u * 1024u)
 #define NANOQL_FPGA_MAX_SIZE (2u * 1024u * 1024u)
 
 #define NANOQL_FS_ROOT CARD_MOUNTPOINT "/NanoQL/Drive1"
@@ -1117,6 +1118,18 @@ static void fpga_upload_resume_companion(void)
     companion_suspended_for_upload = false;
 }
 
+static bool fpga_upload_header_valid(const uint8_t *data, uint8_t length)
+{
+    if (!data || length < 32u)
+        return false;
+    for (uint8_t index = 0; index < 22u; ++index) {
+        if (data[index] != 0xffu)
+            return false;
+    }
+    return data[22] == 0xa5u && data[23] == 0xc3u &&
+           data[30] == 0x08u && data[31] == 0x1bu;
+}
+
 static uint8_t fpga_upload_command(
     const uint8_t *payload, uint8_t length, uint8_t *response,
     uint8_t *response_length)
@@ -1169,7 +1182,8 @@ static uint8_t fpga_upload_command(
         fpga_upload_abort();
         fpga_upload_size = read_be32(&payload[1]);
         fpga_upload_expected_crc = read_be32(&payload[5]);
-        if (!fpga_upload_size || fpga_upload_size > NANOQL_FPGA_MAX_SIZE)
+        if (fpga_upload_size < NANOQL_FPGA_MIN_SIZE ||
+            fpga_upload_size > NANOQL_FPGA_MAX_SIZE)
             return 4;
         if (!fpga_upload_suspend_companion())
             return 5;
@@ -1201,7 +1215,8 @@ static uint8_t fpga_upload_command(
         fpga_upload_expected_crc = read_be32(&payload[5]);
         fpga_upload_gowin_checksum = length == 13
             ? read_be32(&payload[9]) : UINT32_C(0xffffffff);
-        if (!fpga_upload_size || fpga_upload_size > NANOQL_FPGA_MAX_SIZE)
+        if (fpga_upload_size < NANOQL_FPGA_MIN_SIZE ||
+            fpga_upload_size > NANOQL_FPGA_MAX_SIZE)
             return 4;
         if (!fpga_upload_suspend_companion())
             return 5;
@@ -1220,6 +1235,11 @@ static uint8_t fpga_upload_command(
         if (!fpga_upload_open || length < 2 ||
             fpga_upload_received + length - 1 > fpga_upload_size)
             return 6;
+        if (fpga_upload_received == 0 &&
+            !fpga_upload_header_valid(&payload[1], length - 1)) {
+            fpga_upload_abort();
+            return 8;
+        }
         bool last = fpga_upload_received + length - 1 == fpga_upload_size;
         bool was_flash = fpga_upload_flash;
         bool written = fpga_upload_flash

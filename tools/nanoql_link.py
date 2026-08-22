@@ -37,6 +37,10 @@ REQUEST_MAGIC = b"NQ"
 RESPONSE_MAGIC = b"QN"
 PROTOCOL_VERSION = 1
 MAX_LINK_PAYLOAD = 245
+GOWIN_BITSTREAM_MIN_SIZE = 256 * 1024
+GOWIN_BITSTREAM_MAX_SIZE = 2 * 1024 * 1024
+GOWIN_PREAMBLE = b"\xff" * 22 + b"\xa5\xc3"
+GOWIN_GW2AR18_DEVICE_ID = b"\x08\x1b"
 
 FIRMWARE_ERRORS = {
     1: "unsupported protocol version",
@@ -84,6 +88,125 @@ FATFS_ERRORS = {
     18: "FR_TOO_MANY_OPEN_FILES",
     19: "FR_INVALID_PARAMETER",
 }
+
+
+def _validate_gowin_binary(data: bytes, source: Path) -> None:
+    if data.startswith(b"BFNP"):
+        raise ValueError(
+            f"{source.name} is a BL616 firmware, not an FPGA bitstream. "
+            "Select the release folder or the NanoQL FPGA file."
+        )
+    if not GOWIN_BITSTREAM_MIN_SIZE <= len(data) <= GOWIN_BITSTREAM_MAX_SIZE:
+        raise ValueError(
+            f"{source.name} is not a valid Tang Nano 20K FPGA bitstream: "
+            f"unexpected size {len(data)} bytes."
+        )
+    if not data.startswith(GOWIN_PREAMBLE):
+        raise ValueError(
+            f"{source.name} is not a Gowin FPGA bitstream (missing preamble)."
+        )
+    if data[30:32] != GOWIN_GW2AR18_DEVICE_ID:
+        raise ValueError(
+            f"{source.name} does not target the Tang Nano 20K GW2AR-18 FPGA."
+        )
+
+
+def _decode_gowin_fs(source: Path) -> tuple[bytes, int]:
+    text = source.read_text(encoding="ascii")
+    if "//File Title: Bitstream file" not in text or "//Device: GW2AR-18" not in text:
+        raise ValueError(f"{source.name} is not a Tang Nano 20K Gowin .fs file.")
+    checksum_match = re.search(
+        r"^//CheckSum:\s*0x([0-9a-fA-F]+)\s*$", text, re.MULTILINE
+    )
+    if checksum_match is None:
+        raise ValueError(f"No Gowin CheckSum was found in {source}.")
+
+    chunks: list[str] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("//"):
+            continue
+        if set(stripped) - {"0", "1"}:
+            raise ValueError(
+                f"Invalid Gowin bitstream data at {source}:{line_number}."
+            )
+        chunks.append(stripped)
+    bits = "".join(chunks)
+    if not bits or len(bits) % 8:
+        raise ValueError(f"The Gowin data in {source.name} is incomplete.")
+    data = bytes(int(bits[index:index + 8], 2) for index in range(0, len(bits), 8))
+    _validate_gowin_binary(data, source)
+    return data, int(checksum_match.group(1), 16)
+
+
+def _release_fpga_candidates(folder: Path) -> list[Path]:
+    patterns = (
+        "NanoQL-v*-FPGA.fs",
+        "NanoQL*-FPGA.fs",
+        "NanoQL_sd_rom.fs",
+        "NanoQL-v*-FPGA.bin",
+        "NanoQL-v*-FPGA-SRAM.bin",
+        "NanoQL_sd_rom.bin",
+    )
+    candidates: list[Path] = []
+    for pattern in patterns:
+        candidates.extend(sorted(folder.glob(pattern)))
+    if not candidates:
+        for child in sorted(path for path in folder.iterdir() if path.is_dir()):
+            for pattern in patterns:
+                candidates.extend(sorted(child.glob(pattern)))
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(resolved)
+    return unique
+
+
+def resolve_fpga_source(selection: Path) -> Path:
+    source = selection.expanduser().resolve()
+    if source.is_dir():
+        candidates = _release_fpga_candidates(source)
+        if not candidates:
+            raise FileNotFoundError(
+                f"No NanoQL FPGA bitstream was found in {source}."
+            )
+        return candidates[0]
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    if "bl616" in source.name.lower():
+        raise ValueError(
+            f"{source.name} is BL616 firmware, not an FPGA bitstream. "
+            "Select the release folder or the NanoQL FPGA file."
+        )
+    if source.suffix.lower() not in (".fs", ".bin"):
+        raise ValueError("Select a NanoQL release folder or a Gowin .fs/.bin file.")
+    return source
+
+
+def load_gowin_bitstream(selection: Path, require_checksum: bool = False) -> tuple[Path, bytes, int | None]:
+    source = resolve_fpga_source(selection)
+    if source.suffix.lower() == ".fs":
+        data, checksum = _decode_gowin_fs(source)
+        return source, data, checksum
+
+    data = source.read_bytes()
+    _validate_gowin_binary(data, source)
+    checksum: int | None = None
+    fs_candidates = [source.with_suffix(".fs")]
+    if source.name.endswith("-FPGA-SRAM.bin"):
+        fs_candidates.append(source.with_name(source.name[:-len("-FPGA-SRAM.bin")] + "-FPGA.fs"))
+    for fs_path in fs_candidates:
+        if fs_path.is_file():
+            _, checksum = _decode_gowin_fs(fs_path)
+            break
+    if require_checksum and checksum is None:
+        raise FileNotFoundError(
+            f"The matching Gowin .fs file is required for SRAM programming beside {source.name}."
+        )
+    return source, data, checksum
 
 CMD_STATUS = 0x00
 CMD_HOLD = 0x01
@@ -2328,7 +2451,7 @@ def main() -> int:
     )
 
     fpga_parser = subparsers.add_parser(
-        "fpga", help="load a Gowin .bin bitstream into FPGA SRAM"
+        "fpga", help="load a NanoQL release folder or Gowin bitstream into FPGA SRAM"
     )
     fpga_parser.add_argument("bitstream", type=Path)
 
@@ -2339,7 +2462,7 @@ def main() -> int:
 
     link_flash_parser = subparsers.add_parser(
         "fpga-flash",
-        help="program FPGA configuration Flash through NanoQL Link",
+        help="program a NanoQL release folder or Gowin bitstream through NanoQL Link",
     )
     link_flash_parser.add_argument("bitstream", type=Path)
     link_flash_parser.add_argument(
@@ -2632,26 +2755,13 @@ def main() -> int:
             if args.enter:
                 link.tap_key(0x28, hold_time=0.15)
         elif args.command == "fpga":
-            if args.bitstream.suffix.lower() != ".bin":
-                raise ValueError(
-                    "Use the .bin file generated by Gowin, not the .fs file."
-                )
-            data = args.bitstream.read_bytes()
-            fs_path = args.bitstream.with_suffix(".fs")
-            if not fs_path.is_file():
-                raise FileNotFoundError(
-                    f"The matching Gowin file is required to finalize SRAM "
-                    f"programming: {fs_path}"
-                )
-            header = fs_path.read_bytes()[:4096].decode("ascii", errors="ignore")
-            checksum_match = re.search(
-                r"^//CheckSum:\s*0x([0-9a-fA-F]+)\s*$", header, re.MULTILINE
+            source, data, gowin_checksum = load_gowin_bitstream(
+                args.bitstream, require_checksum=True
             )
-            if checksum_match is None:
-                raise ValueError(f"No Gowin CheckSum was found in {fs_path}.")
-            gowin_checksum = int(checksum_match.group(1), 16)
+            assert gowin_checksum is not None
             destination = "SRAM"
             print(
+                f"Using FPGA bitstream: {source}\n"
                 f"Sending {len(data)} bytes to FPGA {destination} through the "
                 f"BL616 (Gowin checksum 0x{gowin_checksum:04x})..."
             )
@@ -2676,12 +2786,9 @@ def main() -> int:
             print("Write-enable and write-disable checks completed successfully.")
             print("The FPGA reloaded its existing persistent bitstream.")
         elif args.command == "fpga-flash":
-            if args.bitstream.suffix.lower() != ".bin":
-                raise ValueError(
-                    "NanoQL Link persistent programming requires Gowin's .bin file."
-                )
-            data = args.bitstream.read_bytes()
+            source, data, _ = load_gowin_bitstream(args.bitstream)
             print(
+                f"Using FPGA bitstream: {source}\n"
                 f"Sending {len(data)} bytes to FPGA configuration Flash "
                 "through NanoQL Link. Do not disconnect USB or power."
             )
