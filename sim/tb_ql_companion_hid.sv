@@ -141,6 +141,15 @@ module tb_ql_companion_hid;
 
         check_key(7'h1e, 7, 1'b1);  // AZERTY & -> English QL Shift+7
 
+        // The original English QL has a dedicated Pound matrix contact.
+        // USB usage 32 is NanoQL's semantic alias for that physical contact.
+        send_hid(8'h69);
+        send_hid(8'h30);
+        if (!matrix[21] || matrix[56])
+            $fatal(1, "AZERTY Shift+dollar did not produce English QL pound");
+        send_hid(8'hb0);
+        send_hid(8'he9);
+
         // Shift+3 on AZERTY is the digit 3. Suppress the host Shift contact
         // while presenting the English QL 3 matrix position.
         send_hid(8'h69);
@@ -265,8 +274,8 @@ module tb_ql_companion_hid;
         check_key(7'h30, 6, 1'b1);  // AZERTY dollar -> French QL Shift+4
         send_hid(8'h69);
         send_hid(8'h30);
-        if (!matrix[13] || !matrix[56] || matrix[16])
-            $fatal(1, "AZERTY Shift+dollar did not produce QL pound");
+        if (!matrix[13] || !matrix[56] || matrix[58] || matrix[16])
+            $fatal(1, "AZERTY Shift+dollar did not produce French QL pound");
         send_hid(8'hb0);
         send_hid(8'he9);
         check_key(7'h31, 48, 1'b1); // AZERTY asterisk, HID ANSI variant

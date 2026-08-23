@@ -404,6 +404,7 @@ QL_FRENCH_KEYS = {
 # already defines these QL character-set codes; sending their real matrix
 # combinations preserves accents instead of silently dropping them.
 QL_ENGLISH_EXTENDED_KEYS = {
+    "£": (0x32, ()),
     "ä": (0x29, (MOD_LEFT_CTRL,)),
     "ã": (0x1E, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
     "å": (0x34, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),

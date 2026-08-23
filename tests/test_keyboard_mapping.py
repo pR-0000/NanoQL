@@ -117,6 +117,7 @@ class EnglishKeyboardMappingTests(unittest.TestCase):
             "m": (0x10, ()), "M": (0x10, (MOD_LEFT_SHIFT,)),
             ",": (0x36, ()), ";": (0x33, ()), ":": (0x33, (MOD_LEFT_SHIFT,)),
             '"': (0x34, (MOD_LEFT_SHIFT,)), "@": (0x1F, (MOD_LEFT_SHIFT,)),
+            "£": (0x32, ()),
         }
         for character, contact in expected.items():
             with self.subTest(character=character):

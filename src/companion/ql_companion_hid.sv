@@ -308,7 +308,7 @@ module ql_companion_hid #(
                 "^": ql_character_key = french ?
                       {1'b1, 3'b010, 7'h35} : {1'b1, 3'b001, 7'h23};
                 8'h60: ql_character_key = french ?
-                       {1'b1, 3'b001, 7'h31} : {1'b1, 3'b000, 7'h35};
+                       {1'b1, 3'b001, 7'h31} : {1'b1, 3'b000, 7'h32};
                 8'h5c: ql_character_key = french ?
                        {1'b1, 3'b001, 7'h2f} : {1'b1, 3'b000, 7'h31};
                 "|": ql_character_key = french ?
@@ -373,6 +373,15 @@ module ql_companion_hid #(
     wire host_letter_shift = shift_down ^ usb_caps_lock;
     wire [2:0] semantic_event_mods = physical_letter ?
                {alt_down, ctrl_down, host_letter_shift} : semantic_key[9:7];
+    wire [2:0] host_event_mods = {alt_down, ctrl_down, shift_down};
+    // Translation can remove a PC modifier as well as add a QL modifier.
+    // For example, Shift+& on AZERTY means the unshifted QL digit 1. Keep the
+    // main contact hidden while the IPC observes that Shift has disappeared;
+    // otherwise keyboards which report Shift and the key very close together
+    // can make the IPC reject the complete chord.
+    wire semantic_event_needs_delay =
+        (semantic_event_mods != 3'd0) ||
+        (semantic_event_mods != host_event_mods);
 
     // Special PC keys become QL modifier combinations. Delay the main key
     // by about 22 ms so the IPC completes a matrix scan with the modifier
@@ -412,8 +421,7 @@ module ql_companion_hid #(
                 // Present generated modifiers before the main contact. The
                 // real IPC scans and debounces different matrix rows; making
                 // both edges simultaneous can therefore lose Shift or Ctrl.
-                if ((semantic_mods[semantic_index] == 3'd0) ||
-                    (semantic_hold[semantic_index] <= KEY_MIN_HOLD_TICKS))
+                if (semantic_hold[semantic_index] <= KEY_MIN_HOLD_TICKS)
                     semantic_matrix[semantic_contact[semantic_index]] = 1'b1;
                 semantic_shift = semantic_shift |
                                  semantic_mods[semantic_index][0];
@@ -601,7 +609,7 @@ module ql_companion_hid #(
                                         usage_contact(semantic_usage);
                                     semantic_mods[0] <= semantic_event_mods;
                                     semantic_hold[0] <=
-                                        (semantic_event_mods != 3'd0) ?
+                                        semantic_event_needs_delay ?
                                         KEY_TOTAL_HOLD_TICKS :
                                         KEY_MIN_HOLD_TICKS;
                                     semantic_release_pending[0] <= 1'b0;
@@ -613,7 +621,7 @@ module ql_companion_hid #(
                                         usage_contact(semantic_usage);
                                     semantic_mods[1] <= semantic_event_mods;
                                     semantic_hold[1] <=
-                                        (semantic_event_mods != 3'd0) ?
+                                        semantic_event_needs_delay ?
                                         KEY_TOTAL_HOLD_TICKS :
                                         KEY_MIN_HOLD_TICKS;
                                     semantic_release_pending[1] <= 1'b0;
@@ -625,7 +633,7 @@ module ql_companion_hid #(
                                         usage_contact(semantic_usage);
                                     semantic_mods[2] <= semantic_event_mods;
                                     semantic_hold[2] <=
-                                        (semantic_event_mods != 3'd0) ?
+                                        semantic_event_needs_delay ?
                                         KEY_TOTAL_HOLD_TICKS :
                                         KEY_MIN_HOLD_TICKS;
                                     semantic_release_pending[2] <= 1'b0;
@@ -637,7 +645,7 @@ module ql_companion_hid #(
                                         usage_contact(semantic_usage);
                                     semantic_mods[3] <= semantic_event_mods;
                                     semantic_hold[3] <=
-                                        (semantic_event_mods != 3'd0) ?
+                                        semantic_event_needs_delay ?
                                         KEY_TOTAL_HOLD_TICKS :
                                         KEY_MIN_HOLD_TICKS;
                                     semantic_release_pending[3] <= 1'b0;
@@ -649,7 +657,7 @@ module ql_companion_hid #(
                                         usage_contact(semantic_usage);
                                     semantic_mods[4] <= semantic_event_mods;
                                     semantic_hold[4] <=
-                                        (semantic_event_mods != 3'd0) ?
+                                        semantic_event_needs_delay ?
                                         KEY_TOTAL_HOLD_TICKS :
                                         KEY_MIN_HOLD_TICKS;
                                     semantic_release_pending[4] <= 1'b0;
@@ -661,7 +669,7 @@ module ql_companion_hid #(
                                         usage_contact(semantic_usage);
                                     semantic_mods[5] <= semantic_event_mods;
                                     semantic_hold[5] <=
-                                        (semantic_event_mods != 3'd0) ?
+                                        semantic_event_needs_delay ?
                                         KEY_TOTAL_HOLD_TICKS :
                                         KEY_MIN_HOLD_TICKS;
                                     semantic_release_pending[5] <= 1'b0;

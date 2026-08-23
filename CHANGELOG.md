@@ -2,6 +2,7 @@
 
 ## v0.3.2 - 2026-08-23
 
+- Hotfix: maps the QL character-set pound sign to the original dedicated English matrix contact used by JS and standard English ROMs, while retaining the MGF French Shift combination.
 - Translates physical USB punctuation against the selected QL ROM table, preserves the QL character set's accented letters, gives USB Caps Lock modern letter/Shift behavior without double-toggling native QL Caps, and enables the numeric keypad independently of Num Lock.
 - Keeps release-folder selection exclusively on the Start page, leaves one explicit FPGA-file selector in the FPGA tab, and tells users to press S1 when a NanoQL Link programming command cannot start.
 - Stops treating the AZERTY comma/question-mark position as an alphabetic HID key and adds matrix-level regression tests for French `$`, `£`, `?`, and `*`.
