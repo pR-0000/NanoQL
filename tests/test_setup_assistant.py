@@ -24,10 +24,12 @@ class SetupAssistantTests(unittest.TestCase):
         source = GUI.read_text(encoding="utf-8")
         self.assertIn("Program SRAM (temporary)", source)
         self.assertIn("Program Flash (permanent)", source)
-        self.assertIn("Release folder or FPGA file", source)
+        self.assertIn("FPGA file", source)
         self.assertIn("Extracted release folder", source)
         self.assertIn("NanoQL BL616 firmware", source)
-        self.assertIn("Select folder...", source)
+        self.assertIn("Select file...", source)
+        self.assertNotIn("Release folder or FPGA file", source)
+        self.assertNotIn("Select folder...", source)
         self.assertIn('text="2. BL616"', source)
         self.assertIn('text="3. FPGA"', source)
         self.assertIn('text="4. NanoQL Link"', source)
@@ -46,15 +48,25 @@ class SetupAssistantTests(unittest.TestCase):
             "4. NanoQL Link",
             "Program SRAM (temporary)",
             "Program Flash (permanent)",
-            "Release folder or FPGA file",
+            "FPGA file",
             "Extracted release folder",
             "NanoQL BL616 firmware",
             "Select release folder...",
-            "Select folder...",
+            "Select file...",
             "Install / update NanoQL firmware",
             "Inject and execute",
         ):
             self.assertIn(text, translations)
+
+    def test_nanoql_link_failure_explains_s1_activation(self) -> None:
+        namespace = runpy.run_path(str(GUI), run_name="nanoql_setup_test")
+        message = namespace["command_failure_message"](
+            ["python", "nanoql_link.py", "fpga-flash"],
+            "Error: NanoQL Link was not detected.",
+            1,
+        )
+        self.assertIn("briefly press S1", message)
+        self.assertNotIn("Command failed with exit code", message)
 
     def test_release_folder_populates_matching_bl616_and_fpga_files(self) -> None:
         namespace = runpy.run_path(str(GUI), run_name="nanoql_setup_test")

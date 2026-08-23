@@ -152,6 +152,7 @@ TRANSLATIONS = {
         "Optional 8 KiB QSound ROM": "ROM QSound de 8 Kio (facultative)",
         "Prepare microSD": "Préparer la carte microSD",
         "Bitstream": "Bitstream FPGA",
+        "FPGA file": "Fichier FPGA",
         "Browse...": "Parcourir...",
         "FPGA programmer": "Outil de programmation FPGA",
         "NanoQL Link connection": "Connexion NanoQL Link",
@@ -223,7 +224,6 @@ TRANSLATIONS = {
         "Use the Stop button or F6 to return control to the assistant.": "Utilisez le bouton Arrêter ou F6 pour rendre le contrôle à l'assistant.",
         "Detect configuration Flash is an optional check. It reads the JEDEC identifier without replacing the bitstream.": "Détecter la Flash de configuration est une vérification facultative. Cette commande lit l'identifiant JEDEC sans remplacer le bitstream.",
         "Persistent programming erases, writes, and verifies the FPGA configuration Flash. Keep USB and power connected until NanoQL restarts.": "La programmation permanente efface, écrit et vérifie la Flash de configuration du FPGA. Laissez l'USB et l'alimentation connectés jusqu'au redémarrage de NanoQL.",
-        "Select the extracted NanoQL release folder. The assistant automatically chooses the FPGA bitstream and never the BL616 firmware.": "Sélectionnez le dossier extrait de la release NanoQL. L'assistant choisit automatiquement le bitstream FPGA et jamais le firmware BL616.",
         "After NanoQL starts, briefly press S1 once, then select the NanoQL Link port. S2 is not used.": "Après le démarrage de NanoQL, appuyez brièvement une fois sur S1, puis sélectionnez le port NanoQL Link. S2 n'est pas utilisé.",
         "Hold UPDATE while connecting USB, release it, refresh the ports, then select the new bootloader port.": "Maintenez UPDATE pendant la connexion USB, relâchez-le, actualisez les ports, puis sélectionnez le nouveau port du bootloader.",
         "Native BL616 flashing works on Windows, macOS, and Linux. FlashCube is only a Windows fallback.": "Le flash natif du BL616 fonctionne sous Windows, macOS et Linux. FlashCube est uniquement une solution de secours sous Windows.",
@@ -261,8 +261,6 @@ TRANSLATIONS = {
         "Select a precompiled NanoQL FPGA bitstream": "Sélectionnez un bitstream FPGA NanoQL précompilé",
         "Select the extracted NanoQL release folder": "Sélectionnez le dossier extrait de la release NanoQL",
         "Select the NanoQL BL616 firmware": "Sélectionnez le firmware BL616 NanoQL",
-        "Release folder or FPGA file": "Dossier de release ou fichier FPGA",
-        "Select folder...": "Choisir le dossier...",
         "Select file...": "Choisir un fichier...",
         "Select a raw 68000 binary": "Sélectionnez un binaire 68000 brut",
         "Compatible openFPGALoader is already installed.": "Une version compatible d'openFPGALoader est déjà installée.",
@@ -294,7 +292,10 @@ TRANSLATIONS = {
         "The selected file is not NanoQL BL616 firmware.": "Le fichier sélectionné n'est pas un firmware BL616 NanoQL.",
         "This BL616 firmware belongs to the other board revision.": "Ce firmware BL616 correspond à l'autre révision de la carte.",
         "No NanoQL FPGA bitstream was found. Select the extracted release folder, NanoQL-*-FPGA.fs, or NanoQL-*-FPGA.bin.": "Aucun bitstream FPGA NanoQL n'a été trouvé. Sélectionnez le dossier extrait de la release, NanoQL-*-FPGA.fs ou NanoQL-*-FPGA.bin.",
-        "The selected file is BL616 firmware, not an FPGA bitstream. Select the release folder instead.": "Le fichier sélectionné est un firmware BL616 et non un bitstream FPGA. Sélectionnez plutôt le dossier de la release.",
+        "The selected file is BL616 firmware, not an FPGA bitstream. Select an FPGA .fs or .bin file.": "Le fichier sélectionné est un firmware BL616 et non un bitstream FPGA. Sélectionnez un fichier FPGA .fs ou .bin.",
+        "No NanoQL FPGA bitstream was found. Select a NanoQL FPGA .fs or .bin file.": "Aucun bitstream FPGA NanoQL n'a été trouvé. Sélectionnez un fichier FPGA NanoQL .fs ou .bin.",
+        "Select the FPGA .fs or .bin file. A release folder selected in Start here fills this field automatically.": "Sélectionnez le fichier FPGA .fs ou .bin. Le dossier de release choisi dans Commencer remplit automatiquement ce champ.",
+        "NanoQL Link is not active. Connect the Tang Nano 20K to the computer with a USB data cable, let NanoQL start, then briefly press S1 and retry.": "NanoQL Link n'est pas actif. Connectez la Tang Nano 20K à l'ordinateur avec un câble USB de données, laissez NanoQL démarrer, puis appuyez brièvement sur S1 et réessayez.",
         "Programmer detected": "Programmateur détecté",
         "Stopping remote keyboard": "Arrêt du clavier distant",
         "Checking NanoQL Link": "Vérification de NanoQL Link",
@@ -562,6 +563,20 @@ def resolve_release_bundle(folder: str, revision: str) -> tuple[Path, Path]:
 def command_failure_message(command: list[str], output: str, code: int) -> str:
     executable = Path(command[0]).name.lower()
     lowered = output.lower()
+    if any(Path(argument).name.lower() == "nanoql_link.py"
+           for argument in command):
+        if any(marker in lowered for marker in (
+            "nanoql link was not detected",
+            "could not open port",
+            "missing or invalid response",
+            "bitstream did not respond as nanoql link",
+        )):
+            return (
+                "NanoQL Link is not active. Connect the Tang Nano 20K to the "
+                "computer with a USB data cable, let NanoQL start, then briefly "
+                "press S1 and retry."
+            )
+        return f"NanoQL Link command failed with exit code {code}."
     if "programmer_cli" in executable:
         if "cable failed to open via the location" in lowered:
             return (
@@ -1467,21 +1482,16 @@ class NanoQLSetup(tk.Tk):
             parent, text="NanoQL Link (normal updates)", style="Section.TLabel"
         ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 6))
         ttk.Label(
-            parent, text="Release folder or FPGA file", style="Section.TLabel"
+            parent, text="FPGA file", style="Section.TLabel"
         ).grid(
             row=2, column=0, sticky="w", pady=8
         )
         ttk.Entry(parent, textvariable=self.bitstream_path).grid(
             row=2, column=1, sticky="ew", padx=8, pady=8
         )
-        bitstream_browse = ttk.Frame(parent)
-        bitstream_browse.grid(row=2, column=2, pady=8)
         self._button(
-            bitstream_browse, "Select folder...", self._browse_bitstream
-        ).pack(side="left")
-        self._button(
-            bitstream_browse, "Select file...", self._browse_bitstream_file
-        ).pack(side="left", padx=(6, 0))
+            parent, "Select file...", self._browse_bitstream_file
+        ).grid(row=2, column=2, pady=8)
         ttk.Label(parent, text="NanoQL Link port", style="Section.TLabel").grid(
             row=3, column=0, sticky="w", pady=8
         )
@@ -1517,7 +1527,7 @@ class NanoQLSetup(tk.Tk):
         )
         self._instruction(
             parent, 6, "Files",
-            "Select the extracted NanoQL release folder. The assistant automatically chooses the FPGA bitstream and never the BL616 firmware.",
+            "Select the FPGA .fs or .bin file. A release folder selected in Start here fills this field automatically.",
             columnspan=3, wraplength=600,
         )
         self._instruction(
@@ -1948,24 +1958,6 @@ class NanoQLSetup(tk.Tk):
             return
         messagebox.showerror(self._t("Missing firmware"), self._t(detail))
 
-    def _browse_bitstream(self) -> None:
-        path = filedialog.askdirectory(
-            title=self._t("Select the extracted NanoQL release folder")
-        )
-        if path:
-            try:
-                source = resolve_setup_fpga_source(path)
-            except (FileNotFoundError, ValueError):
-                messagebox.showerror(
-                    self._t("Missing bitstream"),
-                    self._t(
-                        "No NanoQL FPGA bitstream was found. Select the extracted "
-                        "release folder, NanoQL-*-FPGA.fs, or NanoQL-*-FPGA.bin."
-                    ),
-                )
-            else:
-                self.bitstream_path.set(str(source))
-
     def _browse_bitstream_file(self) -> None:
         path = filedialog.askopenfilename(
             title=self._t("Select a precompiled NanoQL FPGA bitstream"),
@@ -1980,7 +1972,7 @@ class NanoQLSetup(tk.Tk):
                     self._t("Missing bitstream"),
                     self._t(
                         "The selected file is BL616 firmware, not an FPGA bitstream. "
-                        "Select the release folder instead."
+                        "Select an FPGA .fs or .bin file."
                     ),
                 )
             else:
@@ -2267,6 +2259,8 @@ class NanoQLSetup(tk.Tk):
         self._run(self._link_command("link-stress"), "Testing NanoQL Link USB")
 
     def probe_fpga_flash(self) -> None:
+        if not self._require_nanoql_link():
+            return
         self._run(
             self._link_command("fpga-flash-probe"),
             "Detecting FPGA configuration Flash",
@@ -2281,24 +2275,41 @@ class NanoQLSetup(tk.Tk):
             if str(error) == "BL616":
                 detail = (
                     "The selected file is BL616 firmware, not an FPGA bitstream. "
-                    "Select the release folder instead."
+                    "Select an FPGA .fs or .bin file."
                 )
             else:
                 detail = (
-                    "No NanoQL FPGA bitstream was found. Select the extracted "
-                    "release folder, NanoQL-*-FPGA.fs, or NanoQL-*-FPGA.bin."
+                    "No NanoQL FPGA bitstream was found. Select a NanoQL FPGA "
+                    ".fs or .bin file."
                 )
         except FileNotFoundError:
             detail = (
-                "No NanoQL FPGA bitstream was found. Select the extracted "
-                "release folder, NanoQL-*-FPGA.fs, or NanoQL-*-FPGA.bin."
+                "No NanoQL FPGA bitstream was found. Select a NanoQL FPGA "
+                ".fs or .bin file."
             )
         messagebox.showerror(self._t("Missing bitstream"), self._t(detail))
         return None
 
+    def _require_nanoql_link(self) -> bool:
+        try:
+            ports = list(list_ports.comports())
+        except OSError:
+            ports = []
+        if any(self._is_nanoql_link_port(port) for port in ports):
+            return True
+        messagebox.showerror(
+            self._t("NanoQL Link connection"),
+            self._t(
+                "NanoQL Link is not active. Connect the Tang Nano 20K to the "
+                "computer with a USB data cable, let NanoQL start, then briefly "
+                "press S1 and retry."
+            ),
+        )
+        return False
+
     def program_fpga_flash_via_link(self) -> None:
         bitstream = self._selected_fpga_source()
-        if bitstream is None:
+        if bitstream is None or not self._require_nanoql_link():
             return
         command = self._link_command("fpga-flash")
         command.extend([str(bitstream), "--yes"])
@@ -2310,7 +2321,7 @@ class NanoQLSetup(tk.Tk):
 
     def program_fpga_sram_via_link(self) -> None:
         bitstream = self._selected_fpga_source()
-        if bitstream is None:
+        if bitstream is None or not self._require_nanoql_link():
             return
         command = self._link_command("fpga")
         command.append(str(bitstream))
@@ -2774,8 +2785,11 @@ class NanoQLSetup(tk.Tk):
                 elif event == "error":
                     title, error = payload
                     self._finish_busy("Error")
-                    self._append_log(f"{self._t(title)}: ERROR: {error}\n")
-                    messagebox.showerror(self._t(title), error)
+                    translated_error = self._t(str(error))
+                    self._append_log(
+                        f"{self._t(title)}: ERROR: {translated_error}\n"
+                    )
+                    messagebox.showerror(self._t(title), translated_error)
         except queue.Empty:
             pass
         self.after(100, self._poll_events)

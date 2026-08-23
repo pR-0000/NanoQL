@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.2 - 2026-08-23
+
+- Translates physical USB punctuation against the selected QL ROM table, preserves the QL character set's accented letters, gives USB Caps Lock modern letter/Shift behavior without double-toggling native QL Caps, and enables the numeric keypad independently of Num Lock.
+- Keeps release-folder selection exclusively on the Start page, leaves one explicit FPGA-file selector in the FPGA tab, and tells users to press S1 when a NanoQL Link programming command cannot start.
+- Stops treating the AZERTY comma/question-mark position as an alphabetic HID key and adds matrix-level regression tests for French `$`, `£`, `?`, and `*`.
+- Establishes generated QL Shift/Ctrl contacts for a complete IPC matrix scan before the translated key contact, then applies the full minimum key hold; pound remains QL character code `0x60` rather than ISO-8859-1 `0xA3`.
+- Accepts both HID usages emitted by ISO AZERTY keyboards for the physical asterisk key and translates either one through the selected QL ROM keyboard matrix.
+
 ## v0.3.1 - 2026-08-21
 
 - Hotfix (2026-08-22): lets the Setup Assistant select one extracted Complete release folder from Start, then automatically fills the revision-matched BL616 `.bin` and FPGA `.fs` fields in their respective tabs while retaining independent advanced selectors.

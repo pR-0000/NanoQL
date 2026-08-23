@@ -37,6 +37,7 @@ $sdArbiterOutput = Join-Path $env:TEMP "nanoql_sd_request_arbiter.vvp"
 $zx8301Output = Join-Path $env:TEMP "nanoql_zx8301.vvp"
 $qsoundOutput = Join-Path $env:TEMP "nanoql_qsound.vvp"
 $companionHidOutput = Join-Path $env:TEMP "nanoql_companion_hid.vvp"
+$companionHidDelayOutput = Join-Path $env:TEMP "nanoql_companion_hid_delay.vvp"
 $ws2812Output = Join-Path $env:TEMP "nanoql_ws2812_status.vvp"
 $hdmiWindowOutput = Join-Path $env:TEMP "nanoql_hdmi_window.vvp"
 $hdmiVideoModesOutput = Join-Path $env:TEMP "nanoql_hdmi_video_modes.vvp"
@@ -91,6 +92,20 @@ if ($LASTEXITCODE -ne 0) {
 & $vvp $companionHidOutput
 if ($LASTEXITCODE -ne 0) {
     throw "Companion HID simulation failed."
+}
+
+& $iverilog -g2012 -s tb_ql_companion_hid_mod_delay `
+    -o $companionHidDelayOutput `
+    (Join-Path $projectRoot "sim\tb_ql_companion_hid_mod_delay.sv") `
+    (Join-Path $projectRoot "src\companion\ql_companion_hid.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Companion HID modifier-delay simulation compilation failed."
+}
+
+& $vvp $companionHidDelayOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "Companion HID modifier-delay simulation failed."
 }
 
 & $iverilog -g2012 -s tb_ws2812_status -o $ws2812Output `

@@ -16,8 +16,8 @@ module tb_ql_companion_hid;
     always #5 clk = ~clk;
 
     ql_companion_hid #(
-        .CAPS_PULSE_CYCLES(8),
-        .KEY_MIN_HOLD_TICKS(0)
+        .KEY_MIN_HOLD_TICKS(0),
+        .KEY_MOD_DELAY_TICKS(0)
     ) dut (
         .clk(clk),
         .reset(reset),
@@ -115,8 +115,10 @@ module tb_ql_companion_hid;
         begin
             send_hid({1'b0, raw_usage});
             if (!matrix[matrix_bit])
-                $fatal(1, "usage %02x did not set matrix bit %0d",
-                       raw_usage, matrix_bit);
+                $fatal(1, "usage %02x did not set matrix bit %0d (%016x), fr=%b char=%03x key=%03x",
+                       raw_usage, matrix_bit, matrix,
+                       rom_keyboard_french, dut.decoded_character,
+                       dut.semantic_key);
             if (matrix[56] != expected_shift)
                 $fatal(1, "usage %02x produced wrong shift state",
                        raw_usage);
@@ -201,19 +203,13 @@ module tb_ql_companion_hid;
         if (matrix[51] || matrix[56])
             $fatal(1, "stored letter did not release cleanly");
 
-        // A PC AZERTY Caps Lock also exposes digits on the number row.
-        // This host-layout convenience is separate from the QL IPC's own
-        // letter-only Caps Lock behavior.
-        // Shift held during Caps must not change the isolated QL code.
+        // A modern USB Caps Lock is translated before the QL matrix. It must
+        // never toggle the QL's native Caps contact, whose Shift semantics
+        // differ from a PC keyboard.
         send_hid(8'h69);
         send_caps_state(1'b1);
-        if (!matrix[25])
-            $fatal(1, "authoritative Caps Lock did not pulse the QL contact");
-        if (matrix[56])
-            $fatal(1, "Shift leaked into the QL Caps Lock pulse");
-        repeat (10) @(negedge clk);
-        if (!matrix[56] || matrix[25])
-            $fatal(1, "Caps pulse did not restore the held Shift state");
+        if (matrix[25] || !matrix[56])
+            $fatal(1, "USB Caps Lock altered the native QL Caps contact");
         send_hid(8'he9);
         send_hid(8'h39);
         send_hid(8'hb9);
@@ -229,6 +225,18 @@ module tb_ql_companion_hid;
         if (!matrix[33] || matrix[56])
             $fatal(1, "USB idle snapshot incorrectly cleared AZERTY Caps Lock");
         send_hid(8'ha0);
+        // Caps affects letters with PC semantics: Caps+Q is uppercase while
+        // Caps+Shift+Q is lowercase.
+        send_hid(8'h04);
+        if (!matrix[51] || !matrix[56])
+            $fatal(1, "Caps Lock did not uppercase an AZERTY letter");
+        send_hid(8'h84);
+        send_hid(8'h69);
+        send_hid(8'h04);
+        if (!matrix[51] || matrix[56])
+            $fatal(1, "Shift did not invert PC Caps Lock for a letter");
+        send_hid(8'h84);
+        send_hid(8'he9);
         // With PC Caps Lock active, Shift restores the AZERTY punctuation
         // layer instead of leaving the number layer selected.
         send_hid(8'h69);
@@ -238,8 +246,8 @@ module tb_ql_companion_hid;
         send_hid(8'h9e);
         send_hid(8'he9);
         send_caps_state(1'b0);
-        if (!matrix[25])
-            $fatal(1, "Caps Lock release did not pulse the QL contact");
+        if (matrix[25])
+            $fatal(1, "Caps Lock release altered the native QL contact");
         send_hid(8'h39);
         send_hid(8'hb9);
         send_usb_idle(1'b0);
@@ -247,6 +255,33 @@ module tb_ql_companion_hid;
         // Verify same-layout French punctuation as well as an AltGr symbol.
         rom_keyboard_french = 1'b1;
         check_key(7'h36, 18, 1'b0); // AZERTY semicolon -> French QL semicolon
+        check_key(7'h10, 22, 1'b0); // AZERTY comma -> French QL comma
+        send_hid(8'h69);
+        send_hid(8'h10);
+        if (!matrix[61] || !matrix[56] || matrix[22])
+            $fatal(1, "AZERTY Shift+comma did not produce question mark");
+        send_hid(8'h90);
+        send_hid(8'he9);
+        check_key(7'h30, 6, 1'b1);  // AZERTY dollar -> French QL Shift+4
+        send_hid(8'h69);
+        send_hid(8'h30);
+        if (!matrix[13] || !matrix[56] || matrix[16])
+            $fatal(1, "AZERTY Shift+dollar did not produce QL pound");
+        send_hid(8'hb0);
+        send_hid(8'he9);
+        check_key(7'h31, 48, 1'b1); // AZERTY asterisk, HID ANSI variant
+        check_key(7'h32, 48, 1'b1); // AZERTY asterisk, HID ISO variant
+        check_key(7'h22, 40, 1'b1); // AZERTY ( -> French QL Shift+9
+        check_key(7'h1f, 24, 1'b0); // AZERTY e-acute -> French QL e-acute
+        check_key(7'h59, 35, 1'b0); // keypad 1 -> QL digit 1
+        check_key(7'h54, 23, 1'b1); // keypad slash -> French QL slash
+        check_key(7'h58, 8, 1'b0);  // keypad Enter -> QL Enter
+        send_hid(8'h6e);            // AltGr+5 -> French QL Ctrl+9 ([)
+        send_hid(8'h22);
+        if (!matrix[40] || !matrix[57] || matrix[58])
+            $fatal(1, "AZERTY AltGr+5 did not produce French QL bracket");
+        send_hid(8'ha2);
+        send_hid(8'hee);
         send_hid(8'h6e);            // right Alt / AltGr
         send_hid(8'h27);            // AltGr+0 -> @
         if (!matrix[50] || !matrix[57] || matrix[58])

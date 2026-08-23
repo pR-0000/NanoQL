@@ -171,7 +171,7 @@ static const uint8_t device_qualifier_descriptor[] = {
 static const char *string_descriptors[] = {
     (const char[]){0x09, 0x04},
     "NanoQL",
-    "NanoQL Link v0.3.1",
+    "NanoQL Link v0.3.2",
     "NQL0001"
 };
 

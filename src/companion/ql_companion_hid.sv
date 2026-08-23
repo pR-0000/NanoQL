@@ -2,8 +2,8 @@
 // Matrix layout and special-key behavior adapted from mist-devel/ql
 // keyboard.v, copyright (c) 2015 Till Harbaum, licensed under GPLv3+.
 module ql_companion_hid #(
-    parameter integer CAPS_PULSE_CYCLES = 1485000,
-    parameter integer KEY_MIN_HOLD_TICKS = 46
+    parameter integer KEY_MIN_HOLD_TICKS = 46,
+    parameter integer KEY_MOD_DELAY_TICKS = 32
 ) (
     input  wire        clk,
     input  wire        reset,
@@ -29,11 +29,11 @@ module ql_companion_hid #(
     reg [6:0] semantic_raw [0:5];
     reg [5:0] semantic_contact [0:5];
     reg [2:0] semantic_mods [0:5];
-    reg [5:0] semantic_hold [0:5];
+    localparam integer KEY_TOTAL_HOLD_TICKS =
+        KEY_MIN_HOLD_TICKS + KEY_MOD_DELAY_TICKS;
+    reg [6:0] semantic_hold [0:5];
     reg [5:0] semantic_release_pending;
     reg usb_caps_lock;
-    reg [21:0] caps_pulse_count;
-    wire caps_pulse = caps_pulse_count != 22'd0;
     assign caps_lock_active = usb_caps_lock;
 
     wire shift_down = modifiers[1] || modifiers[4];
@@ -139,14 +139,16 @@ module ql_companion_hid #(
         end
     endfunction
 
-    // Decode printable PC keys into characters. Values 0x80..0x87 represent
-    // French national characters that are not part of 7-bit ASCII.
+    // Decode printable PC keys into QL character codes. The QL's 8-bit set
+    // differs from ASCII above 0x5f; national characters therefore use their
+    // actual QL codes here instead of private placeholders.
     function [8:0] usb_character;
         input [6:0] usage;
         input shifted;
         input ctrl;
         input alt;
         input azerty;
+        input caps;
         begin
             usb_character = 9'd0;
             if (azerty) begin
@@ -157,6 +159,7 @@ module ql_companion_hid #(
                         7'h21: usb_character = {1'b1, 8'h7b}; // AltGr+4 {
                         7'h22: usb_character = {1'b1, 8'h5b}; // AltGr+5 [
                         7'h23: usb_character = {1'b1, 8'h7c}; // AltGr+6 |
+                        7'h24: usb_character = {1'b1, 8'h9f}; // AltGr+7 `
                         7'h25: usb_character = {1'b1, 8'h5c}; // AltGr+8 backslash
                         7'h26: usb_character = {1'b1, 8'h5e}; // AltGr+9 ^
                         7'h27: usb_character = {1'b1, 8'h40}; // AltGr+0 @
@@ -168,24 +171,28 @@ module ql_companion_hid #(
                     case (usage)
                         7'h10: usb_character = {1'b1, shifted ? "?" : ","};
                         7'h1e: usb_character = {1'b1, shifted ? 8'h31 : 8'h26};
-                        7'h1f: usb_character = {1'b1, shifted ? 8'h32 : 8'h80}; // e acute
+                        7'h1f: usb_character = {1'b1, shifted ? 8'h32 :
+                                               (caps ? 8'ha3 : 8'h83)}; // e acute
                         7'h20: usb_character = {1'b1, shifted ? 8'h33 : 8'h22};
                         7'h21: usb_character = {1'b1, shifted ? 8'h34 : 8'h27};
                         7'h22: usb_character = {1'b1, shifted ? 8'h35 : 8'h28};
                         7'h23: usb_character = {1'b1, shifted ? 8'h36 : 8'h2d};
-                        7'h24: usb_character = {1'b1, shifted ? 8'h37 : 8'h85}; // e grave
+                        7'h24: usb_character = {1'b1, shifted ? 8'h37 : 8'h90}; // e grave
                         7'h25: usb_character = {1'b1, shifted ? 8'h38 : 8'h5f};
-                        7'h26: usb_character = {1'b1, shifted ? 8'h39 : 8'h86}; // c cedilla
-                        7'h27: usb_character = {1'b1, shifted ? 8'h30 : 8'h87}; // a grave
-                        7'h2d: usb_character = {1'b1, shifted ? 8'h84 : 8'h29}; // degree
+                        7'h26: usb_character = {1'b1, shifted ? 8'h39 :
+                                               (caps ? 8'ha8 : 8'h88)}; // c cedilla
+                        7'h27: usb_character = {1'b1, shifted ? 8'h30 : 8'h8d}; // a grave
+                        7'h2d: usb_character = {1'b1, shifted ? 8'hba : 8'h29}; // degree
                         7'h2e: usb_character = {1'b1, shifted ? 8'h2b : 8'h3d};
                         7'h2f: usb_character = shifted ? 9'd0 : {1'b1, 8'h5e};
-                        7'h30: usb_character = {1'b1, shifted ? 8'h83 : 8'h24}; // pound
-                        7'h31: usb_character = shifted ? 9'd0 : {1'b1, 8'h2a};
-                        7'h34: usb_character = {1'b1, shifted ? 8'h25 : 8'h82}; // u grave
+                        // The QL character set assigns pound to code 60.
+                        7'h30: usb_character = {1'b1, shifted ? 8'h60 : 8'h24};
+                        7'h31: usb_character = shifted ? 9'd0 :
+                               {1'b1, 8'h2a};
+                        7'h34: usb_character = {1'b1, shifted ? 8'h25 : 8'h9a}; // u grave
                         7'h36: usb_character = {1'b1, shifted ? 8'h2e : 8'h3b};
                         7'h37: usb_character = {1'b1, shifted ? 8'h2f : 8'h3a};
-                        7'h38: usb_character = {1'b1, shifted ? 8'h81 : 8'h21}; // section
+                        7'h38: usb_character = {1'b1, shifted ? 8'hb6 : 8'h21}; // section
                         7'h64: usb_character = {1'b1, shifted ? 8'h3e : 8'h3c};
                         default: usb_character = 9'd0;
                     endcase
@@ -209,7 +216,7 @@ module ql_companion_hid #(
                     7'h31: usb_character = {1'b1, shifted ? 8'h7c : 8'h5c};
                     7'h33: usb_character = {1'b1, shifted ? 8'h3a : 8'h3b};
                     7'h34: usb_character = {1'b1, shifted ? 8'h22 : 8'h27};
-                    7'h35: usb_character = {1'b1, shifted ? 8'h7e : 8'h60};
+                    7'h35: usb_character = {1'b1, shifted ? 8'h7e : 8'h9f};
                     7'h36: usb_character = {1'b1, shifted ? 8'h3c : 8'h2c};
                     7'h37: usb_character = {1'b1, shifted ? 8'h3e : 8'h2e};
                     7'h38: usb_character = {1'b1, shifted ? 8'h3f : 8'h2f};
@@ -217,6 +224,28 @@ module ql_companion_hid #(
                     default: usb_character = 9'd0;
                 endcase
             end
+
+            // Treat the numeric keypad as a stable QL numeric layer,
+            // independently of Num Lock and of the selected PC layout.
+            case (usage)
+                7'h54: usb_character = {1'b1, 8'h2f}; // keypad /
+                7'h55: usb_character = {1'b1, 8'h2a}; // keypad *
+                7'h56: usb_character = {1'b1, 8'h2d}; // keypad -
+                7'h57: usb_character = {1'b1, 8'h2b}; // keypad +
+                7'h59: usb_character = {1'b1, 8'h31};
+                7'h5a: usb_character = {1'b1, 8'h32};
+                7'h5b: usb_character = {1'b1, 8'h33};
+                7'h5c: usb_character = {1'b1, 8'h34};
+                7'h5d: usb_character = {1'b1, 8'h35};
+                7'h5e: usb_character = {1'b1, 8'h36};
+                7'h5f: usb_character = {1'b1, 8'h37};
+                7'h60: usb_character = {1'b1, 8'h38};
+                7'h61: usb_character = {1'b1, 8'h39};
+                7'h62: usb_character = {1'b1, 8'h30};
+                7'h63: usb_character = {1'b1, 8'h2e}; // keypad decimal
+                7'h67: usb_character = {1'b1, 8'h3d}; // keypad equals
+                default: ;
+            endcase
         end
     endfunction
 
@@ -277,9 +306,9 @@ module ql_companion_hid #(
                 "}": ql_character_key = french ?
                       {1'b1, 3'b010, 7'h2e} : {1'b1, 3'b001, 7'h30};
                 "^": ql_character_key = french ?
-                      {1'b1, 3'b010, 7'h32} : {1'b1, 3'b001, 7'h23};
-                "`": ql_character_key = french ?
-                      {1'b1, 3'b100, 7'h38} : {1'b1, 3'b000, 7'h35};
+                      {1'b1, 3'b010, 7'h35} : {1'b1, 3'b001, 7'h23};
+                8'h60: ql_character_key = french ?
+                       {1'b1, 3'b001, 7'h31} : {1'b1, 3'b000, 7'h35};
                 8'h5c: ql_character_key = french ?
                        {1'b1, 3'b001, 7'h2f} : {1'b1, 3'b000, 7'h31};
                 "|": ql_character_key = french ?
@@ -289,22 +318,25 @@ module ql_companion_hid #(
                 "/": ql_character_key = french ?
                       {1'b1, 3'b001, 7'h34} : {1'b1, 3'b000, 7'h38};
                 "?": ql_character_key = {1'b1, 3'b001, 7'h38};
-                8'h80: ql_character_key = french ?
-                       {1'b1, 3'b000, 7'h2f} : {1'b1, 3'b000, 7'h08};
-                8'h81: ql_character_key = french ?
-                       {1'b1, 3'b001, 7'h30} : 11'd0;
-                8'h82: ql_character_key = french ?
-                       {1'b1, 3'b000, 7'h31} : {1'b1, 3'b000, 7'h18};
                 8'h83: ql_character_key = french ?
-                       {1'b1, 3'b001, 7'h31} : 11'd0;
-                8'h84: ql_character_key = french ?
-                       {1'b1, 3'b010, 7'h24} : 11'd0;
-                8'h85: ql_character_key = french ?
-                       {1'b1, 3'b000, 7'h30} : {1'b1, 3'b000, 7'h08};
-                8'h86: ql_character_key = french ?
-                       {1'b1, 3'b000, 7'h38} : {1'b1, 3'b000, 7'h06};
-                8'h87: ql_character_key = french ?
-                       {1'b1, 3'b000, 7'h34} : {1'b1, 3'b000, 7'h04};
+                       {1'b1, 3'b000, 7'h2f} : {1'b1, 3'b011, 7'h20}; // e acute
+                8'h88: ql_character_key = french ?
+                       {1'b1, 3'b000, 7'h38} : {1'b1, 3'b011, 7'h26}; // c cedilla
+                8'h8d: ql_character_key = french ?
+                       {1'b1, 3'b000, 7'h34} : {1'b1, 3'b010, 7'h2d}; // a grave
+                8'h90: ql_character_key = french ?
+                       {1'b1, 3'b000, 7'h30} : {1'b1, 3'b010, 7'h27}; // e grave
+                8'h9a: ql_character_key = french ?
+                       {1'b1, 3'b000, 7'h31} : {1'b1, 3'b011, 7'h33}; // u grave
+                8'h9f: ql_character_key = {1'b1, 3'b011, 7'h38}; // backtick
+                8'ha3: ql_character_key = french ?
+                       {1'b1, 3'b011, 7'h06} : {1'b1, 3'b011, 7'h06}; // E acute
+                8'ha8: ql_character_key = french ?
+                       {1'b1, 3'b011, 7'h0b} : {1'b1, 3'b011, 7'h0b}; // C cedilla
+                8'hb6: ql_character_key = french ?
+                       {1'b1, 3'b001, 7'h30} : {1'b1, 3'b011, 7'h19}; // section
+                8'hba: ql_character_key = french ?
+                       {1'b1, 3'b010, 7'h24} : {1'b1, 3'b011, 7'h1d}; // degree
                 default: ql_character_key = 11'd0;
             endcase
         end
@@ -313,26 +345,38 @@ module ql_companion_hid #(
     wire azerty_number_caps = host_keyboard_azerty && usb_caps_lock &&
                               (data_in[6:0] >= 7'h1e) &&
                               (data_in[6:0] <= 7'h27);
+    // ISO AZERTY keyboards disagree on whether the physical asterisk key is
+    // usage 31 or 32. Normalize the alternate report before character
+    // decoding instead of duplicating the complete translation mux.
+    wire [6:0] character_usage =
+        (host_keyboard_azerty && (data_in[6:0] == 7'h32)) ?
+        7'h31 : data_in[6:0];
     wire [8:0] decoded_character = usb_character(
-        data_in[6:0], shift_down ^ azerty_number_caps,
+        character_usage, shift_down ^ azerty_number_caps,
         ctrl_down, alt_down,
-        host_keyboard_azerty
+        host_keyboard_azerty, usb_caps_lock
     );
     wire [10:0] semantic_key = ql_character_key(
         decoded_character[7:0], rom_keyboard_french
     );
-    wire physical_letter = (data_in[6:0] >= 7'h04) &&
+    // On AZERTY, the physical US-M position (usage 0x10) carries comma and
+    // question mark. Prefer a decoded printable character before treating a
+    // usage in the nominal A-Z range as a letter.
+    wire physical_letter = !decoded_character[8] &&
+                           (data_in[6:0] >= 7'h04) &&
                            (data_in[6:0] <= 7'h1d);
     wire semantic_event = (decoded_character[8] && semantic_key[10]) ||
                           physical_letter;
     wire [6:0] semantic_usage = physical_letter ?
                translated_usage(data_in[6:0], shift_down) :
                semantic_key[6:0];
+    wire host_letter_shift = shift_down ^ usb_caps_lock;
     wire [2:0] semantic_event_mods = physical_letter ?
-               {alt_down, ctrl_down, shift_down} : semantic_key[9:7];
+               {alt_down, ctrl_down, host_letter_shift} : semantic_key[9:7];
 
     // Special PC keys become QL modifier combinations. Delay the main key
-    // by about 4 ms so the IPC observes the modifier first.
+    // by about 22 ms so the IPC completes a matrix scan with the modifier
+    // established before a contact on another row becomes visible.
     reg [14:0] delay_div;
     wire delay_tick = (delay_div == 15'h7fff);
     wire [11:1] special_d;
@@ -365,7 +409,12 @@ module ql_companion_hid #(
              semantic_index = semantic_index + 1) begin
             if (semantic_valid[semantic_index]) begin
                 semantic_active = 1'b1;
-                semantic_matrix[semantic_contact[semantic_index]] = 1'b1;
+                // Present generated modifiers before the main contact. The
+                // real IPC scans and debounces different matrix rows; making
+                // both edges simultaneous can therefore lose Shift or Ctrl.
+                if ((semantic_mods[semantic_index] == 3'd0) ||
+                    (semantic_hold[semantic_index] <= KEY_MIN_HOLD_TICKS))
+                    semantic_matrix[semantic_contact[semantic_index]] = 1'b1;
                 semantic_shift = semantic_shift |
                                  semantic_mods[semantic_index][0];
                 semantic_ctrl = semantic_ctrl |
@@ -405,12 +454,12 @@ module ql_companion_hid #(
         2'b00, x_f5, x_f3, x_f2, 1'b0, x_f1, x_f4
     };
 
-    // A Caps Lock transition is presented as an isolated QL keypress. This
-    // prevents Shift, Ctrl, Alt or another simultaneously held key from
-    // changing IPC code E0 into a different matrix combination.
-    assign matrix = caps_pulse ? (64'd1 << 25) :
-                    (ql_matrix | semantic_matrix | remote_matrix |
-                     generated_matrix);
+    // USB Caps Lock is translated with PC semantics before the QL matrix:
+    // letters use Caps XOR Shift, while digits and punctuation retain their
+    // host-layout layers. The original QL Caps state would force uppercase
+    // even with Shift, so it must not be toggled by a modern USB keyboard.
+    assign matrix = ql_matrix | semantic_matrix | remote_matrix |
+                    generated_matrix;
 
     always @(posedge clk) begin
         if (reset) begin
@@ -433,47 +482,44 @@ module ql_companion_hid #(
             semantic_valid <= 6'd0;
             semantic_release_pending <= 6'd0;
             usb_caps_lock <= 1'b0;
-            caps_pulse_count <= 22'd0;
             key_event <= 1'b0;
             key_press_event <= 1'b0;
         end else begin
             for (hold_index = 0; hold_index < 6;
                  hold_index = hold_index + 1) begin
                 if (semantic_valid[hold_index] &&
-                    (semantic_hold[hold_index] != 6'd0) && delay_tick)
+                    (semantic_hold[hold_index] != 7'd0) && delay_tick)
                     semantic_hold[hold_index] <=
-                        semantic_hold[hold_index] - 6'd1;
+                        semantic_hold[hold_index] - 7'd1;
             end
             // Retire at most one expired key per clock. This keeps the
             // registered matrix update shallow while simultaneous releases
             // are still drained on consecutive 74 MHz cycles.
             if (semantic_valid[0] && semantic_release_pending[0] &&
-                (semantic_hold[0] == 6'd0)) begin
+                (semantic_hold[0] == 7'd0)) begin
                 semantic_valid[0] <= 1'b0;
                 semantic_release_pending[0] <= 1'b0;
             end else if (semantic_valid[1] && semantic_release_pending[1] &&
-                (semantic_hold[1] == 6'd0)) begin
+                (semantic_hold[1] == 7'd0)) begin
                 semantic_valid[1] <= 1'b0;
                 semantic_release_pending[1] <= 1'b0;
             end else if (semantic_valid[2] && semantic_release_pending[2] &&
-                (semantic_hold[2] == 6'd0)) begin
+                (semantic_hold[2] == 7'd0)) begin
                 semantic_valid[2] <= 1'b0;
                 semantic_release_pending[2] <= 1'b0;
             end else if (semantic_valid[3] && semantic_release_pending[3] &&
-                (semantic_hold[3] == 6'd0)) begin
+                (semantic_hold[3] == 7'd0)) begin
                 semantic_valid[3] <= 1'b0;
                 semantic_release_pending[3] <= 1'b0;
             end else if (semantic_valid[4] && semantic_release_pending[4] &&
-                (semantic_hold[4] == 6'd0)) begin
+                (semantic_hold[4] == 7'd0)) begin
                 semantic_valid[4] <= 1'b0;
                 semantic_release_pending[4] <= 1'b0;
             end else if (semantic_valid[5] && semantic_release_pending[5] &&
-                (semantic_hold[5] == 6'd0)) begin
+                (semantic_hold[5] == 7'd0)) begin
                 semantic_valid[5] <= 1'b0;
                 semantic_release_pending[5] <= 1'b0;
             end
-            if (caps_pulse_count != 22'd0)
-                caps_pulse_count <= caps_pulse_count - 22'd1;
             key_event <= 1'b0;
             key_press_event <= 1'b0;
             if (data_strobe) begin
@@ -506,42 +552,42 @@ module ql_companion_hid #(
                             if (data_in[7]) begin
                                 if (semantic_valid[0] &&
                                     (semantic_raw[0] == data_in[6:0])) begin
-                                    if (semantic_hold[0] == 6'd0) begin
+                                    if (semantic_hold[0] == 7'd0) begin
                                         semantic_valid[0] <= 1'b0;
                                     end else
                                         semantic_release_pending[0] <= 1'b1;
                                 end
                                 if (semantic_valid[1] &&
                                     (semantic_raw[1] == data_in[6:0])) begin
-                                    if (semantic_hold[1] == 6'd0) begin
+                                    if (semantic_hold[1] == 7'd0) begin
                                         semantic_valid[1] <= 1'b0;
                                     end else
                                         semantic_release_pending[1] <= 1'b1;
                                 end
                                 if (semantic_valid[2] &&
                                     (semantic_raw[2] == data_in[6:0])) begin
-                                    if (semantic_hold[2] == 6'd0) begin
+                                    if (semantic_hold[2] == 7'd0) begin
                                         semantic_valid[2] <= 1'b0;
                                     end else
                                         semantic_release_pending[2] <= 1'b1;
                                 end
                                 if (semantic_valid[3] &&
                                     (semantic_raw[3] == data_in[6:0])) begin
-                                    if (semantic_hold[3] == 6'd0) begin
+                                    if (semantic_hold[3] == 7'd0) begin
                                         semantic_valid[3] <= 1'b0;
                                     end else
                                         semantic_release_pending[3] <= 1'b1;
                                 end
                                 if (semantic_valid[4] &&
                                     (semantic_raw[4] == data_in[6:0])) begin
-                                    if (semantic_hold[4] == 6'd0) begin
+                                    if (semantic_hold[4] == 7'd0) begin
                                         semantic_valid[4] <= 1'b0;
                                     end else
                                         semantic_release_pending[4] <= 1'b1;
                                 end
                                 if (semantic_valid[5] &&
                                     (semantic_raw[5] == data_in[6:0])) begin
-                                    if (semantic_hold[5] == 6'd0) begin
+                                    if (semantic_hold[5] == 7'd0) begin
                                         semantic_valid[5] <= 1'b0;
                                     end else
                                         semantic_release_pending[5] <= 1'b1;
@@ -554,7 +600,10 @@ module ql_companion_hid #(
                                     semantic_contact[0] <=
                                         usage_contact(semantic_usage);
                                     semantic_mods[0] <= semantic_event_mods;
-                                    semantic_hold[0] <= KEY_MIN_HOLD_TICKS;
+                                    semantic_hold[0] <=
+                                        (semantic_event_mods != 3'd0) ?
+                                        KEY_TOTAL_HOLD_TICKS :
+                                        KEY_MIN_HOLD_TICKS;
                                     semantic_release_pending[0] <= 1'b0;
                                 end else if (!semantic_valid[1] ||
                                     (semantic_raw[1] == data_in[6:0])) begin
@@ -563,7 +612,10 @@ module ql_companion_hid #(
                                     semantic_contact[1] <=
                                         usage_contact(semantic_usage);
                                     semantic_mods[1] <= semantic_event_mods;
-                                    semantic_hold[1] <= KEY_MIN_HOLD_TICKS;
+                                    semantic_hold[1] <=
+                                        (semantic_event_mods != 3'd0) ?
+                                        KEY_TOTAL_HOLD_TICKS :
+                                        KEY_MIN_HOLD_TICKS;
                                     semantic_release_pending[1] <= 1'b0;
                                 end else if (!semantic_valid[2] ||
                                     (semantic_raw[2] == data_in[6:0])) begin
@@ -572,7 +624,10 @@ module ql_companion_hid #(
                                     semantic_contact[2] <=
                                         usage_contact(semantic_usage);
                                     semantic_mods[2] <= semantic_event_mods;
-                                    semantic_hold[2] <= KEY_MIN_HOLD_TICKS;
+                                    semantic_hold[2] <=
+                                        (semantic_event_mods != 3'd0) ?
+                                        KEY_TOTAL_HOLD_TICKS :
+                                        KEY_MIN_HOLD_TICKS;
                                     semantic_release_pending[2] <= 1'b0;
                                 end else if (!semantic_valid[3] ||
                                     (semantic_raw[3] == data_in[6:0])) begin
@@ -581,7 +636,10 @@ module ql_companion_hid #(
                                     semantic_contact[3] <=
                                         usage_contact(semantic_usage);
                                     semantic_mods[3] <= semantic_event_mods;
-                                    semantic_hold[3] <= KEY_MIN_HOLD_TICKS;
+                                    semantic_hold[3] <=
+                                        (semantic_event_mods != 3'd0) ?
+                                        KEY_TOTAL_HOLD_TICKS :
+                                        KEY_MIN_HOLD_TICKS;
                                     semantic_release_pending[3] <= 1'b0;
                                 end else if (!semantic_valid[4] ||
                                     (semantic_raw[4] == data_in[6:0])) begin
@@ -590,7 +648,10 @@ module ql_companion_hid #(
                                     semantic_contact[4] <=
                                         usage_contact(semantic_usage);
                                     semantic_mods[4] <= semantic_event_mods;
-                                    semantic_hold[4] <= KEY_MIN_HOLD_TICKS;
+                                    semantic_hold[4] <=
+                                        (semantic_event_mods != 3'd0) ?
+                                        KEY_TOTAL_HOLD_TICKS :
+                                        KEY_MIN_HOLD_TICKS;
                                     semantic_release_pending[4] <= 1'b0;
                                 end else if (!semantic_valid[5] ||
                                     (semantic_raw[5] == data_in[6:0])) begin
@@ -599,7 +660,10 @@ module ql_companion_hid #(
                                     semantic_contact[5] <=
                                         usage_contact(semantic_usage);
                                     semantic_mods[5] <= semantic_event_mods;
-                                    semantic_hold[5] <= KEY_MIN_HOLD_TICKS;
+                                    semantic_hold[5] <=
+                                        (semantic_event_mods != 3'd0) ?
+                                        KEY_TOTAL_HOLD_TICKS :
+                                        KEY_MIN_HOLD_TICKS;
                                     semantic_release_pending[5] <= 1'b0;
                                 end
                             end
@@ -695,6 +759,7 @@ module ql_companion_hid #(
                             7'h50: ql_matrix[9] <= !data_in[7];
                             7'h51: ql_matrix[15] <= !data_in[7];
                             7'h52: ql_matrix[10] <= !data_in[7];
+                            7'h58: ql_matrix[8] <= !data_in[7]; // keypad Enter
 
                             // Companion encodes USB modifier bits as 0x68-0x6f.
                             7'h68: modifiers[0] <= !data_in[7];
@@ -728,20 +793,14 @@ module ql_companion_hid #(
                         special <= 11'd0;
                         semantic_valid <= 6'd0;
                         semantic_release_pending <= 6'd0;
-                        if (usb_caps_lock != data_in[1]) begin
-                            usb_caps_lock <= data_in[1];
-                            caps_pulse_count <= CAPS_PULSE_CYCLES;
-                        end
+                        usb_caps_lock <= data_in[1];
                     end
 
                     // Command 8 updates only the authoritative physical USB
                     // Caps Lock state. Unlike command 7 it never clears held
-                    // keys or modifiers. The fixed isolated pulse cannot be
-                    // converted into Shift+Caps by report ordering.
-                    if ((command == 8'd8) && (state == 4'd0) &&
-                        (usb_caps_lock != data_in[1])) begin
+                    // keys or modifiers.
+                    if ((command == 8'd8) && (state == 4'd0)) begin
                         usb_caps_lock <= data_in[1];
-                        caps_pulse_count <= CAPS_PULSE_CYCLES;
                     end
                 end
             end

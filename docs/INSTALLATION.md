@@ -177,7 +177,7 @@ NanoQL propose six profils vidéo dans `Display > Video mode`. Les profils 50 Hz
 
 Les deux cadences émettent un véritable flux HDMI à 74,25 MHz avec AVI InfoFrame 16:9. Si un moniteur ancien grise son réglage d'aspect ou déforme le 720p50, essayez d'abord `60 Hz Large`. Pour des pixels fidèles, désactivez l'overscan, la réduction de bruit, l'interpolation de mouvement et les renforcements de netteté.
 
-Dans l'overlay, `USB layout` concerne exclusivement le clavier USB local connecté au BL616 ; `QL ROM layout` sélectionne la table attendue par la ROM. Le clavier distant de l'onglet **4. Remote keyboard** est traduit en caractères par Windows, macOS ou Linux, ignore `USB layout` et utilise un état de matrice indépendant du clavier USB.
+Dans l'overlay, `USB layout` concerne exclusivement le clavier USB local connecté au BL616 ; `QL ROM layout` sélectionne la table attendue par la ROM. NanoQL traduit les symboles et les caractères accentués disponibles dans le jeu QL, applique le verrouillage majuscule avec la logique familière d'un clavier moderne et rend le pavé numérique indépendant de Num Lock. Le clavier distant de l'onglet **4. Remote keyboard** est traduit en caractères par Windows, macOS ou Linux, ignore `USB layout` et utilise un état de matrice indépendant du clavier USB.
 
 ## English
 
@@ -356,4 +356,4 @@ NanoQL provides six video profiles under `Display > Video mode`. The 50 Hz profi
 
 Both rates are true 74.25 MHz HDMI streams with a 16:9 AVI InfoFrame. If an older display disables its aspect control or distorts 720p50, try `60 Hz Large` first. Disable overscan, noise reduction, motion interpolation, and sharpness enhancement for faithful pixels.
 
-In the overlay, `USB layout` applies exclusively to the local USB keyboard connected to the BL616; `QL ROM layout` selects the table expected by the ROM. The remote keyboard in the **4. Remote keyboard** tab is translated into characters by Windows, macOS, or Linux, ignores `USB layout`, and uses matrix state independent from the USB keyboard.
+In the overlay, `USB layout` applies exclusively to the local USB keyboard connected to the BL616; `QL ROM layout` selects the table expected by the ROM. NanoQL translates symbols and accented characters available in the QL set, applies Caps Lock with familiar modern-keyboard semantics, and makes the numeric keypad independent of Num Lock. The remote keyboard in the **4. Remote keyboard** tab is translated into characters by Windows, macOS, or Linux, ignores `USB layout`, and uses matrix state independent from the USB keyboard.

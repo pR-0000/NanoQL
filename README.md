@@ -43,7 +43,7 @@ Le clavier USB et le hub OTG sont facultatifs. Un PC peut fournir un clavier dis
 
 Le clavier distant NanoQL Link fonctionne sous Windows, macOS et Linux. Sur macOS, la capture temps réel peut nécessiter l'autorisation de Terminal ou Python dans les réglages de confidentialité.
 
-Dans l'overlay, **USB layout** concerne uniquement le clavier physique relié au BL616. **QL ROM layout** décrit la table de clavier attendue par la ROM QL. Le FPGA convertit les caractères imprimables du premier layout vers le second, y compris les chiffres, la ponctuation et les combinaisons AltGr prises en charge. Le clavier distant NanoQL Link reçoit déjà les caractères traduits par le système d'exploitation et utilise un chemin de matrice QL distinct : il n'utilise donc pas **USB layout** et ne peut pas modifier l'état du clavier USB.
+Dans l'overlay, **USB layout** concerne uniquement le clavier physique relié au BL616. **QL ROM layout** décrit la table de clavier attendue par la ROM QL. Le FPGA convertit les caractères imprimables du premier layout vers le second, y compris les chiffres, les symboles de programmation, les caractères accentués du jeu QL et les combinaisons AltGr prises en charge. Le verrouillage majuscule conserve le comportement familier d'un clavier moderne sans activer simultanément le verrouillage natif du QL. Le pavé numérique produit toujours chiffres et opérateurs, indépendamment de Num Lock. Le clavier distant NanoQL Link reçoit déjà les caractères traduits par le système d'exploitation et utilise un chemin de matrice QL distinct : il n'utilise donc pas **USB layout** et ne peut pas modifier l'état du clavier USB.
 
 Pour un clavier USB autonome, utilisez de préférence un hub OTG simple ou alimenté : reliez la Tang Nano au connecteur hôte du hub, le clavier à un port USB-A et, si nécessaire, le chargeur uniquement à l'entrée d'alimentation PD. Un dock avec lecteur de cartes ou HDMI peut fonctionner, mais sa topologie USB interne est plus complexe. Ne reliez pas simultanément son connecteur hôte à un ordinateur lorsque la Tang Nano doit piloter le clavier.
 
@@ -113,13 +113,13 @@ Sur le QL original de 128 Kio, `RESPR(65536)` peut normalement produire `Out of 
 
 | Ressource |            Utilisation |
 | --------- | ---------------------: |
-| Logique   | 15 872 / 20 736 (77 %) |
-| LUT       |                 14 762 |
-| Registres |                  7 402 |
+| Logique   | 15 968 / 20 736 (77 %) |
+| LUT       |                 14 898 |
+| Registres |                  7 385 |
 | BSRAM     |         21 / 46 (46 %) |
 | DSP       |               0,5 / 24 |
 
-Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 57,378 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,511 MHz. L'analyse de puissance Gowin estime 327,607 mW et une température de jonction de 34,776 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
+Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 50,619 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,359 MHz. L'analyse de puissance Gowin estime 327,553 mW et une température de jonction de 34,774 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
 
 ## English
 
@@ -160,7 +160,7 @@ A USB keyboard and OTG hub are optional. A computer can provide a remote keyboar
 
 The NanoQL Link remote keyboard works on Windows, macOS, and Linux. On macOS, real-time capture may require granting Terminal or Python permission in the privacy settings.
 
-In the overlay, **USB layout** applies only to the physical keyboard attached to the BL616. **QL ROM layout** describes the keyboard table expected by the QL ROM. The FPGA converts printable characters from the former to the latter, including supported digits, punctuation, and AltGr combinations. The NanoQL Link remote keyboard receives characters translated by the host and uses an independent direct QL-matrix path, so it does not use **USB layout** and cannot alter the USB keyboard state.
+In the overlay, **USB layout** applies only to the physical keyboard attached to the BL616. **QL ROM layout** describes the keyboard table expected by the QL ROM. The FPGA converts printable characters from the former to the latter, including digits, programming symbols, QL character-set accents, and supported AltGr combinations. Caps Lock retains familiar modern-keyboard letter and Shift behavior without also toggling native QL Caps. The numeric keypad always emits digits and operators independently of Num Lock. The NanoQL Link remote keyboard receives characters translated by the host and uses an independent direct QL-matrix path, so it does not use **USB layout** and cannot alter the USB keyboard state.
 
 For a standalone USB keyboard, prefer a simple or powered OTG hub: connect the Tang Nano to the hub's host connector, the keyboard to a USB-A port and, when required, the charger only to the PD power input. A dock with a card reader or HDMI may work, but has a more complex internal USB topology. Do not simultaneously connect its host connector to a computer while the Tang Nano is expected to drive the keyboard.
 
@@ -230,13 +230,13 @@ On an original 128 KiB QL, `RESPR(65536)` can normally report `Out of Memory`: Q
 
 | Resource  |                 Usage |
 | --------- | --------------------: |
-| Logic     | 15,872 / 20,736 (77%) |
-| LUT       |                14,762 |
-| Registers |                 7,402 |
+| Logic     | 15,968 / 20,736 (77%) |
+| LUT       |                14,898 |
+| Registers |                 7,385 |
 | BSRAM     |         21 / 46 (46%) |
 | DSP       |              0.5 / 24 |
 
-The system domain runs at 48 MHz with an estimated Fmax of 57.378 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.511 MHz. Gowin power analysis estimates 327.607 mW and a 34.776 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
+The system domain runs at 48 MHz with an estimated Fmax of 50.619 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.359 MHz. Gowin power analysis estimates 327.553 mW and a 34.774 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
 
 ## Credits and licenses
 

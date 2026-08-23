@@ -346,19 +346,105 @@ QL_FRENCH_KEYS = {
     "]": (0x27, (MOD_LEFT_CTRL,)),
     "{": (0x2D, (MOD_LEFT_CTRL,)),
     "}": (0x2E, (MOD_LEFT_CTRL,)),
-    "^": (0x32, (MOD_LEFT_CTRL,)),
-    "`": (0x38, (MOD_LEFT_ALT,)),
+    "^": (0x35, (MOD_LEFT_CTRL,)),
+    "`": (0x38, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
     "\\": (0x2F, (MOD_LEFT_SHIFT,)),
     "|": (0x25, (MOD_LEFT_CTRL,)),
     "~": (0x31, (MOD_LEFT_CTRL,)),
     "_": (0x2D, (MOD_LEFT_SHIFT,)),
-    "é": (0x2F, ()), "è": (0x30, ()), "ù": (0x31, ()),
-    "à": (0x34, ()), "ç": (0x38, ()),
+    "ä": (0x29, (MOD_LEFT_CTRL,)),
+    "ã": (0x1E, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "å": (0x34, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "é": (0x2F, ()),
+    "ö": (0x21, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "õ": (0x22, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "ø": (0x24, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "ü": (0x34, (MOD_LEFT_CTRL,)),
+    "ç": (0x38, ()),
+    "ñ": (0x27, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "æ": (0x25, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "œ": (0x2E, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "á": (0x10, (MOD_LEFT_CTRL,)),
+    "à": (0x34, ()),
+    "â": (0x36, (MOD_LEFT_CTRL,)),
+    "ë": (0x38, (MOD_LEFT_CTRL,)),
+    "è": (0x30, ()),
+    "ê": (0x1E, (MOD_LEFT_CTRL,)),
+    "ï": (0x26, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "í": (0x20, (MOD_LEFT_CTRL,)),
+    "ì": (0x21, (MOD_LEFT_CTRL,)),
+    "î": (0x37, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "ó": (0x2F, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "ò": (0x22, (MOD_LEFT_CTRL,)),
+    "ô": (0x1A, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "ú": (0x19, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "ù": (0x31, ()),
+    "û": (0x37, (MOD_LEFT_CTRL,)),
+    "ß": (0x10, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ä": (0x1F, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ã": (0x14, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Å": (0x05, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "É": (0x06, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ö": (0x07, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Õ": (0x08, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ø": (0x09, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ü": (0x0A, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ç": (0x0B, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ñ": (0x0C, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Æ": (0x0D, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Œ": (0x0E, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
     "§": (0x30, (MOD_LEFT_SHIFT,)),
     "£": (0x31, (MOD_LEFT_SHIFT,)),
     "°": (0x24, (MOD_LEFT_CTRL,)),
     "/": (0x34, (MOD_LEFT_SHIFT,)),
     "?": (0x38, (MOD_LEFT_SHIFT,)),
+}
+
+# Extended characters from the standard English QDOS translation table. QDOS
+# already defines these QL character-set codes; sending their real matrix
+# combinations preserves accents instead of silently dropping them.
+QL_ENGLISH_EXTENDED_KEYS = {
+    "ä": (0x29, (MOD_LEFT_CTRL,)),
+    "ã": (0x1E, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "å": (0x34, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "é": (0x20, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "ö": (0x21, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "õ": (0x22, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "ø": (0x24, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "ü": (0x34, (MOD_LEFT_CTRL,)),
+    "ç": (0x26, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "ñ": (0x27, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "æ": (0x25, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "œ": (0x2E, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "á": (0x36, (MOD_LEFT_CTRL,)),
+    "à": (0x2D, (MOD_LEFT_CTRL,)),
+    "â": (0x37, (MOD_LEFT_CTRL,)),
+    "ë": (0x38, (MOD_LEFT_CTRL,)),
+    "è": (0x27, (MOD_LEFT_CTRL,)),
+    "ê": (0x1E, (MOD_LEFT_CTRL,)),
+    "ï": (0x1F, (MOD_LEFT_CTRL,)),
+    "í": (0x20, (MOD_LEFT_CTRL,)),
+    "ì": (0x21, (MOD_LEFT_CTRL,)),
+    "î": (0x22, (MOD_LEFT_CTRL,)),
+    "ó": (0x23, (MOD_LEFT_CTRL,)),
+    "ò": (0x24, (MOD_LEFT_CTRL,)),
+    "ô": (0x25, (MOD_LEFT_CTRL,)),
+    "ú": (0x26, (MOD_LEFT_CTRL,)),
+    "ù": (0x33, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "û": (0x33, (MOD_LEFT_CTRL,)),
+    "ß": (0x36, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ä": (0x1F, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ã": (0x04, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Å": (0x05, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "É": (0x06, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ö": (0x07, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Õ": (0x08, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ø": (0x09, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ü": (0x0A, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ç": (0x0B, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Ñ": (0x0C, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Æ": (0x0D, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+    "Œ": (0x0E, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
 }
 
 WINDOWS_EXTENDED_KEYS = {
@@ -400,6 +486,10 @@ MAC_VK_TO_HID = {
     38: 0x0D, 39: 0x34, 40: 0x0E, 41: 0x33, 42: 0x31,
     43: 0x36, 44: 0x38, 45: 0x11, 46: 0x10, 47: 0x37,
     50: 0x35,
+    65: 0x63, 67: 0x55, 69: 0x57, 71: 0x53,
+    75: 0x54, 76: 0x58, 78: 0x56, 81: 0x67,
+    82: 0x62, 83: 0x59, 84: 0x5A, 85: 0x5B, 86: 0x5C,
+    87: 0x5D, 88: 0x5E, 89: 0x5F, 91: 0x60, 92: 0x61,
 }
 
 
@@ -495,6 +585,16 @@ def windows_realtime_keymap() -> dict[int, int]:
         0x25: 0x50,  # Left
         0x28: 0x51,  # Down
         0x26: 0x52,  # Up
+        0x60: 0x62,  # Keypad 0
+        0x61: 0x59, 0x62: 0x5A, 0x63: 0x5B,
+        0x64: 0x5C, 0x65: 0x5D, 0x66: 0x5E,
+        0x67: 0x5F, 0x68: 0x60, 0x69: 0x61,
+        0x6A: 0x55,  # Keypad multiply
+        0x6B: 0x57,  # Keypad add
+        0x6C: 0x63,  # Keypad separator
+        0x6D: 0x56,  # Keypad subtract
+        0x6E: 0x63,  # Keypad decimal
+        0x6F: 0x54,  # Keypad divide
     })
     for virtual_key in range(0x70, 0x7C):
         if virtual_key != 0x75:  # F6 releases the terminal keyboard.
@@ -1529,10 +1629,11 @@ class NanoQLLink:
     def character_key(self, character: str) -> tuple[int, tuple[int, ...]]:
         if self.ql_layout == "fr" and character in QL_FRENCH_KEYS:
             return QL_FRENCH_KEYS[character]
+        if self.ql_layout != "fr" and character in QL_ENGLISH_EXTENDED_KEYS:
+            return QL_ENGLISH_EXTENDED_KEYS[character]
         if self.ql_layout != "fr" and len(character) == 1:
-            # English QL ROMs do not provide accented Latin letters. Preserve
-            # the letter rather than interpreting the PC key's physical number
-            # row position (for example AZERTY e-acute becoming "2").
+            # Keep a readable fallback only for Unicode letters absent from
+            # the standard QL set. Supported QL accents are handled above.
             folded = "".join(
                 value for value in unicodedata.normalize("NFKD", character)
                 if not unicodedata.combining(value)

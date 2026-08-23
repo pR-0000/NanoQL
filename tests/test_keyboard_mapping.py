@@ -8,7 +8,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from nanoql_link import (  # noqa: E402
     CMD_KEY,
     KEY_DIRECT_MATRIX,
-    MOD_LEFT_ALT,
     MOD_LEFT_CTRL,
     MOD_LEFT_SHIFT,
     NanoQLLink,
@@ -79,8 +78,8 @@ class FrenchKeyboardMappingTests(unittest.TestCase):
             "]": (0x27, (MOD_LEFT_CTRL,)),
             "{": (0x2D, (MOD_LEFT_CTRL,)),
             "}": (0x2E, (MOD_LEFT_CTRL,)),
-            "^": (0x32, (MOD_LEFT_CTRL,)),
-            "`": (0x38, (MOD_LEFT_ALT,)),
+            "^": (0x35, (MOD_LEFT_CTRL,)),
+            "`": (0x38, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
             "\\": (0x2F, (MOD_LEFT_SHIFT,)),
             "|": (0x25, (MOD_LEFT_CTRL,)),
             "~": (0x31, (MOD_LEFT_CTRL,)),
@@ -123,19 +122,29 @@ class EnglishKeyboardMappingTests(unittest.TestCase):
             with self.subTest(character=character):
                 self.assertEqual(self.link.character_key(character), contact)
 
-    def test_accented_letters_are_folded_for_an_english_rom(self) -> None:
+    def test_english_rom_uses_the_standard_ql_accent_table(self) -> None:
         expected = {
-            "é": "e", "è": "e", "ê": "e", "ë": "e",
-            "à": "a", "â": "a", "ä": "a", "ç": "c",
-            "î": "i", "ï": "i", "ô": "o", "ö": "o",
-            "ù": "u", "û": "u", "ü": "u", "É": "E",
+            "ä": (0x29, (MOD_LEFT_CTRL,)),
+            "é": (0x20, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+            "è": (0x27, (MOD_LEFT_CTRL,)),
+            "ê": (0x1E, (MOD_LEFT_CTRL,)),
+            "ë": (0x38, (MOD_LEFT_CTRL,)),
+            "à": (0x2D, (MOD_LEFT_CTRL,)),
+            "â": (0x37, (MOD_LEFT_CTRL,)),
+            "ç": (0x26, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+            "î": (0x22, (MOD_LEFT_CTRL,)),
+            "ï": (0x1F, (MOD_LEFT_CTRL,)),
+            "ô": (0x25, (MOD_LEFT_CTRL,)),
+            "ö": (0x21, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+            "ù": (0x33, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+            "û": (0x33, (MOD_LEFT_CTRL,)),
+            "ü": (0x34, (MOD_LEFT_CTRL,)),
+            "É": (0x06, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+            "Ç": (0x0B, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
         }
-        for accented, plain in expected.items():
-            with self.subTest(character=accented):
-                self.assertEqual(
-                    self.link.character_key(accented),
-                    self.link.character_key(plain),
-                )
+        for character, contact in expected.items():
+            with self.subTest(character=character):
+                self.assertEqual(self.link.character_key(character), contact)
 
 class FrenchNationalKeyboardMappingTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -150,6 +159,13 @@ class FrenchNationalKeyboardMappingTests(unittest.TestCase):
             "ù": (0x31, ()),
             "à": (0x34, ()),
             "ç": (0x38, ()),
+            "ê": (0x1E, (MOD_LEFT_CTRL,)),
+            "ï": (0x26, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+            "î": (0x37, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+            "ô": (0x1A, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+            "û": (0x37, (MOD_LEFT_CTRL,)),
+            "É": (0x06, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
+            "Ç": (0x0B, (MOD_LEFT_SHIFT, MOD_LEFT_CTRL)),
             "§": (0x30, (MOD_LEFT_SHIFT,)),
             "£": (0x31, (MOD_LEFT_SHIFT,)),
             "°": (0x24, (MOD_LEFT_CTRL,)),
