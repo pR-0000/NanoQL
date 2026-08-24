@@ -2435,6 +2435,25 @@ def main() -> int:
         "qdos-memory",
         help="snapshot the live QDOS memory map without resetting the QL",
     )
+    peek_parser = subparsers.add_parser(
+        "peek", help="read a small live block from QL RAM without stopping the 68000"
+    )
+    peek_parser.add_argument("address", type=parse_number)
+    peek_parser.add_argument("length", type=parse_number, nargs="?", default=16)
+    watch_parser = subparsers.add_parser(
+        "watch",
+        help="timestamp changes in a small live QL RAM block",
+    )
+    watch_parser.add_argument("address", type=parse_number)
+    watch_parser.add_argument("length", type=parse_number, nargs="?", default=2)
+    watch_parser.add_argument(
+        "--seconds", type=float, default=90.0,
+        help="measurement duration (default: 90 seconds)",
+    )
+    watch_parser.add_argument(
+        "--interval", type=float, default=0.1,
+        help="polling interval (default: 0.1 second)",
+    )
     subparsers.add_parser("qlsd-status", help="read the last QL-SD sector diagnostic")
     subparsers.add_parser("mdv-status", help="read the live Microdrive diagnostic")
     subparsers.add_parser("qdos", help="leave the injected program and restart QDOS")
@@ -2695,6 +2714,53 @@ def main() -> int:
                 "  Boundary order:         "
                 + ("valid" if monotonic else "UNUSUAL - report these values")
             )
+        elif args.command == "peek":
+            if args.length < 1 or args.length > 256:
+                raise ValueError("PEEK length must be between 1 and 256 bytes.")
+            data = link.read(args.address, args.length, live=True)
+            for offset in range(0, len(data), 16):
+                block = data[offset:offset + 16]
+                hexadecimal = block.hex(" ")
+                printable = "".join(
+                    chr(value) if 32 <= value < 127 else "." for value in block
+                )
+                print(
+                    f"0x{args.address + offset:06x}: "
+                    f"{hexadecimal:<47}  {printable}"
+                )
+        elif args.command == "watch":
+            if args.length < 1 or args.length > 8:
+                raise ValueError("WATCH length must be between 1 and 8 bytes.")
+            if args.seconds <= 0:
+                raise ValueError("WATCH duration must be greater than zero.")
+            if args.interval < 0.05:
+                raise ValueError("WATCH interval must be at least 0.05 second.")
+            started = time.monotonic()
+            deadline = started + args.seconds
+            previous = None
+            print(
+                f"Watching 0x{args.address:06x} for {args.seconds:g} seconds; "
+                "only changes are shown. Press Ctrl+C to stop.",
+                flush=True,
+            )
+            try:
+                while time.monotonic() < deadline:
+                    sample_started = time.monotonic()
+                    data = link.read(args.address, args.length, live=True)
+                    if data != previous:
+                        elapsed = time.monotonic() - started
+                        value = int.from_bytes(data, "big")
+                        print(
+                            f"{elapsed:8.3f} s  0x{args.address:06x}: "
+                            f"{data.hex(' ')}  (0x{value:0{args.length * 2}x})",
+                            flush=True,
+                        )
+                        previous = data
+                    remaining = args.interval - (time.monotonic() - sample_started)
+                    if remaining > 0:
+                        time.sleep(remaining)
+            except KeyboardInterrupt:
+                print("Measurement stopped.")
         elif args.command == "qlsd-status":
             flags, lba, header, byte_count, crc32, sample = link.qlsd_status()
             print(f"QL-SD flags: 0x{flags:02x}")

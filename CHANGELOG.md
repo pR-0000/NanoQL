@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.3 - 2026-08-24
+
+- Calibrates QL-mode ZX8301 contention for NanoQL's fx68k-to-SDRAM bridge: the original 32-of-40 DRAM ownership pattern is represented by 20 additional gated chunks because the bridge and physical SDRAM transaction already consume part of each 68008 memory cycle.
+- Gives CPU transactions priority over asynchronous HDMI line prefetch in QL mode, preventing physical SDRAM arbitration from charging the emulated video contention a second time; accelerated modes retain bounded video priority.
+- Restricts ZX8301 cycle stealing to the original 128 KiB internal DRAM range, leaving ROM, I/O, and expansion RAM uncontended by video fetches.
+- Physically validates the resulting frame cadence and screen-bank behavior with Kizuna in the QL/128 KiB profile: the transient squares and magenta underflows disappear, while the fractal-to-greetings transition closely follows the real-hardware recording.
+- Moves the QL-SD image selector after the Microdrive controls in the Storage overlay.
+- Adds focused HDL coverage for contended internal RAM versus uncontended expansion accesses, plus live `peek` and `watch` commands for non-resetting hardware diagnostics.
+
 ## v0.3.2 - 2026-08-23
 
 - Hotfix: maps the QL character-set pound sign to the original dedicated English matrix contact used by JS and standard English ROMs, while retaining the MGF French Shift combination.

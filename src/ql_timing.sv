@@ -11,7 +11,7 @@ module ql_timing (
     input  wire cpu_uds,
     input  wire cpu_lds,
     input  wire cpu_rw,
-    input  wire cpu_rom,
+    input  wire cpu_uncontended,
     output reg  ram_delay_dtack
 );
 
@@ -21,7 +21,12 @@ module ql_timing (
     reg [2:0] dtack_count;
     reg extra_access;
 
-    wire [5:0] busy_chunks = vblank ? 6'd8 : 6'd32;
+    // The original ZX8301 owns 32 of the 40 physical DRAM chunks. NanoQL's
+    // fx68k bridge and SDRAM transaction already consume part of that 68008
+    // memory-cycle budget before DTACK can be returned. Gating 32 chunks again
+    // therefore double-counts part of the wait. Twenty effective active-line
+    // chunks preserve the measured external CPU budget with this memory path.
+    wire [5:0] busy_chunks = vblank ? 6'd8 : 6'd20;
     wire could_start = (chunk >= busy_chunks) || (chunk_cycle == 4'd0);
     wire ds = cpu_uds || cpu_lds;
 
@@ -47,7 +52,10 @@ module ql_timing (
                 extra_access <= cpu_uds && cpu_lds;
             end else if (ram_delay_dtack) begin
                 if (dtack_count == 3'd1) begin
-                    if (could_start || cpu_rom) begin
+                    // The ZX8301 only arbitrates its own 128 KiB DRAM.
+                    // ROM, I/O and expansion RAM retain the 68008 bus-width
+                    // delay below, but do not wait for a video-memory slot.
+                    if (could_start || cpu_uncontended) begin
                         if (extra_access) begin
                             dtack_count <= cpu_rw ? 3'd4 : 3'd5;
                             extra_access <= 1'b0;

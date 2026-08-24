@@ -1027,6 +1027,9 @@ module nanoql_top(
         end
     end
 
+    wire cpu_base_ram = (cpu_addr >= 24'h020000) &&
+                         (cpu_addr <= 24'h03ffff);
+
     ql_timing ql_bus_timing (
         .clk_sys(clk_pixel),
         .reset(ql_system_reset),
@@ -1039,9 +1042,7 @@ module nanoql_top(
         .cpu_uds(!cpu_uds_n),
         .cpu_lds(!cpu_lds_n),
         .cpu_rw(cpu_rw),
-        .cpu_rom((cpu_addr[23:16] == 8'h00) ||
-                 ((cpu_addr >= 24'h0c0000) &&
-                  (cpu_addr <= 24'h0c3fff))),
+        .cpu_uncontended(!cpu_base_ram),
         .ram_delay_dtack(ram_delay_dtack)
     );
 

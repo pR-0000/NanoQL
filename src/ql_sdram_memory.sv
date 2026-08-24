@@ -72,7 +72,6 @@ module ql_sdram_memory #(
     reg [1:0] ram_ds;
     reg ram_refresh;
     reg transaction_system;
-    reg prefer_video;
     reg [1:0] fast_video_streak;
     wire ram_ready;
 
@@ -90,15 +89,17 @@ module ql_sdram_memory #(
     wire [15:0] init_data = (init_index < 19'h08000) ?
                             init_pattern : 16'h0000;
 
-    // Alternate at transaction granularity when CPU and video are both
-    // waiting. A complete 64-word video burst must not block ROM instruction
-    // fetches, but absolute CPU priority can starve the HDMI line buffer at
-    // 16 MHz. RAM contention visible to the CPU remains modeled by ql_timing.
+    // ql_timing already models the ZX8301 stealing cycles from the original
+    // 128 KiB DRAM. Giving this physical SDRAM video fetch a second priority
+    // over the CPU would count the same contention twice. In QL mode, service
+    // the CPU first and fetch HDMI lines during the wait slots deliberately
+    // inserted by ql_timing. Accelerated modes do not insert those slots, so
+    // retain a bounded video preference there to prevent scanout starvation.
     wire client_idle = init_done && !init_fail &&
                        (state == ST_CLIENT_IDLE) && !refresh_pending;
     wire grant_video = client_idle && client_rd &&
-                       (!system_req || (fast_cpu ?
-                        (fast_video_streak < 2'd2) : prefer_video));
+                       (!system_req ||
+                        (fast_cpu && (fast_video_streak < 2'd2)));
     wire grant_system = client_idle && system_req && !grant_video;
     assign client_ready = init_done && !init_fail &&
                           grant_video;
@@ -145,7 +146,6 @@ module ql_sdram_memory #(
             ram_ds <= 2'b00;
             ram_refresh <= 1'b0;
             transaction_system <= 1'b0;
-            prefer_video <= 1'b1;
             fast_video_streak <= 2'd0;
             client_data_valid <= 1'b0;
             client_data <= 16'd0;
@@ -252,7 +252,6 @@ module ql_sdram_memory #(
                         ram_refresh <= 1'b0;
                         ram_cs <= 1'b1;
                         transaction_system <= 1'b1;
-                        prefer_video <= 1'b1;
                         fast_video_streak <= 2'd0;
                         wait_count <= 4'd0;
                         state <= ST_CLIENT_WAIT;
@@ -263,7 +262,6 @@ module ql_sdram_memory #(
                         ram_refresh <= 1'b0;
                         ram_cs <= 1'b1;
                         transaction_system <= 1'b0;
-                        prefer_video <= 1'b0;
                         if (fast_cpu && (fast_video_streak < 2'd2))
                             fast_video_streak <= fast_video_streak + 2'd1;
                         wait_count <= 4'd0;

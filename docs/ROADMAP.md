@@ -10,10 +10,10 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 15 968 / 20 736 cellules logiques utilisées (77 %), dont 14 898 LUT.
+- FPGA : 15 970 / 20 736 cellules logiques utilisées (78 %), dont 14 891 LUT.
 - BSRAM : 21 / 46 blocs utilisés (46 %), dont les tampons sectoriels QL-SD et Microdrive et la ROM QSound optionnelle.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
-- Domaine système : 48 MHz, avec une Fmax estimée de 50,619 MHz.
+- Domaine système : 48 MHz, avec une Fmax estimée de 52,501 MHz.
 - HDMI : 720p50 natif et 720p60 de compatibilité avec audio PCM 48 kHz fonctionnel.
 
 Le pourcentage de LUT restant ne suffit pas à garantir toutes les extensions. La migration de la ROM QL dynamique vers une zone réservée de la SDRAM a toutefois libéré 32 blocs BSRAM pour les ROM et tampons des fonctions suivantes. La fréquence du domaine système devient maintenant la contrainte principale pour les modes CPU rapides.
@@ -47,7 +47,7 @@ La Tang Nano 20K ne possédant pas de pile RTC, une heure absolue correcte aprè
 - `QL`, `16 MHz` et `24 MHz` sont disponibles et commutables à chaud dans l'OSD.
 - Le domaine système à 48 MHz conserve les cadences natives des périphériques et fournit les deux phases requises par fx68k pour un CPU à 24 MHz.
 - Le mode `42 MHz` reste à étudier avec une architecture ou un cœur CPU capable de fermer les timings à 84 MHz.
-- Conserver la contention vidéo originale uniquement en mode `QL`.
+- Conserver la contention vidéo originale uniquement en mode `QL` et dans les 128 Kio de DRAM interne à `$20000-$3FFFF` ; ne pas ralentir la RAM d'extension avec les accès vidéo du ZX8301.
 - Valider QDOS, les interruptions, le clavier, le son et la SDRAM à chaque vitesse.
 
 Le mode 42 MHz de QL_MiSTer requiert un événement Phi1/Phi2 à chaque cycle d'un domaine à 84 MHz. Cette fréquence dépasse la fermeture temporelle actuelle du GW2AR-18 ; NanoQL ne présente donc pas un faux mode 42 MHz qui serait instable ou plus lent que son libellé.
@@ -101,6 +101,7 @@ La capture d'écran est réaliste. La vidéo est un objectif expérimental : ell
 
 - Le ZX8301 unifié est validé sur Tang Nano 20K : MC_STAT, PAL/NTSC, HBL/VBL, HSYNC/VSYNC, interruption de trame et clignotement suivent la trame QL native indépendamment du HDMI.
 - Le ZX8302 mémorise le front VSYNC jusqu'à l'acquittement du 68000 et la contention vidéo reste active avec un Microdrive monté en mode `QL`, conformément à QL_MiSTer et au budget CPU du matériel original.
+- La contention effective du pont fx68k/SDRAM et la priorité CPU face au préchargement HDMI sont validées physiquement avec Kizuna en profil QL 128 Kio : plus de carrés transitoires ni de sous-alimentation magenta, et transition fractales/textes proche de l'enregistrement sur QL réel.
 - Mesurer ultérieurement VBL, VSYNC, contention et accès mémoire sur un QL réel avec un analyseur logique afin de dépasser la fidélité fonctionnelle actuelle et de valider les écarts électriques restants.
 - Remplacer progressivement les autres approximations restantes par les chemins fidèles de QL_MiSTer.
 - Resynchroniser de façon optionnelle les modifications d'une image Microdrive vers son dossier source.
@@ -135,10 +136,10 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 15,968 / 20,736 logic cells used (77%), including 14,898 LUTs.
+- FPGA: 15,970 / 20,736 logic cells used (78%), including 14,891 LUTs.
 - BSRAM: 21 / 46 blocks used (46%), including QL-SD and Microdrive sector buffers and the optional QSound ROM.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
-- System domain: 48 MHz, with an estimated Fmax of 50.619 MHz.
+- System domain: 48 MHz, with an estimated Fmax of 52.501 MHz.
 - HDMI: working native 720p50 and compatibility 720p60 output with 48 kHz PCM audio.
 
 The remaining LUT percentage alone does not guarantee that every extension will fit. Moving the dynamic QL ROM to a reserved SDRAM area has nevertheless freed 32 BSRAM blocks for future ROMs and buffers. System-domain timing is now the main constraint for faster CPU modes.
@@ -172,7 +173,7 @@ The Tang Nano 20K has no battery-backed RTC. Correct absolute time after complet
 - `QL`, `16 MHz`, and `24 MHz` are available and live-switchable in the OSD.
 - The 48 MHz system domain preserves native peripheral rates and supplies the two fx68k phases required for a 24 MHz CPU.
 - A `42 MHz` mode still requires an architecture or CPU core that closes timing at 84 MHz.
-- Keep original video contention only in `QL` mode.
+- Keep original video contention only in `QL` mode and within the internal 128 KiB DRAM at `$20000-$3FFFF`; expansion RAM must not inherit ZX8301 video waits.
 - Validate QDOS, interrupts, keyboard, audio, and SDRAM at every speed.
 
 QL_MiSTer's 42 MHz mode needs one Phi1/Phi2 event on every cycle of an 84 MHz domain. That exceeds the current GW2AR-18 timing closure, so NanoQL does not expose a misleading 42 MHz setting that would be unstable or slower than advertised.
@@ -226,6 +227,7 @@ Screenshots are realistic. Video recording is experimental because it depends on
 
 - The unified ZX8301 is validated on Tang Nano 20K: MC_STAT, PAL/NTSC, HBL/VBL, HSYNC/VSYNC, frame interrupt, and flashing follow the native QL raster independently of HDMI.
 - ZX8302 latches the VSYNC edge until the 68000 acknowledges it, and video contention remains active with a mounted Microdrive in `QL` mode, matching QL_MiSTer and the original hardware CPU budget.
+- Effective fx68k/SDRAM bridge contention and CPU priority over HDMI prefetch are physically validated with Kizuna in the QL 128 KiB profile: no transient squares or magenta underflow, and a fractal-to-text transition close to the real-QL recording.
 - Later measure VBL, VSYNC, contention, and memory accesses on a physical QL with a logic analyzer to move beyond current functional fidelity and validate the remaining electrical differences.
 - Progressively replace the remaining approximations with faithful QL_MiSTer paths.
 - Optionally synchronize changes from a Microdrive image back to its source folder.

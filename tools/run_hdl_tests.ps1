@@ -30,6 +30,7 @@ $hdmiAudioOutput = Join-Path $env:TEMP "nanoql_hdmi_audio.vvp"
 $sdramRouterOutput = Join-Path $env:TEMP "nanoql_sdram_router.vvp"
 $memoryMapOutput = Join-Path $env:TEMP "nanoql_memory_map_ram.vvp"
 $cpuPhaseOutput = Join-Path $env:TEMP "nanoql_cpu_phase.vvp"
+$qlTimingOutput = Join-Path $env:TEMP "nanoql_ql_timing.vvp"
 $qlromextOutput = Join-Path $env:TEMP "nanoql_qlromext.vvp"
 $qlsdBufferOutput = Join-Path $env:TEMP "nanoql_qlsd_buffer.vvp"
 $microdriveOutput = Join-Path $env:TEMP "nanoql_microdrive_stream.vvp"
@@ -44,6 +45,19 @@ $hdmiVideoModesOutput = Join-Path $env:TEMP "nanoql_hdmi_video_modes.vvp"
 $ipcRomLoaderOutput = Join-Path $env:TEMP "nanoql_ipc_rom_loader.vvp"
 $ipcHexLoaderOutput = Join-Path $env:TEMP "nanoql_ipc_hex_loader.vvp"
 $ipcPlainHexLoaderOutput = Join-Path $env:TEMP "nanoql_ipc_plain_hex_loader.vvp"
+
+& $iverilog -g2012 -s tb_ql_timing -o $qlTimingOutput `
+    (Join-Path $projectRoot "sim\tb_ql_timing.sv") `
+    (Join-Path $projectRoot "src\ql_timing.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "QL timing simulation compilation failed."
+}
+
+& $vvp $qlTimingOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "QL timing simulation failed."
+}
 
 & $iverilog -g2012 -s tb_ql_ipc_rom_loader -o $ipcRomLoaderOutput `
     (Join-Path $projectRoot "sim\tb_ql_ipc_rom_loader.sv") `
