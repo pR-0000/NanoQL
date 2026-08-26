@@ -342,9 +342,6 @@ module ql_companion_hid #(
         end
     endfunction
 
-    wire azerty_number_caps = host_keyboard_azerty && usb_caps_lock &&
-                              (data_in[6:0] >= 7'h1e) &&
-                              (data_in[6:0] <= 7'h27);
     // ISO AZERTY keyboards disagree on whether the physical asterisk key is
     // usage 31 or 32. Normalize the alternate report before character
     // decoding instead of duplicating the complete translation mux.
@@ -352,7 +349,7 @@ module ql_companion_hid #(
         (host_keyboard_azerty && (data_in[6:0] == 7'h32)) ?
         7'h31 : data_in[6:0];
     wire [8:0] decoded_character = usb_character(
-        character_usage, shift_down ^ azerty_number_caps,
+        character_usage, shift_down ^ usb_caps_lock,
         ctrl_down, alt_down,
         host_keyboard_azerty, usb_caps_lock
     );
@@ -462,10 +459,11 @@ module ql_companion_hid #(
         2'b00, x_f5, x_f3, x_f2, 1'b0, x_f1, x_f4
     };
 
-    // USB Caps Lock is translated with PC semantics before the QL matrix:
-    // letters use Caps XOR Shift, while digits and punctuation retain their
-    // host-layout layers. The original QL Caps state would force uppercase
-    // even with Shift, so it must not be toggled by a modern USB keyboard.
+    // USB Caps Lock is translated as the QL's full Shift-lock layer before
+    // reaching the matrix. It affects letters, number-row keys, and
+    // punctuation; holding physical Shift temporarily selects the opposite
+    // layer. The native QL Caps contact itself remains untouched so its ROM
+    // state cannot drift away from the authoritative USB LED state.
     assign matrix = ql_matrix | semantic_matrix | remote_matrix |
                     generated_matrix;
 
@@ -794,13 +792,15 @@ module ql_companion_hid #(
 
                     // Command 7 is an atomic idle snapshot from the physical
                     // USB keyboard. It repairs any event lost between the
-                    // BL616 and FPGA without altering NanoQL Link keys.
+                    // BL616 and FPGA without altering NanoQL Link keys. Keep
+                    // semantic contacts alive until their minimum hold time
+                    // expires: clearing them immediately here made a short
+                    // but valid USB press invisible to the slower QL IPC scan.
                     if ((command == 8'd7) && (state == 4'd0)) begin
                         ql_matrix <= 64'd0;
                         modifiers <= 6'd0;
                         special <= 11'd0;
-                        semantic_valid <= 6'd0;
-                        semantic_release_pending <= 6'd0;
+                        semantic_release_pending <= semantic_valid;
                         usb_caps_lock <= data_in[1];
                     end
 

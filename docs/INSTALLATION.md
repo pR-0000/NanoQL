@@ -71,16 +71,17 @@ Sous macOS/Linux, utilisez `python3` si nécessaire. L'assistant installe automa
 
 Le sélecteur **Language** du premier onglet bascule immédiatement toute l'interface entre le français et l'anglais. Ce choix est mémorisé avec les autres réglages. Les illustrations intégrées montrent les boutons **UPDATE** et **S1** à utiliser ; aucun fichier image externe n'est requis.
 
-Dans **Commencer**, sélectionnez une seule fois le dossier extrait `NanoQL-vX.Y.Z-Complete-3921` ou `NanoQL-vX.Y.Z-Complete-3923`. Après le choix de la révision de carte, l'assistant renseigne automatiquement le firmware BL616 `.bin` et le bitstream FPGA `.fs` dans leurs onglets respectifs. Les sélecteurs manuels de chaque onglet restent disponibles pour les utilisateurs avancés.
+Dans **Commencer**, choisissez la révision 3921 ou 3923 puis cliquez sur **Télécharger la dernière release**. L'assistant télécharge le package complet depuis la release GitHub officielle, vérifie son empreinte avec le fichier `SHA256SUMS.txt`, l'extrait dans un cache propre à l'utilisateur et renseigne automatiquement le firmware BL616 `.bin` et le bitstream FPGA `.fs`. La sélection manuelle d'un dossier déjà extrait reste disponible pour une installation hors ligne.
 
 ### Ordre de première installation
 
 Respectez cet ordre pour une première installation :
 
-1. Préparez la microSD dans **1. ROMs and microSD**.
-2. Dans **2. BL616**, installez le firmware **NanoQL** avec le bouton matériel **UPDATE**.
-3. Dans **3. FPGA**, programmez le bitstream en Flash persistante via NanoQL Link. Si aucun core NanoQL valide n'est présent, le firmware BL616 ouvre automatiquement son port de récupération.
-4. Insérez la microSD et redémarrez la carte.
+1. Téléchargez la dernière release depuis **Commencer**.
+2. Préparez la microSD dans **1. ROMs and microSD**.
+3. Dans **2. BL616**, installez le firmware **NanoQL** avec le bouton matériel **UPDATE**.
+4. Dans **3. FPGA**, programmez le bitstream en Flash persistante via NanoQL Link. Si aucun core NanoQL valide n'est présent, le firmware BL616 ouvre automatiquement son port de récupération.
+5. Insérez la microSD et redémarrez la carte.
 
 Le firmware BL616 NanoQL fournit le clavier USB, la microSD, l'overlay, NanoQL Link et la programmation directe de la SRAM ou de la Flash FPGA. Le firmware Sipeed d'origine et son JTAG externe restent disponibles comme solution de récupération.
 
@@ -146,8 +147,9 @@ Remplacez `PORT` par `COMx`, `/dev/ttyACMx`, `/dev/ttyUSBx`, `/dev/cu.usbmodem*`
 
 Dans **Commencer**, choisissez **Mettre NanoQL à jour**. Le parcours normal ne remplace plus le firmware BL616 deux fois :
 
-1. mettez à jour le firmware BL616 NanoQL depuis **2. BL616** avec **UPDATE** ;
-2. démarrez NanoQL, appuyez brièvement sur **S1**, puis programmez le nouveau bitstream FPGA depuis **3. FPGA**.
+1. cliquez sur **Télécharger la dernière release** ;
+2. mettez à jour le firmware BL616 NanoQL depuis **2. BL616** avec **UPDATE** ;
+3. démarrez NanoQL, appuyez brièvement sur **S1**, puis programmez le nouveau bitstream FPGA depuis **3. FPGA**.
 
 La microSD et ses réglages sont conservés. Si NanoQL Link est inaccessible ou si la Flash FPGA est endommagée, restaurez le firmware Sipeed avec **UPDATE**, puis utilisez le JTAG externe :
 
@@ -177,7 +179,7 @@ NanoQL propose six profils vidéo dans `Display > Video mode`. Les profils 50 Hz
 
 Les deux cadences émettent un véritable flux HDMI à 74,25 MHz avec AVI InfoFrame 16:9. Si un moniteur ancien grise son réglage d'aspect ou déforme le 720p50, essayez d'abord `60 Hz Large`. Pour des pixels fidèles, désactivez l'overscan, la réduction de bruit, l'interpolation de mouvement et les renforcements de netteté.
 
-Dans l'overlay, `USB layout` concerne exclusivement le clavier USB local connecté au BL616 ; `QL ROM layout` sélectionne la table attendue par la ROM. NanoQL traduit les symboles et les caractères accentués disponibles dans le jeu QL, applique le verrouillage majuscule avec la logique familière d'un clavier moderne et rend le pavé numérique indépendant de Num Lock. Le clavier distant de l'onglet **4. Remote keyboard** est traduit en caractères par Windows, macOS ou Linux, ignore `USB layout` et utilise un état de matrice indépendant du clavier USB.
+Dans l'overlay, `USB layout` concerne exclusivement le clavier USB local connecté au BL616 ; `QL ROM layout` sélectionne la table attendue par la ROM. NanoQL traduit les symboles et les caractères accentués disponibles dans le jeu QL. Caps Lock verrouille la couche Shift complète du QL pour les lettres, les chiffres et la ponctuation ; maintenir Shift sélectionne temporairement la couche opposée. Le pavé numérique reste indépendant de Num Lock. Le clavier distant de l'onglet **4. Remote keyboard** est traduit en caractères par Windows, macOS ou Linux, ignore `USB layout` et utilise un état de matrice indépendant du clavier USB.
 
 ## English
 
@@ -250,16 +252,17 @@ Use `python3` on macOS/Linux when needed. The assistant installs PySerial automa
 
 The first tab's **Language** selector immediately switches the complete interface between English and French. The choice is stored with the other settings. Embedded illustrations identify the **UPDATE** and **S1** buttons; no external image file is required.
 
-In **Start here**, select the extracted `NanoQL-vX.Y.Z-Complete-3921` or `NanoQL-vX.Y.Z-Complete-3923` folder once. After selecting the board revision, the assistant automatically fills the matching BL616 `.bin` and FPGA `.fs` fields in their respective tabs. Independent manual selectors remain available for advanced users.
+In **Start here**, select revision 3921 or 3923 and click **Download latest release**. The assistant downloads the complete package from the official GitHub release, verifies it against `SHA256SUMS.txt`, extracts it into a per-user cache, and fills the matching BL616 `.bin` and FPGA `.fs` fields automatically. Manual selection of an already extracted folder remains available for offline installation.
 
 ### First-install order
 
 Follow this order for first installation:
 
-1. Prepare the microSD in **1. ROMs and microSD**.
-2. In **2. BL616**, install **NanoQL** firmware with the hardware **UPDATE** button.
-3. In **3. FPGA**, program the bitstream into persistent Flash through NanoQL Link. If no valid NanoQL core is present, BL616 firmware automatically exposes its recovery port.
-4. Insert the microSD and restart the board.
+1. Download the latest release from **Start here**.
+2. Prepare the microSD in **1. ROMs and microSD**.
+3. In **2. BL616**, install **NanoQL** firmware with the hardware **UPDATE** button.
+4. In **3. FPGA**, program the bitstream into persistent Flash through NanoQL Link. If no valid NanoQL core is present, BL616 firmware automatically exposes its recovery port.
+5. Insert the microSD and restart the board.
 
 NanoQL BL616 firmware provides the USB keyboard, microSD, overlay, NanoQL Link, and direct FPGA SRAM or Flash programming. Sipeed original firmware and external JTAG remain available as a recovery route.
 
@@ -325,8 +328,9 @@ Replace `PORT` with `COMx`, `/dev/ttyACMx`, `/dev/ttyUSBx`, `/dev/cu.usbmodem*`,
 
 Select **Update NanoQL** under **Start here**. The normal path no longer replaces BL616 firmware twice:
 
-1. update NanoQL BL616 firmware from **2. BL616** with **UPDATE**;
-2. start NanoQL, briefly press **S1**, then program the new FPGA bitstream from **3. FPGA**.
+1. click **Download latest release**;
+2. update NanoQL BL616 firmware from **2. BL616** with **UPDATE**;
+3. start NanoQL, briefly press **S1**, then program the new FPGA bitstream from **3. FPGA**.
 
 The microSD and its settings are preserved. If NanoQL Link is unavailable or FPGA Flash is damaged, restore Sipeed firmware with **UPDATE**, then use external JTAG:
 
@@ -356,4 +360,4 @@ NanoQL provides six video profiles under `Display > Video mode`. The 50 Hz profi
 
 Both rates are true 74.25 MHz HDMI streams with a 16:9 AVI InfoFrame. If an older display disables its aspect control or distorts 720p50, try `60 Hz Large` first. Disable overscan, noise reduction, motion interpolation, and sharpness enhancement for faithful pixels.
 
-In the overlay, `USB layout` applies exclusively to the local USB keyboard connected to the BL616; `QL ROM layout` selects the table expected by the ROM. NanoQL translates symbols and accented characters available in the QL set, applies Caps Lock with familiar modern-keyboard semantics, and makes the numeric keypad independent of Num Lock. The remote keyboard in the **4. Remote keyboard** tab is translated into characters by Windows, macOS, or Linux, ignores `USB layout`, and uses matrix state independent from the USB keyboard.
+In the overlay, `USB layout` applies exclusively to the local USB keyboard connected to the BL616; `QL ROM layout` selects the table expected by the ROM. NanoQL translates symbols and accented characters available in the QL set. Caps Lock selects the complete QL Shift layer for letters, digits, and punctuation; holding Shift temporarily selects the opposite layer. The numeric keypad remains independent of Num Lock. The remote keyboard in the **4. Remote keyboard** tab is translated into characters by Windows, macOS, or Linux, ignores `USB layout`, and uses matrix state independent from the USB keyboard.

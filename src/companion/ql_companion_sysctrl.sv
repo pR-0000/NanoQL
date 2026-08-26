@@ -13,6 +13,7 @@ module ql_companion_sysctrl(
     output reg  [2:0] video_mode,
     output reg  [1:0] ram_config,
     output reg  [1:0] cpu_speed,
+    output reg        microdrive_turbo,
     output reg        host_keyboard_azerty,
     output reg        rom_keyboard_french,
     output reg        status_seen,
@@ -46,6 +47,7 @@ module ql_companion_sysctrl(
             video_mode <= 3'd0;
             ram_config <= 2'd0;
             cpu_speed <= 2'd0;
+            microdrive_turbo <= 1'b0;
             host_keyboard_azerty <= 1'b0;
             rom_keyboard_french <= 1'b0;
             status_seen <= 1'b0;
@@ -91,6 +93,8 @@ module ql_companion_sysctrl(
                                     ram_config <= data_in[1:0];
                                 else if (config_id == "C")
                                     cpu_speed <= data_in[1:0];
+                                else if (config_id == "T")
+                                    microdrive_turbo <= data_in[0];
                                 else if (config_id == "H")
                                     host_keyboard_azerty <= data_in[0];
                                 else if (config_id == "K")

@@ -22,7 +22,8 @@ Le projet privilégie la fidélité matérielle : CPU 68000, timings vidéo nati
 - images QL-SD en lecture ;
 - Microdrive QLAY lisible et inscriptible ;
 - conversion autonome d'un dossier microSD en cartouche `.mdv` ;
-- programmation FPGA temporaire ou permanente et outils de développement par USB.
+- programmation FPGA temporaire ou permanente et outils de développement par USB ;
+- téléchargement automatique de la dernière release et débogage matériel du 68000.
 
 Les fonctions annoncées comme validées ont été testées sur une Tang Nano 20K révision 3923. La révision 3921 utilise le même bitstream avec un firmware BL616 adapté.
 
@@ -41,9 +42,9 @@ Le format recommandé est une partition unique **FAT32 avec une table de partiti
 
 Le clavier USB et le hub OTG sont facultatifs. Un PC peut fournir un clavier distant en mode développement.
 
-Le clavier distant NanoQL Link fonctionne sous Windows, macOS et Linux. Sur macOS, la capture temps réel peut nécessiter l'autorisation de Terminal ou Python dans les réglages de confidentialité.
+Le clavier distant NanoQL Link fonctionne sous Windows, macOS et Linux. Sur macOS, la capture temps réel peut nécessiter l'autorisation de Terminal ou Python dans les réglages de confidentialité. L'assistant peut construire et monter MDV1 depuis un dossier du PC pendant que le clavier distant est actif : il met brièvement les touches en pause pendant le transfert, puis reprend automatiquement la même session.
 
-Dans l'overlay, **USB layout** concerne uniquement le clavier physique relié au BL616. **QL ROM layout** décrit la table de clavier attendue par la ROM QL. Le FPGA convertit les caractères imprimables du premier layout vers le second, y compris les chiffres, les symboles de programmation, les caractères accentués du jeu QL et les combinaisons AltGr prises en charge. Le verrouillage majuscule conserve le comportement familier d'un clavier moderne sans activer simultanément le verrouillage natif du QL. Le pavé numérique produit toujours chiffres et opérateurs, indépendamment de Num Lock. Le clavier distant NanoQL Link reçoit déjà les caractères traduits par le système d'exploitation et utilise un chemin de matrice QL distinct : il n'utilise donc pas **USB layout** et ne peut pas modifier l'état du clavier USB.
+Dans l'overlay, **USB layout** concerne uniquement le clavier physique relié au BL616. **QL ROM layout** décrit la table de clavier attendue par la ROM QL. Le FPGA convertit les caractères imprimables du premier layout vers le second, y compris les chiffres, les symboles de programmation, les caractères accentués du jeu QL et les combinaisons AltGr prises en charge. Caps Lock agit comme le verrouillage complet de la couche Shift du QL pour les lettres, les chiffres et la ponctuation ; maintenir Shift sélectionne temporairement la couche opposée. Le pavé numérique produit toujours chiffres et opérateurs, indépendamment de Num Lock. Le clavier distant NanoQL Link reçoit déjà les caractères traduits par le système d'exploitation et utilise un chemin de matrice QL distinct : il n'utilise donc pas **USB layout** et ne peut pas modifier l'état du clavier USB.
 
 Pour un clavier USB autonome, utilisez de préférence un hub OTG simple ou alimenté : reliez la Tang Nano au connecteur hôte du hub, le clavier à un port USB-A et, si nécessaire, le chargeur uniquement à l'entrée d'alimentation PD. Un dock avec lecteur de cartes ou HDMI peut fonctionner, mais sa topologie USB interne est plus complexe. Ne reliez pas simultanément son connecteur hôte à un ordinateur lorsque la Tang Nano doit piloter le clavier.
 
@@ -63,13 +64,14 @@ python tools/nanoql_setup.pyw
 
 Sous Windows, vous pouvez aussi double-cliquer sur `tools/nanoql_setup.pyw` : aucune console ne reste ouverte. L'assistant mémorise automatiquement les chemins, paramètres et la langue choisie dans un fichier INI propre à l'utilisateur. Son sélecteur **English / Français** traduit immédiatement toute l'interface. L'onglet **Injection de binaire** charge, vérifie et exécute directement un binaire 68000 avec des adresses de chargement, PC et SSP configurables.
 
-Dans **Commencer**, sélectionnez une seule fois le dossier extrait `NanoQL-vX.Y.Z-Complete-3921/3923`. L'assistant détecte le firmware BL616 `.bin` adapté à la carte et le bitstream FPGA `.fs`, puis renseigne le bon champ dans chaque onglet. Chaque onglet conserve un sélecteur manuel indépendant. Les signatures sont vérifiées avant le flash afin qu'un firmware BL616 ne puisse pas être pris pour un bitstream FPGA. L'assistant détecte aussi les ports USB/série et peut installer openFPGALoader avec Homebrew sous macOS. Gowin EDA n'est pas requis pour installer une release.
+Dans **Commencer**, choisissez la révision de la carte puis cliquez sur **Télécharger la dernière release**. L'assistant récupère le package complet officiel, vérifie son SHA-256 publié, l'extrait dans un cache utilisateur et renseigne automatiquement les champs BL616 et FPGA. Le choix manuel d'un dossier extrait reste disponible hors ligne. Les signatures sont vérifiées avant le flash afin qu'un firmware BL616 ne puisse pas être pris pour un bitstream FPGA. L'assistant détecte aussi les ports USB/série et peut installer openFPGALoader avec Homebrew sous macOS. Gowin EDA n'est pas requis pour installer une release.
 
 Pour une première installation :
 
-1. préparer la microSD ;
-2. installer le firmware BL616 NanoQL avec le bouton `UPDATE` ;
-3. programmer ensuite la Flash FPGA via NanoQL Link. Si aucun core NanoQL valide n'est encore présent, le port de récupération apparaît automatiquement.
+1. télécharger et sélectionner automatiquement la dernière release ;
+2. préparer la microSD ;
+3. installer le firmware BL616 NanoQL avec le bouton `UPDATE` ;
+4. programmer ensuite la Flash FPGA via NanoQL Link. Si aucun core NanoQL valide n'est encore présent, le port de récupération apparaît automatiquement.
 
 Pour une mise à jour, installez d'abord le nouveau firmware BL616 **NanoQL** avec `UPDATE`, démarrez NanoQL, appuyez brièvement une fois sur `S1`, puis programmez le nouveau bitstream en SRAM ou en Flash depuis l'onglet FPGA. La restauration du firmware Sipeed d'origine est réservée à la récupération ou au JTAG externe.
 
@@ -95,6 +97,8 @@ NanoQL/Generated/Jeu.mdv
 
 Les commandes QDOS `DIR`, `LOAD`, `LRUN`, `SAVE` et `ERASE` utilisent cette cartouche. Les écritures persistent dans l'image `.mdv`.
 
+**Microdrive speed: Authentic** conserve la cadence du lecteur d'origine. Le mode optionnel **Turbo** accélère temporairement le 68000 et le flux de bande ensemble à leur cadence 24 MHz pendant que le lecteur est sélectionné, puis restaure la vitesse CPU choisie. Cette méthode préserve les boucles de lecture QDOS ; elle est destinée au confort et non à la reproduction temporelle stricte.
+
 `SAVE mdv1_TEST_mdv` crée un fichier QDOS nommé `TEST_mdv` dans la cartouche ; il ne crée pas une nouvelle image `TEST.mdv`.
 
 ### Mémoire des programmes
@@ -105,6 +109,7 @@ Sur le QL original de 128 Kio, `RESPR(65536)` peut normalement produire `Out of 
 
 - [Installation Windows, macOS et Linux](docs/INSTALLATION.md)
 - [NanoQL Link et gestion des fichiers](docs/NANOQL_LINK.md)
+- [Exemple assembleur 68000 avec injection directe](examples/asm-hello/README.md)
 - [Architecture et timings ZX8301](docs/ZX8301.md)
 - [Feuille de route](docs/ROADMAP.md)
 - [Historique des changements](CHANGELOG.md)
@@ -113,13 +118,13 @@ Sur le QL original de 128 Kio, `RESPR(65536)` peut normalement produire `Out of 
 
 | Ressource |            Utilisation |
 | --------- | ---------------------: |
-| Logique   | 15 970 / 20 736 (78 %) |
-| LUT       |                 14 891 |
-| Registres |                  7 385 |
+| Logique   | 16 671 / 20 736 (81 %) |
+| LUT       |                 15 595 |
+| Registres |                  7 494 |
 | BSRAM     |         21 / 46 (46 %) |
 | DSP       |               0,5 / 24 |
 
-Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 52,501 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,633 MHz. L'analyse de puissance Gowin estime 327,568 mW et une température de jonction de 34,775 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
+Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 48,013 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,622 MHz. L'analyse de puissance Gowin estime 327,938 mW et une température de jonction de 34,786 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
 
 ## English
 
@@ -139,7 +144,8 @@ The project emphasizes hardware fidelity: the 68000 CPU, native video timing, RA
 - read-only QL-SD images;
 - readable and writable QLAY Microdrive cartridges;
 - standalone microSD-folder to `.mdv` conversion;
-- temporary or persistent FPGA programming and USB development tools.
+- temporary or persistent FPGA programming and USB development tools;
+- automatic latest-release download and hardware 68000 debugging.
 
 Features described as validated were physically tested on a revision 3923 Tang Nano 20K. Revision 3921 uses the same FPGA bitstream with matching BL616 firmware.
 
@@ -158,9 +164,9 @@ The preferred format is one **FAT32 partition using an MBR partition table**. ex
 
 A USB keyboard and OTG hub are optional. A computer can provide a remote keyboard in development mode.
 
-The NanoQL Link remote keyboard works on Windows, macOS, and Linux. On macOS, real-time capture may require granting Terminal or Python permission in the privacy settings.
+The NanoQL Link remote keyboard works on Windows, macOS, and Linux. On macOS, real-time capture may require granting Terminal or Python permission in the privacy settings. The setup assistant can build and mount MDV1 from a PC folder while the remote keyboard is active: it briefly pauses key capture during the transfer and then resumes the same session automatically.
 
-In the overlay, **USB layout** applies only to the physical keyboard attached to the BL616. **QL ROM layout** describes the keyboard table expected by the QL ROM. The FPGA converts printable characters from the former to the latter, including digits, programming symbols, QL character-set accents, and supported AltGr combinations. Caps Lock retains familiar modern-keyboard letter and Shift behavior without also toggling native QL Caps. The numeric keypad always emits digits and operators independently of Num Lock. The NanoQL Link remote keyboard receives characters translated by the host and uses an independent direct QL-matrix path, so it does not use **USB layout** and cannot alter the USB keyboard state.
+In the overlay, **USB layout** applies only to the physical keyboard attached to the BL616. **QL ROM layout** describes the keyboard table expected by the QL ROM. The FPGA converts printable characters from the former to the latter, including digits, programming symbols, QL character-set accents, and supported AltGr combinations. Caps Lock selects the QL's complete Shift layer for letters, digits, and punctuation; holding Shift temporarily selects the opposite layer. The numeric keypad always emits digits and operators independently of Num Lock. The NanoQL Link remote keyboard receives characters translated by the host and uses an independent direct QL-matrix path, so it does not use **USB layout** and cannot alter the USB keyboard state.
 
 For a standalone USB keyboard, prefer a simple or powered OTG hub: connect the Tang Nano to the hub's host connector, the keyboard to a USB-A port and, when required, the charger only to the PD power input. A dock with a card reader or HDMI may work, but has a more complex internal USB topology. Do not simultaneously connect its host connector to a computer while the Tang Nano is expected to drive the keyboard.
 
@@ -180,13 +186,14 @@ python tools/nanoql_setup.pyw
 
 On Windows, you can also double-click `tools/nanoql_setup.pyw`, which opens no console window. The assistant automatically remembers paths, settings, and the selected language in a per-user INI file. Its **English / Français** selector translates the complete interface immediately. The **Binary injection** tab directly loads, verifies, and executes a 68000 binary with configurable load, PC, and SSP addresses.
 
-In **Start here**, select the extracted `NanoQL-vX.Y.Z-Complete-3921/3923` folder once. The assistant detects the board-specific BL616 `.bin` and the FPGA `.fs`, then fills the correct field in each tab. Each tab still offers an independent manual file selector. File signatures are checked before flashing, so BL616 firmware cannot be mistaken for an FPGA bitstream. The assistant also detects USB/serial ports and can install openFPGALoader through Homebrew on macOS. Gowin EDA is not required to install a release.
+In **Start here**, select the board revision and click **Download latest release**. The assistant downloads the official complete package, verifies its published SHA-256, extracts it into a per-user cache, and fills the BL616 and FPGA fields automatically. Manual selection of an extracted folder remains available offline. File signatures are checked before flashing, so BL616 firmware cannot be mistaken for an FPGA bitstream. The assistant also detects USB/serial ports and can install openFPGALoader through Homebrew on macOS. Gowin EDA is not required to install a release.
 
 For first installation:
 
-1. prepare the microSD;
-2. install NanoQL BL616 firmware with the `UPDATE` button;
-3. program persistent FPGA Flash through NanoQL Link. If no valid NanoQL core is present yet, the recovery port appears automatically.
+1. automatically download and select the latest release;
+2. prepare the microSD;
+3. install NanoQL BL616 firmware with the `UPDATE` button;
+4. program persistent FPGA Flash through NanoQL Link. If no valid NanoQL core is present yet, the recovery port appears automatically.
 
 For an update, install the new **NanoQL** BL616 firmware first with `UPDATE`, start NanoQL, briefly press `S1` once, then program the new bitstream into SRAM or Flash from the FPGA tab. Restoring Sipeed original firmware is reserved for recovery or external JTAG.
 
@@ -212,6 +219,8 @@ NanoQL/Generated/Game.mdv
 
 QDOS `DIR`, `LOAD`, `LRUN`, `SAVE`, and `ERASE` operate on that cartridge. Writes persist in the `.mdv` image.
 
+**Microdrive speed: Authentic** retains the original drive cadence. Optional **Turbo** temporarily accelerates both the 68000 and tape stream to their 24 MHz cadence while the drive is selected, then restores the chosen CPU speed. This preserves QDOS polling loops; it is a convenience mode rather than strict timing reproduction.
+
 `SAVE mdv1_TEST_mdv` creates a QDOS file named `TEST_mdv` inside the cartridge; it does not create another `TEST.mdv` image.
 
 ### Program memory
@@ -222,6 +231,7 @@ On an original 128 KiB QL, `RESPR(65536)` can normally report `Out of Memory`: Q
 
 - [Windows, macOS, and Linux installation](docs/INSTALLATION.md)
 - [NanoQL Link and file management](docs/NANOQL_LINK.md)
+- [68000 assembly example with direct injection](examples/asm-hello/README.md)
 - [ZX8301 architecture and timing](docs/ZX8301.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Changelog](CHANGELOG.md)
@@ -230,13 +240,13 @@ On an original 128 KiB QL, `RESPR(65536)` can normally report `Out of Memory`: Q
 
 | Resource  |                 Usage |
 | --------- | --------------------: |
-| Logic     | 15,970 / 20,736 (78%) |
-| LUT       |                14,891 |
-| Registers |                 7,385 |
+| Logic     | 16,671 / 20,736 (81%) |
+| LUT       |                15,595 |
+| Registers |                 7,494 |
 | BSRAM     |         21 / 46 (46%) |
 | DSP       |              0.5 / 24 |
 
-The system domain runs at 48 MHz with an estimated Fmax of 52.501 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.633 MHz. Gowin power analysis estimates 327.568 mW and a 34.775 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
+The system domain runs at 48 MHz with an estimated Fmax of 48.013 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.622 MHz. Gowin power analysis estimates 327.938 mW and a 34.786 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
 
 ## Credits and licenses
 

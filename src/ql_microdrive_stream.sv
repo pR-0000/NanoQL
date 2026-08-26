@@ -7,8 +7,8 @@
 module ql_microdrive_stream #(
     // QLAY stores two bytes per 16-bit tape word. The MiSTer model serializes
     // those words at 200 kbit/s, producing one word every 80 us and 2.8 ms
-    // for a 35-word gap. Derive this cadence from the fixed 48 MHz clock so
-    // CPU speed changes cannot alter the tape.
+    // for a 35-word gap in QL mode. Accelerated CPU modes scale both CPU and
+    // tape together because QDOS polls the ZX8302 with timed loops.
     parameter integer CLOCK_CYCLES_PER_BIT = 240
 ) (
     input  wire        clk,
@@ -70,6 +70,10 @@ module ql_microdrive_stream #(
         (cpu_speed == 2'd0) ? 8'd240 :
         (cpu_speed == 2'd1) ? 8'd113 :
         (cpu_speed == 2'd2) ? 8'd75  : 8'd43;
+    // A live speed change can leave the old divider above the new terminal
+    // count. Treat that as an immediate bit boundary instead of waiting for
+    // the counter to wrap through zero.
+    wire tape_bit_tick = phase_divider >= cycles_per_bit - 1'b1;
 
     // Each physical sector is even-sized, so byte pairs can be stored as
     // words. The high address bit selects one of the two rotating buffers.
@@ -160,7 +164,7 @@ module ql_microdrive_stream #(
     wire tx_consume = !core_reset && !stream_restart_pending &&
         stream_started && write_active && tx_full &&
         !read_in_flight &&
-        phase_divider == cycles_per_bit - 1'b1 &&
+        tape_bit_tick &&
         (bit_counter == 4'd1 || bit_counter == 4'd9);
     wire incoming_word_write = sd_byte_valid && sd_source == 3'd2 &&
         read_in_flight && sd_byte_addr[0];
@@ -617,7 +621,7 @@ module ql_microdrive_stream #(
                 end
 
                 if (!core_reset && !stream_restart_pending && stream_started &&
-                    phase_divider == cycles_per_bit - 1'b1) begin
+                    tape_bit_tick) begin
                     phase_divider <= {PHASE_DIVIDER_WIDTH{1'b0}};
                     bit_counter <= bit_counter + 4'd1;
 

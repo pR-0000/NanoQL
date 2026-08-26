@@ -264,6 +264,18 @@ module tb_ql_microdrive_stream;
             $fatal(1, "Microdrive started before its first QDOS selection");
 
         selected = 1'b1;
+        // Switching from the authentic divider to 24 MHz while an old count
+        // is already above the new terminal value must advance immediately,
+        // not wait for an 8-bit wraparound.
+        @(negedge clk);
+        dut.phase_divider = 4'hf;
+        cpu_speed = 2'd2;
+        @(posedge clk);
+        #1;
+        if (dut.phase_divider !== 0)
+            $fatal(1, "Live Microdrive acceleration did not resynchronize");
+        @(negedge clk);
+        cpu_speed = 2'd0;
         // The first six words are the physical preamble. RX ready starts on
         // the first header byte, matching the QL/MiSTer Microdrive path.
         expect_ready_byte(8'h0c, 1'b0);

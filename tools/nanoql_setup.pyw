@@ -8,6 +8,7 @@ import configparser
 import importlib.util
 import ctypes
 import hashlib
+import json
 import os
 import platform
 import queue
@@ -16,8 +17,10 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import urllib.request
 import webbrowser
+import zipfile
 from pathlib import Path
 
 
@@ -72,7 +75,10 @@ PYTHON_URL = "https://www.python.org/downloads/"
 HOMEBREW_URL = "https://brew.sh/"
 AUTO_PORT = "Automatic detection"
 SELECT_PORT = "Select a serial port"
-WORKFLOW_REVISION = "6"
+WORKFLOW_REVISION = "7"
+GITHUB_RELEASE_API = (
+    "https://api.github.com/repos/pR-0000/NanoQL/releases/latest"
+)
 BOARD_GUIDE_URL = (
     "https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html"
 )
@@ -88,7 +94,7 @@ BOARD_GUIDE_GIFS = {
 LANGUAGE_NAMES = {"en": "English", "fr": "Français"}
 TRANSLATIONS = {
     "fr": {
-        "NanoQL Setup Assistant": "Assistant d'installation NanoQL",
+        "NanoQL Assistant": "Assistant NanoQL",
         "Ready": "Prêt",
         "Complete": "Terminé",
         "Error": "Erreur",
@@ -98,6 +104,18 @@ TRANSLATIONS = {
         "Update NanoQL": "Mettre NanoQL à jour",
         "Installation path": "Type d'installation",
         "NanoQL release": "Release NanoQL",
+        "Get the latest NanoQL release": "Obtenir la dernière release NanoQL",
+        "Download latest release": "Télécharger la dernière release",
+        "Download the latest NanoQL release": "Téléchargement de la dernière release NanoQL",
+        "Downloading NanoQL release": "Téléchargement de la release NanoQL",
+        "Download the latest release first": "Télécharger d'abord la dernière release",
+        "The latest release is downloaded from the official NanoQL GitHub repository, verified with its published SHA-256 checksum, extracted, and selected automatically.": "La dernière release est téléchargée depuis le dépôt GitHub officiel de NanoQL, vérifiée avec sa somme SHA-256 publiée, extraite et sélectionnée automatiquement.",
+        "Manual / offline selection": "Sélection manuelle / hors ligne",
+        "Could not download the latest NanoQL release": "Impossible de télécharger la dernière release NanoQL",
+        "The release archive checksum does not match SHA256SUMS.txt.": "La somme de contrôle de l'archive ne correspond pas à SHA256SUMS.txt.",
+        "The GitHub release does not contain a complete package for this board revision.": "La release GitHub ne contient pas de package complet pour cette révision de carte.",
+        "The downloaded release archive contains an unsafe path.": "L'archive de release téléchargée contient un chemin non sûr.",
+        "Latest release downloaded and selected": "Dernière release téléchargée et sélectionnée",
         "Extracted release folder": "Dossier de release extrait",
         "Select release folder...": "Choisir le dossier de release...",
         "Select an extracted NanoQL release folder.": "Sélectionnez un dossier de release NanoQL extrait.",
@@ -111,7 +129,8 @@ TRANSLATIONS = {
         "Update the NanoQL BL616 firmware": "Mettre à jour le firmware BL616 NanoQL",
         "Restore the original BL616 firmware": "Restaurer le firmware BL616 d'origine",
         "Program the updated FPGA core": "Programmer la mise à jour du core FPGA",
-        "First installation keeps the required order: microSD, NanoQL BL616 firmware, then FPGA Flash.": "La première installation respecte l'ordre requis : microSD, firmware BL616 NanoQL, puis Flash FPGA.",
+        "First installation keeps the required order: latest release, microSD, NanoQL BL616 firmware, then FPGA Flash.": "La première installation respecte l'ordre requis : dernière release, microSD, firmware BL616 NanoQL, puis Flash FPGA.",
+        "Update keeps the microSD contents. Download the latest release, update the NanoQL BL616 firmware, then press S1 and program the FPGA directly through NanoQL Link.": "La mise à jour conserve le contenu de la microSD. Téléchargez la dernière release, mettez à jour le firmware BL616 NanoQL, puis appuyez sur S1 et programmez le FPGA directement via NanoQL Link.",
         "Update keeps the microSD contents. Update the NanoQL BL616 firmware first, then press S1 and program the FPGA directly through NanoQL Link.": "La mise à jour conserve le contenu de la microSD. Mettez d'abord à jour le firmware BL616 NanoQL, puis appuyez sur S1 et programmez directement le FPGA via NanoQL Link.",
         "1. ROMs and microSD": "1. ROM et carte microSD",
         "2. BL616": "2. BL616",
@@ -175,6 +194,14 @@ TRANSLATIONS = {
         "Initial SSP": "SSP initial",
         "Inject and execute": "Injecter et exécuter",
         "Restart QDOS": "Redémarrer QDOS",
+        "Diagnostics": "Diagnostic",
+        "68000 registers": "Registres 68000",
+        "Reading 68000 registers": "Lecture des registres 68000",
+        "Halt 68000": "Arrêter le 68000",
+        "Resume 68000": "Reprendre le 68000",
+        "Collecting diagnostics": "Collecte du diagnostic",
+        "Halting 68000": "Arrêt du 68000",
+        "Resuming 68000": "Reprise du 68000",
         "Synchronize MDV1": "Synchroniser MDV1",
         "Build core from source": "Compiler le core depuis les sources",
         "Developer tools": "Outils de développement",
@@ -186,11 +213,13 @@ TRANSLATIONS = {
         "PC folder synchronized as MDV1": "Dossier du PC synchronisé comme MDV1",
         "Medium name": "Nom du support",
         "Synchronize and mount MDV1": "Synchroniser et monter MDV1",
+        "The active remote keyboard is paused automatically during synchronization and resumes immediately afterward.": "Le clavier distant actif est mis en pause automatiquement pendant la synchronisation, puis reprend immédiatement.",
         "Step 1": "Étape 1",
         "Step 2": "Étape 2",
         "Step 3": "Étape 3",
         "Purpose": "Fonction",
         "Connection": "Connexion",
+        "Remote keyboard": "Clavier distant",
         "Activation": "Activation",
         "Layout": "Disposition",
         "Stop": "Arrêt",
@@ -310,6 +339,8 @@ TRANSLATIONS = {
         "Restoring Sipeed BL616 firmware": "Restauration du firmware BL616 Sipeed",
         "Preparing microSD": "Préparation de la microSD",
         "Synchronizing MDV1": "Synchronisation de MDV1",
+        "Remote keyboard paused while MDV1 is synchronized": "Clavier distant en pause pendant la synchronisation de MDV1",
+        "Remote keyboard resumed": "Clavier distant réactivé",
         "Building NanoQL": "Compilation de NanoQL",
         "Preparing microSD and building": "Préparation de la microSD et compilation",
         "Programming Flash": "Programmation de la Flash",
@@ -360,6 +391,184 @@ def settings_path() -> Path:
     else:
         root = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     return root / "NanoQL" / "nanoql_setup.ini"
+
+
+def release_cache_path() -> Path:
+    override = os.environ.get("NANOQL_RELEASE_CACHE")
+    if override:
+        return Path(override).expanduser()
+    if platform.system() == "Windows":
+        root = Path(os.environ.get("LOCALAPPDATA", Path.home()))
+    elif platform.system() == "Darwin":
+        root = Path.home() / "Library" / "Application Support"
+    else:
+        root = Path(
+            os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")
+        )
+    return root / "NanoQL" / "releases"
+
+
+def _github_request(url: str):
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "NanoQL-Setup-Assistant",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    return urllib.request.urlopen(request, timeout=45)
+
+
+def _release_asset(release: dict[str, object], predicate) -> dict[str, object]:
+    assets = release.get("assets", [])
+    if not isinstance(assets, list):
+        raise RuntimeError("Invalid GitHub release metadata.")
+    for asset in assets:
+        if isinstance(asset, dict) and predicate(str(asset.get("name", ""))):
+            return asset
+    raise FileNotFoundError("Required GitHub release asset was not found.")
+
+
+def _asset_url(asset: dict[str, object]) -> str:
+    url = str(asset.get("browser_download_url", ""))
+    if not url.startswith(
+        "https://github.com/pR-0000/NanoQL/releases/download/"
+    ):
+        raise RuntimeError("Invalid GitHub release asset URL.")
+    return url
+
+
+def _safe_extract_release(archive: Path, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=False)
+    destination_root = destination.resolve()
+    try:
+        with zipfile.ZipFile(archive) as package:
+            for member in package.infolist():
+                relative = Path(member.filename.replace("\\", "/"))
+                unix_mode = member.external_attr >> 16
+                if (
+                    relative.is_absolute()
+                    or ".." in relative.parts
+                    or (unix_mode & 0o170000) == 0o120000
+                ):
+                    raise RuntimeError(
+                        "The downloaded release archive contains an unsafe path."
+                    )
+                target = (destination / relative).resolve()
+                try:
+                    target.relative_to(destination_root)
+                except ValueError as error:
+                    raise RuntimeError(
+                        "The downloaded release archive contains an unsafe path."
+                    ) from error
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with package.open(member) as source, target.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+    except Exception:
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
+
+
+def download_latest_release(
+    revision: str, progress=None
+) -> tuple[str, Path, bool]:
+    with _github_request(GITHUB_RELEASE_API) as response:
+        release = json.loads(response.read().decode("utf-8"))
+    if not isinstance(release, dict):
+        raise RuntimeError("Invalid GitHub release metadata.")
+    tag = str(release.get("tag_name", ""))
+    if not re.fullmatch(r"v[0-9A-Za-z._-]+", tag):
+        raise RuntimeError("Invalid GitHub release tag.")
+
+    suffix = f"-Complete-{revision}.zip"
+    try:
+        package_asset = _release_asset(
+            release, lambda name: name.startswith("NanoQL-v") and name.endswith(suffix)
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError(
+            "The GitHub release does not contain a complete package for this "
+            "board revision."
+        ) from error
+    checksums_asset = _release_asset(
+        release, lambda name: name == "SHA256SUMS.txt"
+    )
+    package_name = str(package_asset["name"])
+    with _github_request(_asset_url(checksums_asset)) as response:
+        checksums = response.read().decode("utf-8", errors="strict")
+    checksum_match = re.search(
+        rf"(?mi)^([0-9a-f]{{64}})\s+\*?{re.escape(package_name)}\s*$",
+        checksums,
+    )
+    if checksum_match is None:
+        raise RuntimeError(
+            "The release archive checksum is missing from SHA256SUMS.txt."
+        )
+    expected_checksum = checksum_match.group(1).lower()
+
+    cache = release_cache_path()
+    downloads = cache / "downloads"
+    downloads.mkdir(parents=True, exist_ok=True)
+    archive = downloads / package_name
+    archive_valid = (
+        archive.is_file()
+        and hashlib.sha256(archive.read_bytes()).hexdigest() == expected_checksum
+    )
+    if not archive_valid:
+        temporary = archive.with_name(
+            f".{archive.name}.{os.getpid()}.{time.time_ns()}.part"
+        )
+        try:
+            with _github_request(_asset_url(package_asset)) as response, temporary.open(
+                "wb"
+            ) as output:
+                total = int(response.headers.get("Content-Length", "0") or 0)
+                received = 0
+                while True:
+                    block = response.read(256 * 1024)
+                    if not block:
+                        break
+                    output.write(block)
+                    received += len(block)
+                    if progress and total:
+                        progress(min(95.0, received * 95.0 / total))
+            actual_checksum = hashlib.sha256(temporary.read_bytes()).hexdigest()
+            if actual_checksum != expected_checksum:
+                raise RuntimeError(
+                    "The release archive checksum does not match SHA256SUMS.txt."
+                )
+            os.replace(temporary, archive)
+        finally:
+            temporary.unlink(missing_ok=True)
+    if progress:
+        progress(96.0)
+
+    destination = cache / tag / revision
+    try:
+        resolve_release_bundle(str(destination), revision)
+    except (FileNotFoundError, ValueError):
+        staging = destination.with_name(
+            f".{destination.name}.{os.getpid()}.{time.time_ns()}.extracting"
+        )
+        staging.parent.mkdir(parents=True, exist_ok=True)
+        _safe_extract_release(archive, staging)
+        resolve_release_bundle(str(staging), revision)
+        if destination.exists():
+            backup = destination.with_name(
+                f"{destination.name}.invalid-{time.strftime('%Y%m%d-%H%M%S')}"
+            )
+            os.replace(destination, backup)
+        os.replace(staging, destination)
+        extracted = True
+    else:
+        extracted = False
+    if progress:
+        progress(100.0)
+    return tag, destination.resolve(), extracted
 
 
 def find_gowin() -> str:
@@ -755,19 +964,29 @@ class ScrollableTab(ttk.Frame):
 class NanoQLSetup(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("NanoQL Setup Assistant")
+        self.title("NanoQL Assistant")
         self.geometry("1120x900")
         self.minsize(860, 680)
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.busy_widgets: list[ttk.Button] = []
         self.keyboard_stop_file = settings_path().with_name("keyboard.stop")
+        self.keyboard_control_file = settings_path().with_name(
+            "keyboard.control.json"
+        )
+        self.keyboard_control_result_file = self.keyboard_control_file.with_name(
+            self.keyboard_control_file.name + ".result"
+        )
+        self.keyboard_process: subprocess.Popen | None = None
+        self.operation_busy = False
 
         self.language = tk.StringVar(value="en")
         self.language_display = tk.StringVar(value=LANGUAGE_NAMES["en"])
         self.setup_mode = tk.StringVar(value="install")
+        self.install_release_done = tk.StringVar(value="0")
         self.install_sd_done = tk.StringVar(value="0")
         self.install_fpga_done = tk.StringVar(value="0")
         self.install_bl616_done = tk.StringVar(value="0")
+        self.update_release_done = tk.StringVar(value="0")
         self.update_fpga_done = tk.StringVar(value="0")
         self.update_bl616_done = tk.StringVar(value="0")
         self.revision = tk.StringVar(value="3923")
@@ -805,9 +1024,11 @@ class NanoQLSetup(tk.Tk):
         self.settings_variables = {
             "language": self.language,
             "setup_mode": self.setup_mode,
+            "install_release_done": self.install_release_done,
             "install_sd_done": self.install_sd_done,
             "install_fpga_done": self.install_fpga_done,
             "install_bl616_done": self.install_bl616_done,
+            "update_release_done": self.update_release_done,
             "update_fpga_done": self.update_fpga_done,
             "update_bl616_done": self.update_bl616_done,
             "revision": self.revision,
@@ -869,17 +1090,17 @@ class NanoQLSetup(tk.Tk):
         if "bl616" in Path(self.bitstream_path.get()).name.lower():
             self.bitstream_path.set(find_precompiled_bitstream())
         for variable in (
-            self.install_sd_done, self.install_fpga_done,
+            self.install_release_done, self.install_sd_done, self.install_fpga_done,
             self.install_bl616_done, self.update_fpga_done,
-            self.update_bl616_done,
+            self.update_bl616_done, self.update_release_done,
         ):
             if variable.get() not in ("0", "1"):
                 variable.set("0")
         if section.get("workflow_revision", "") != WORKFLOW_REVISION:
             for variable in (
-                self.install_sd_done, self.install_fpga_done,
+                self.install_release_done, self.install_sd_done, self.install_fpga_done,
                 self.install_bl616_done, self.update_fpga_done,
-                self.update_bl616_done,
+                self.update_bl616_done, self.update_release_done,
             ):
                 variable.set("0")
 
@@ -935,7 +1156,7 @@ class NanoQLSetup(tk.Tk):
 
     def _translate_ui(self) -> None:
         """Translate widget captions while retaining English as the source language."""
-        self.title(self._t("NanoQL Setup Assistant"))
+        self.title(self._t("NanoQL Assistant"))
 
         def visit(widget) -> None:
             try:
@@ -1042,17 +1263,13 @@ class NanoQLSetup(tk.Tk):
         )
 
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=1)
-        self.rowconfigure(2, weight=0)
-
-        header = ttk.Frame(self, padding=(16, 12))
-        header.grid(row=0, column=0, sticky="ew")
-        ttk.Label(header, text="NanoQL Setup Assistant", style="Title.TLabel").pack(
-            side="left"
-        )
+        self.rowconfigure(0, weight=1)
+        self.rowconfigure(1, weight=0)
 
         self.notebook = ttk.Notebook(self)
-        self.notebook.grid(row=1, column=0, sticky="nsew", padx=12)
+        self.notebook.grid(
+            row=0, column=0, sticky="nsew", padx=12, pady=(12, 0)
+        )
         self.quick_tab = ScrollableTab(self.notebook)
         self.link_tab = ScrollableTab(self.notebook)
         self.firmware_tab = ScrollableTab(self.notebook)
@@ -1079,7 +1296,7 @@ class NanoQLSetup(tk.Tk):
         self.bind_all("<Button-5>", self._on_tab_mousewheel_linux, add="+")
 
         log_frame = ttk.LabelFrame(self, text="Log", padding=8)
-        log_frame.grid(row=2, column=0, sticky="ew", padx=12, pady=(8, 4))
+        log_frame.grid(row=1, column=0, sticky="ew", padx=12, pady=(8, 4))
         log_frame.columnconfigure(0, weight=1)
 
         progress_header = ttk.Frame(log_frame)
@@ -1101,6 +1318,7 @@ class NanoQLSetup(tk.Tk):
             height=10,
             wrap="word",
             state="disabled",
+            takefocus=True,
             font=("Consolas", 9),
         )
         scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
@@ -1109,7 +1327,7 @@ class NanoQLSetup(tk.Tk):
         scrollbar.grid(row=3, column=1, sticky="ns")
 
         status_bar = ttk.Frame(self, padding=(12, 5, 12, 7))
-        status_bar.grid(row=3, column=0, sticky="ew")
+        status_bar.grid(row=2, column=0, sticky="ew")
         status_bar.columnconfigure(1, weight=1)
         ttk.Label(status_bar, text="Status", style="Section.TLabel").grid(
             row=0, column=0, sticky="w", padx=(0, 7)
@@ -1176,19 +1394,41 @@ class NanoQLSetup(tk.Tk):
         release = ttk.LabelFrame(parent, text="NanoQL release", padding=12)
         release.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 12))
         release.columnconfigure(1, weight=1)
+        ttk.Label(
+            release,
+            text=(
+                "The latest release is downloaded from the official NanoQL "
+                "GitHub repository, verified with its published SHA-256 "
+                "checksum, extracted, and selected automatically."
+            ),
+            justify="left",
+            wraplength=720,
+        ).grid(row=0, column=0, columnspan=3, sticky="w")
+        self.download_release_button = self._button(
+            release,
+            "Download latest release",
+            self.download_latest_release,
+            style="Primary.TButton",
+        )
+        self.download_release_button.grid(
+            row=1, column=0, columnspan=3, sticky="w", pady=(10, 14)
+        )
+        ttk.Label(
+            release, text="Manual / offline selection", style="Section.TLabel"
+        ).grid(row=2, column=0, sticky="w")
         ttk.Label(release, text="Extracted release folder").grid(
-            row=0, column=0, sticky="w"
+            row=3, column=0, sticky="w", pady=(8, 0)
         )
         ttk.Entry(release, textvariable=self.release_path).grid(
-            row=0, column=1, sticky="ew", padx=8
+            row=3, column=1, sticky="ew", padx=8, pady=(8, 0)
         )
         self._button(
             release, "Select release folder...", self._browse_release_folder
-        ).grid(row=0, column=2)
+        ).grid(row=3, column=2, pady=(8, 0))
         ttk.Label(
             release, textvariable=self.release_detection_status,
             justify="left", wraplength=700,
-        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
         self.workflow_description = tk.StringVar()
         ttk.Label(
@@ -1200,6 +1440,7 @@ class NanoQLSetup(tk.Tk):
         self.workflow_steps.grid(row=4, column=0, columnspan=2, sticky="ew")
         self.workflow_step_widgets: list[ttk.Checkbutton] = []
         for row, (text, variable) in enumerate((
+            ("Download the latest release first", self.install_release_done),
             ("Prepare the microSD card", self.install_sd_done),
             ("Install the NanoQL BL616 firmware", self.install_bl616_done),
             ("Program the FPGA", self.install_fpga_done),
@@ -1279,12 +1520,16 @@ class NanoQLSetup(tk.Tk):
     def _workflow_definition(self):
         if self.setup_mode.get() == "update":
             return (
+                ("Download the latest release first", self.update_release_done,
+                 self.quick_tab),
                 ("Update the NanoQL BL616 firmware", self.update_bl616_done,
                  self.firmware_tab),
                 ("Program the updated FPGA core", self.update_fpga_done,
                  self.fpga_tab),
             )
         return (
+            ("Download the latest release first", self.install_release_done,
+             self.quick_tab),
             ("Prepare the microSD card", self.install_sd_done,
              self.storage_tab),
             ("Install the NanoQL BL616 firmware", self.install_bl616_done,
@@ -1298,12 +1543,12 @@ class NanoQLSetup(tk.Tk):
         if self.setup_mode.get() == "update":
             self.workflow_title.set(self._t("Update NanoQL"))
             self.workflow_description.set(
-                self._t("Update keeps the microSD contents. Update the NanoQL BL616 firmware first, then press S1 and program the FPGA directly through NanoQL Link.")
+                self._t("Update keeps the microSD contents. Download the latest release, update the NanoQL BL616 firmware, then press S1 and program the FPGA directly through NanoQL Link.")
             )
         else:
             self.workflow_title.set(self._t("First installation"))
             self.workflow_description.set(self._t(
-                "First installation keeps the required order: microSD, NanoQL BL616 firmware, then FPGA Flash."
+                "First installation keeps the required order: latest release, microSD, NanoQL BL616 firmware, then FPGA Flash."
             ))
         steps = self._workflow_definition()
         for index, widget in enumerate(self.workflow_step_widgets):
@@ -1322,6 +1567,9 @@ class NanoQLSetup(tk.Tk):
     def _continue_setup(self) -> None:
         for _text, variable, tab in self._workflow_definition():
             if variable.get() != "1":
+                if tab is self.quick_tab:
+                    self.download_latest_release()
+                    return
                 if tab is self.firmware_tab:
                     self.firmware_mode.set("nanoql")
                 self._select_tab(tab)
@@ -1334,7 +1582,12 @@ class NanoQLSetup(tk.Tk):
         self._refresh_workflow()
 
     def _mark_workflow(self, step: str) -> None:
-        if step == "sd":
+        if step == "release":
+            variable = (self.update_release_done
+                        if self.setup_mode.get() == "update"
+                        else self.install_release_done)
+            variable.set("1")
+        elif step == "sd":
             self.install_sd_done.set("1")
         elif step == "fpga":
             variable = (self.update_fpga_done if self.setup_mode.get() == "update"
@@ -1650,7 +1903,10 @@ class NanoQLSetup(tk.Tk):
         self._button(actions, "Check connection", self.link_status).pack(
             side="left", padx=(0, 8)
         )
-        self._button(actions, "Start remote keyboard", self.start_remote_keyboard).pack(
+        self.start_keyboard_button = self._button(
+            actions, "Start remote keyboard", self.start_remote_keyboard
+        )
+        self.start_keyboard_button.pack(
             side="left", padx=(0, 8)
         )
         self.stop_keyboard_button = ttk.Button(
@@ -1714,18 +1970,34 @@ class NanoQLSetup(tk.Tk):
             side="left", padx=(0, 8)
         )
         self._button(actions, "Restart QDOS", self.restart_qdos).pack(side="left")
+        debug_actions = ttk.Frame(parent)
+        debug_actions.grid(
+            row=6, column=0, columnspan=3, sticky="w", pady=(0, 8)
+        )
+        self._button(debug_actions, "Diagnostics", self.link_diagnose).pack(
+            side="left", padx=(0, 8)
+        )
+        self._button(debug_actions, "Halt 68000", self.halt_cpu).pack(
+            side="left", padx=(0, 8)
+        )
+        self._button(
+            debug_actions, "68000 registers", self.read_cpu_registers
+        ).pack(side="left", padx=(0, 8))
+        self._button(debug_actions, "Resume 68000", self.resume_cpu).pack(
+            side="left"
+        )
         self._instruction(
-            parent, 6, "Program",
+            parent, 7, "Program",
             "Select a raw big-endian 68000 program, then choose its load address, PC, and SSP.",
             columnspan=3,
         )
         self._instruction(
-            parent, 7, "Addresses",
+            parent, 8, "Addresses",
             "NanoQL stops the CPU, writes and verifies the program, then executes it directly.",
             columnspan=3,
         )
         self._instruction(
-            parent, 8, "Limits",
+            parent, 9, "Limits",
             "QDOS executable headers and relocation are not supported in this direct mode.",
             columnspan=3,
         )
@@ -1783,11 +2055,19 @@ class NanoQLSetup(tk.Tk):
         ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
             row=2, column=2, pady=8
         )
-        self._button(parent, "Synchronize and mount MDV1", self.sync_microdrive).grid(
+        self.sync_microdrive_button = self._button(
+            parent, "Synchronize and mount MDV1", self.sync_microdrive
+        )
+        self.sync_microdrive_button.grid(
             row=3, column=0, columnspan=3, sticky="w", pady=(18, 8)
         )
         self._instruction(
-            parent, 4, "Alternative",
+            parent, 4, "Remote keyboard",
+            "The active remote keyboard is paused automatically during synchronization and resumes immediately afterward.",
+            columnspan=3, wraplength=720,
+        )
+        self._instruction(
+            parent, 5, "Alternative",
             "Normal users can copy folders to NanoQL/Microdrives on the microSD and build MDV1 from the F12 overlay without NanoQL Link.",
             columnspan=3, wraplength=720,
         )
@@ -1863,7 +2143,7 @@ class NanoQLSetup(tk.Tk):
 
     def _apply_release_folder(
         self, folder: str, show_error: bool = True,
-        infer_revision: bool = True,
+        infer_revision: bool = True, mark_workflow: bool = False,
     ) -> bool:
         selected_revision = self.revision.get()
         try:
@@ -1883,7 +2163,7 @@ class NanoQLSetup(tk.Tk):
                     selected_revision = other_revision
                     self.revision.set(selected_revision)
                     return self._finish_release_selection(
-                        folder, firmware, bitstream
+                        folder, firmware, bitstream, mark_workflow
                     )
             self.bl616_firmware_path.set("")
             self.release_detection_status.set(
@@ -1900,10 +2180,13 @@ class NanoQLSetup(tk.Tk):
                     ),
                 )
             return False
-        return self._finish_release_selection(folder, firmware, bitstream)
+        return self._finish_release_selection(
+            folder, firmware, bitstream, mark_workflow
+        )
 
     def _finish_release_selection(
-        self, folder: str, firmware: Path, bitstream: Path
+        self, folder: str, firmware: Path, bitstream: Path,
+        mark_workflow: bool = False,
     ) -> bool:
         self.release_path.set(str(Path(folder).expanduser().resolve()))
         self.bl616_firmware_path.set(str(firmware))
@@ -1916,6 +2199,8 @@ class NanoQLSetup(tk.Tk):
             self._append_log(f"Release folder: {self.release_path.get()}\n")
             self._append_log(f"BL616 firmware: {firmware}\n")
             self._append_log(f"FPGA bitstream: {bitstream}\n")
+        if mark_workflow:
+            self._mark_workflow("release")
         return True
 
     def _browse_release_folder(self) -> None:
@@ -1923,7 +2208,39 @@ class NanoQLSetup(tk.Tk):
             title=self._t("Select the extracted NanoQL release folder")
         )
         if path:
-            self._apply_release_folder(path)
+            self._apply_release_folder(path, mark_workflow=True)
+
+    def download_latest_release(self) -> None:
+        if self.operation_busy:
+            return
+        revision = self.revision.get()
+        title = "Download the latest NanoQL release"
+        self.operation_busy = True
+        self._set_status(title)
+        self._start_progress(title)
+        for widget in self.busy_widgets:
+            widget.configure(state="disabled")
+        self._refresh_keyboard_buttons()
+        self._append_log(
+            f"\nDownloading the latest complete NanoQL package for "
+            f"revision {revision}...\n"
+        )
+
+        def worker() -> None:
+            try:
+                tag, folder, extracted = download_latest_release(
+                    revision,
+                    lambda percent: self.events.put((
+                        "progress", (percent, "Downloading NanoQL release")
+                    )),
+                )
+                self.events.put((
+                    "release_done", (title, tag, str(folder), extracted)
+                ))
+            except Exception as error:
+                self.events.put(("error", (title, str(error))))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _revision_changed(self, _event=None) -> None:
         folder = self.release_path.get().strip()
@@ -2237,19 +2554,85 @@ class NanoQLSetup(tk.Tk):
     def link_status(self) -> None:
         self._run(self._link_command("status"), "Checking NanoQL Link")
 
-    def start_remote_keyboard(self) -> None:
-        self.keyboard_stop_file.parent.mkdir(parents=True, exist_ok=True)
-        self.keyboard_stop_file.unlink(missing_ok=True)
-        command = self._link_command("keyboard")
-        command.extend(["--stop-file", str(self.keyboard_stop_file)])
-        self.stop_keyboard_button.configure(state="normal")
-        self._run(
-            command,
-            "Remote keyboard active; use Stop or press F6",
-            lambda: self.stop_keyboard_button.configure(state="disabled"),
+    def _keyboard_active(self) -> bool:
+        return (
+            self.keyboard_process is not None and
+            self.keyboard_process.poll() is None
         )
 
+    def _refresh_keyboard_buttons(self) -> None:
+        active = self._keyboard_active()
+        if self.operation_busy:
+            for widget in self.busy_widgets:
+                widget.configure(state="disabled")
+        elif active:
+            # One process owns the serial port. MDV synchronization is the
+            # exception because it is delegated to that keyboard process.
+            for widget in self.busy_widgets:
+                widget.configure(state="disabled")
+            self.sync_microdrive_button.configure(state="normal")
+        else:
+            for widget in self.busy_widgets:
+                widget.configure(state="normal")
+        self.start_keyboard_button.configure(
+            state="disabled" if active or self.operation_busy else "normal"
+        )
+        self.stop_keyboard_button.configure(
+            state="normal" if active and not self.operation_busy else "disabled"
+        )
+
+    def start_remote_keyboard(self) -> None:
+        if self._keyboard_active():
+            return
+        self.keyboard_stop_file.parent.mkdir(parents=True, exist_ok=True)
+        self.keyboard_stop_file.unlink(missing_ok=True)
+        self.keyboard_control_file.unlink(missing_ok=True)
+        self.keyboard_control_result_file.unlink(missing_ok=True)
+        command = self._link_command("keyboard")
+        command.extend([
+            "--stop-file", str(self.keyboard_stop_file),
+            "--control-file", str(self.keyboard_control_file),
+        ])
+        self._append_log(f"\n> {' '.join(command)}\n")
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=REPOSITORY,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=CREATE_NO_WINDOW,
+            )
+        except Exception as error:
+            messagebox.showerror(
+                self._t("Start remote keyboard"), self._t(str(error))
+            )
+            return
+        self.keyboard_process = process
+        self._set_status("Remote keyboard active; use Stop or press F6")
+        self._refresh_keyboard_buttons()
+
+        def reader() -> None:
+            output_lines: list[str] = []
+            assert process.stdout is not None
+            for line in process.stdout:
+                output_lines.append(line)
+                progress = self._progress_from_output(line)
+                if progress is None:
+                    self.events.put(("log", line))
+                else:
+                    self.events.put(("progress", progress))
+            code = process.wait()
+            self.events.put(("keyboard_done", (process, code, "".join(output_lines))))
+
+        threading.Thread(target=reader, daemon=True).start()
+
     def stop_remote_keyboard(self) -> None:
+        if not self._keyboard_active():
+            self._refresh_keyboard_buttons()
+            return
         self.keyboard_stop_file.parent.mkdir(parents=True, exist_ok=True)
         self.keyboard_stop_file.touch()
         self.stop_keyboard_button.configure(state="disabled")
@@ -2359,6 +2742,18 @@ class NanoQLSetup(tk.Tk):
 
     def restart_qdos(self) -> None:
         self._run(self._link_command("qdos"), "Restarting QDOS")
+
+    def link_diagnose(self) -> None:
+        self._run(self._link_command("diagnose"), "Collecting diagnostics")
+
+    def halt_cpu(self) -> None:
+        self._run(self._link_command("halt"), "Halting 68000")
+
+    def read_cpu_registers(self) -> None:
+        self._run(self._link_command("registers"), "Reading 68000 registers")
+
+    def resume_cpu(self) -> None:
+        self._run(self._link_command("resume"), "Resuming 68000")
 
     def _selected_config(self) -> Path:
         if self.firmware_mode.get() == "nanoql":
@@ -2498,6 +2893,13 @@ class NanoQLSetup(tk.Tk):
                 self._t("Select the PC folder exposed as MDV1."),
             )
             return
+        # Move keyboard focus away from the action button immediately. The log
+        # is read-only, so Enter or Space cannot accidentally start a second
+        # synchronization while the remote keyboard keeps capturing keys.
+        self.log.focus_set()
+        if self._keyboard_active():
+            self._request_keyboard_microdrive_sync()
+            return
         command = [sys.executable, str(TOOLS / "nanoql_link.py")]
         port = self._selected_port(self.link_port, allow_auto=True)
         if port:
@@ -2506,6 +2908,77 @@ class NanoQLSetup(tk.Tk):
             "mdv-sync", self.mdv_folder.get(), "--name", self.mdv_name.get()
         ])
         self._run(command, "Synchronizing MDV1")
+
+    def _request_keyboard_microdrive_sync(self) -> None:
+        request_id = str(time.time_ns())
+        request = {
+            "id": request_id,
+            "command": "mdv-sync",
+            "source": str(Path(self.mdv_folder.get()).expanduser().resolve()),
+            "name": self.mdv_name.get(),
+        }
+        self.keyboard_control_file.parent.mkdir(parents=True, exist_ok=True)
+        self.keyboard_control_file.unlink(missing_ok=True)
+        self.keyboard_control_result_file.unlink(missing_ok=True)
+        temporary = self.keyboard_control_file.with_name(
+            self.keyboard_control_file.name + ".tmp"
+        )
+        temporary.write_text(json.dumps(request), encoding="utf-8")
+        os.replace(temporary, self.keyboard_control_file)
+
+        title = "Synchronizing MDV1"
+        self.operation_busy = True
+        self._set_status("Remote keyboard paused while MDV1 is synchronized")
+        self._start_progress(title)
+        for widget in self.busy_widgets:
+            widget.configure(state="disabled")
+        self._refresh_keyboard_buttons()
+
+        def worker() -> None:
+            deadline = time.monotonic() + 300.0
+            try:
+                while time.monotonic() < deadline:
+                    if not self._keyboard_active():
+                        raise RuntimeError(
+                            "The remote keyboard stopped before MDV1 "
+                            "synchronization completed."
+                        )
+                    if self.keyboard_control_result_file.is_file():
+                        try:
+                            result = json.loads(
+                                self.keyboard_control_result_file.read_text(
+                                    encoding="utf-8"
+                                )
+                            )
+                        except (OSError, ValueError):
+                            time.sleep(0.05)
+                            continue
+                        if str(result.get("id", "")) != request_id:
+                            time.sleep(0.05)
+                            continue
+                        self.keyboard_control_result_file.unlink(missing_ok=True)
+                        if not result.get("ok"):
+                            raise RuntimeError(str(
+                                result.get("error", "MDV1 synchronization failed.")
+                            ))
+                        self.events.put(("done", (
+                            title,
+                            lambda: self._set_status(
+                                "Remote keyboard active; use Stop or press F6"
+                            ),
+                        )))
+                        self.events.put(("log", self._t(
+                            "Remote keyboard resumed"
+                        ) + "\n"))
+                        return
+                    time.sleep(0.05)
+                raise TimeoutError(
+                    "MDV1 synchronization did not complete within 300 seconds."
+                )
+            except Exception as error:
+                self.events.put(("error", (title, str(error))))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def build_fpga(self) -> None:
         gowin = self.gowin_path.get()
@@ -2684,10 +3157,12 @@ class NanoQLSetup(tk.Tk):
     def _run_commands(
         self, commands: list[list[str]], title: str, callback=None
     ) -> None:
+        self.operation_busy = True
         self._set_status(title)
         self._start_progress(title)
         for widget in self.busy_widgets:
             widget.configure(state="disabled")
+        self._refresh_keyboard_buttons()
 
         def worker() -> None:
             try:
@@ -2782,6 +3257,29 @@ class NanoQLSetup(tk.Tk):
                     self._append_log(f"{self._t(title)}: OK\n")
                     if callback:
                         callback()
+                elif event == "release_done":
+                    title, tag, folder, extracted = payload
+                    if not self._apply_release_folder(
+                        str(folder), show_error=False, infer_revision=False,
+                        mark_workflow=True,
+                    ):
+                        error = self._t(
+                            "Release files were not detected for the selected "
+                            "board revision."
+                        )
+                        self._finish_busy("Error")
+                        self._append_log(f"{self._t(title)}: ERROR: {error}\n")
+                        messagebox.showerror(self._t(title), error)
+                        continue
+                    self._finish_busy("Complete")
+                    action = "downloaded and extracted" if extracted else "verified"
+                    self._append_log(
+                        f"NanoQL {tag} {action}: {folder}\n"
+                    )
+                    self._append_log(
+                        f"{self._t('Latest release downloaded and selected')}: "
+                        f"{tag}\n"
+                    )
                 elif event == "error":
                     title, error = payload
                     self._finish_busy("Error")
@@ -2790,11 +3288,32 @@ class NanoQLSetup(tk.Tk):
                         f"{self._t(title)}: ERROR: {translated_error}\n"
                     )
                     messagebox.showerror(self._t(title), translated_error)
+                elif event == "keyboard_done":
+                    process, code, output = payload
+                    if self.keyboard_process is process:
+                        self.keyboard_process = None
+                    self.keyboard_stop_file.unlink(missing_ok=True)
+                    self.keyboard_control_file.unlink(missing_ok=True)
+                    self._refresh_keyboard_buttons()
+                    if code:
+                        error = command_failure_message(
+                            [sys.executable, str(TOOLS / "nanoql_link.py"),
+                             "keyboard"],
+                            output,
+                            code,
+                        )
+                        self._append_log(
+                            f"{self._t('Start remote keyboard')}: ERROR: "
+                            f"{self._t(error)}\n"
+                        )
+                    elif not self.operation_busy:
+                        self._set_status("Ready")
         except queue.Empty:
             pass
         self.after(100, self._poll_events)
 
     def _finish_busy(self, status: str) -> None:
+        self.operation_busy = False
         self._set_status(status)
         self.progress.stop()
         self.progress.configure(mode="determinate", maximum=100.0)
@@ -2802,6 +3321,7 @@ class NanoQLSetup(tk.Tk):
         self.progress_text.set(self._t(status))
         for widget in self.busy_widgets:
             widget.configure(state="normal")
+        self._refresh_keyboard_buttons()
 
     def _append_log(self, text: str) -> None:
         self.log.configure(state="normal")

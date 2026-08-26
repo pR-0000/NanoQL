@@ -186,6 +186,7 @@ module nanoql_top(
     wire [2:0] companion_video_mode;
     wire [1:0] companion_ram_config;
     wire [1:0] companion_cpu_speed;
+    wire companion_microdrive_turbo;
     wire companion_host_keyboard_azerty;
     wire companion_rom_keyboard_french;
     wire companion_status_seen;
@@ -265,6 +266,11 @@ module nanoql_top(
     reg [8:0] qlsd_last_byte_addr;
     reg qlsd_byte_addr_valid;
     wire mdv_selected;
+    // QDOS polls the ZX8302 using CPU-timed loops. Turbo therefore raises
+    // CPU and tape together, preserving their validated timing ratio.
+    wire [1:0] active_cpu_speed =
+        companion_microdrive_turbo && mdv_selected &&
+        (companion_cpu_speed < 2'd2) ? 2'd2 : companion_cpu_speed;
     wire mdv_gap;
     wire mdv_rx_ready;
     wire [7:0] mdv_data;
@@ -362,6 +368,12 @@ module nanoql_top(
     wire [31:0] host_boot_ssp;
     wire [31:0] host_boot_pc;
     wire host_restart_pulse;
+    wire [4:0] cpu_debug_reg_select;
+    wire [4:0] cpu_debug_bit_select;
+    wire cpu_debug_reg_bit;
+    wire [31:0] cpu_debug_pc;
+    wire [15:0] cpu_debug_sr;
+    wire [15:0] cpu_debug_ir;
     reg [7:0] ipc_keyboard_report_count = 8'd0;
     reg [31:0] cpu_phase_count = 32'd0;
 
@@ -490,9 +502,15 @@ module nanoql_top(
         .mdv_cpu_trace(mdv_header_trace),
         .mdv_data_trace_count(mdv_data_trace_count),
         .mdv_data_trace(mdv_data_trace),
-        .cpu_speed(companion_cpu_speed),
+        .cpu_speed(active_cpu_speed),
         .cpu_phase_count(cpu_phase_count),
         .rom_keyboard_french(companion_rom_keyboard_french),
+        .cpu_debug_reg_select(cpu_debug_reg_select),
+        .cpu_debug_bit_select(cpu_debug_bit_select),
+        .cpu_debug_reg_bit(cpu_debug_reg_bit),
+        .cpu_debug_pc(cpu_debug_pc),
+        .cpu_debug_sr(cpu_debug_sr),
+        .cpu_debug_ir(cpu_debug_ir),
         .cpu_hold(host_cpu_hold),
         .boot_vectors_active(host_boot_vectors_active),
         .boot_ssp(host_boot_ssp),
@@ -528,6 +546,7 @@ module nanoql_top(
         .video_mode(companion_video_mode),
         .ram_config(companion_ram_config),
         .cpu_speed(companion_cpu_speed),
+        .microdrive_turbo(companion_microdrive_turbo),
         .host_keyboard_azerty(companion_host_keyboard_azerty),
         .rom_keyboard_french(companion_rom_keyboard_french),
         .status_seen(companion_status_seen),
@@ -760,7 +779,7 @@ module nanoql_top(
         // Rewind the logical cartridge after QL RESET, once any pending
         // normalized record has safely reached the microSD.
         .core_reset(ql_system_reset),
-        .cpu_speed(companion_cpu_speed),
+        .cpu_speed(active_cpu_speed),
         .selected(mdv_selected),
         // The ZX8302 has already latched the byte on RX-ready. Acknowledging
         // the status read prevents an accelerated CPU from observing the same
@@ -925,7 +944,7 @@ module nanoql_top(
     ql_sdram_memory sdram_memory (
         .clk(clk_pixel),
         .reset(video_reset),
-        .fast_cpu(companion_cpu_speed != 2'd0),
+        .fast_cpu(active_cpu_speed != 2'd0),
         .client_addr(video_mem_addr),
         .client_rd(video_mem_rd),
         .client_ready(video_mem_ready),
@@ -994,16 +1013,15 @@ module nanoql_top(
     // startup interval after RAM and the microSD ROM are ready.
     reg [14:0] ql_reset_count = 15'h7fff;
     always @(posedge clk_pixel) begin
-        if (video_reset || !ql_core_ready || host_cpu_hold ||
-            host_restart_pulse)
+        if (video_reset || !ql_core_ready || host_restart_pulse)
             ql_reset_count <= 15'h7fff;
         else if (ql_reset_count != 15'd0)
             ql_reset_count <= ql_reset_count - 15'd1;
     end
 
-    assign ql_system_reset = video_reset || host_cpu_hold ||
-                             (ql_reset_count != 15'd0);
-    assign cpu_run_enable = ql_core_ready && !ql_system_reset;
+    assign ql_system_reset = video_reset || (ql_reset_count != 15'd0);
+    assign cpu_run_enable = ql_core_ready && !ql_system_reset &&
+                            !host_cpu_hold;
 
     always @(posedge clk_pixel) begin
         if (ql_system_reset)
@@ -1033,10 +1051,10 @@ module nanoql_top(
     ql_timing ql_bus_timing (
         .clk_sys(clk_pixel),
         .reset(ql_system_reset),
-        // Video contention remains active in QL mode even while a Microdrive
-        // is selected. This matches QL_MiSTer and prevents programs launched
-        // from MDV1 from gaining an unrealistic amount of frame headroom.
-        .enable(cpu_run_enable && (companion_cpu_speed == 2'd0)),
+        // Authentic QL mode keeps video contention active while a Microdrive
+        // is selected. Optional MDV Turbo deliberately follows the validated
+        // accelerated-CPU path for the duration of the selection.
+        .enable(cpu_run_enable && (active_cpu_speed == 2'd0)),
         .ce_bus_p(cpu_ce_bus_p),
         .vblank(ql_native_vblank),
         .cpu_uds(!cpu_uds_n),
@@ -1224,7 +1242,7 @@ module nanoql_top(
         .reset(ql_system_reset),
         .enable(cpu_run_enable),
         .ram_config(companion_ram_config),
-        .cpu_speed(companion_cpu_speed),
+        .cpu_speed(active_cpu_speed),
         .cpu_addr(cpu_addr),
         .cpu_data_out(cpu_data_out),
         .cpu_data_in(cpu_data_in),
@@ -1236,7 +1254,13 @@ module nanoql_top(
         .cpu_ipl_n(cpu_ipl_n),
         .cpu_fc(cpu_fc),
         .ce_bus_p(cpu_ce_bus_p),
-        .ce_bus_n(cpu_ce_bus_n)
+        .ce_bus_n(cpu_ce_bus_n),
+        .debug_reg_select(cpu_debug_reg_select),
+        .debug_bit_select(cpu_debug_bit_select),
+        .debug_reg_bit(cpu_debug_reg_bit),
+        .debug_pc(cpu_debug_pc),
+        .debug_sr(cpu_debug_sr),
+        .debug_ir(cpu_debug_ir)
     );
 
     ql_cpu_boot_monitor cpu_boot_monitor (

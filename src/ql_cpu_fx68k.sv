@@ -16,10 +16,17 @@ module ql_cpu_fx68k(
     input  wire [2:0]  cpu_ipl_n,
     output wire [2:0]  cpu_fc,
     output wire        ce_bus_p,
-    output wire        ce_bus_n
+    output wire        ce_bus_n,
+
+    input  wire [4:0]  debug_reg_select,
+    input  wire [4:0]  debug_bit_select,
+    output wire        debug_reg_bit,
+    output wire [31:0] debug_pc,
+    output wire [15:0] debug_sr,
+    output wire [15:0] debug_ir
 );
 
-    wire cpu_reset = reset || !enable;
+    wire cpu_reset = reset;
     wire en_phi1;
     wire en_phi2;
     wire [23:1] cpu_word_addr;
@@ -28,6 +35,7 @@ module ql_cpu_fx68k(
     ql_cpu_phase phase_generator (
         .clk(clk),
         .reset(cpu_reset),
+        .enable(enable),
         .cpu_speed(cpu_speed),
         .en_phi1(en_phi1),
         .en_phi2(en_phi2)
@@ -65,7 +73,13 @@ module ql_cpu_fx68k(
         .IPL2n(cpu_ipl_n[2]),
         .iEdb(cpu_data_in),
         .oEdb(cpu_data_out),
-        .eab(cpu_word_addr)
+        .eab(cpu_word_addr),
+        .debug_reg_select(debug_reg_select),
+        .debug_bit_select(debug_bit_select),
+        .debug_reg_bit(debug_reg_bit),
+        .debug_pc(debug_pc),
+        .debug_sr(debug_sr),
+        .debug_ir(debug_ir)
     );
 
     // fx68k exposes A23..A1; reconstruct the byte address using the base-QL

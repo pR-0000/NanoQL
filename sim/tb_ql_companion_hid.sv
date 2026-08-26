@@ -234,6 +234,12 @@ module tb_ql_companion_hid;
         if (!matrix[33] || matrix[56])
             $fatal(1, "USB idle snapshot incorrectly cleared AZERTY Caps Lock");
         send_hid(8'ha0);
+        // Caps is a complete QL Shift lock, not only an uppercase-letter
+        // flag. The AZERTY comma key must therefore select question mark.
+        send_hid(8'h10);
+        if (!matrix[61] || !matrix[56] || matrix[63])
+            $fatal(1, "Caps Lock did not select shifted AZERTY punctuation");
+        send_hid(8'h90);
         // Caps affects letters with PC semantics: Caps+Q is uppercase while
         // Caps+Shift+Q is lowercase.
         send_hid(8'h04);
@@ -261,7 +267,18 @@ module tb_ql_companion_hid;
         send_hid(8'hb9);
         send_usb_idle(1'b0);
 
+        // The same full Shift-lock rule applies to a QWERTY USB keyboard.
+        host_keyboard_azerty = 1'b0;
+        rom_keyboard_french = 1'b0;
+        send_caps_state(1'b1);
+        send_hid(8'h38); // slash -> question mark
+        if (!matrix[61] || !matrix[56] || matrix[23])
+            $fatal(1, "Caps Lock did not select shifted QWERTY punctuation");
+        send_hid(8'hb8);
+        send_caps_state(1'b0);
+
         // Verify same-layout French punctuation as well as an AltGr symbol.
+        host_keyboard_azerty = 1'b1;
         rom_keyboard_french = 1'b1;
         check_key(7'h36, 18, 1'b0); // AZERTY semicolon -> French QL semicolon
         check_key(7'h10, 22, 1'b0); // AZERTY comma -> French QL comma

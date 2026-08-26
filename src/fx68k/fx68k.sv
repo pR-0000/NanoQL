@@ -159,7 +159,13 @@ module fx68k(
 	input BRn, BGACKn,
 	input IPL0n, input IPL1n, input IPL2n,
 	input [15:0] iEdb, output [15:0] oEdb,
-	output [23:1] eab
+	output [23:1] eab,
+	input [4:0] debug_reg_select,
+	input [4:0] debug_bit_select,
+	output debug_reg_bit,
+	output [31:0] debug_pc,
+	output [15:0] debug_sr,
+	output [15:0] debug_ir
 	);
 	
 	// wire clock = Clks.clk;
@@ -302,9 +308,11 @@ module fx68k(
 	wire [7:0] ccr;
 	
 	wire [15:0] psw = { pswT, 1'b0, pswS, 2'b00, pswI, ccr};
+	assign debug_sr = psw;
 
 	reg [15:0] ftu;
 	reg [15:0] Irc, Ir, Ird;
+	assign debug_ir = Ir;
 	
 	wire [15:0] alue;
 	wire [15:0] Abl;
@@ -360,7 +368,8 @@ module fx68k(
 	excUnit excUnit( .Clks, .Nanod, .Irdecod, .enT1, .enT2, .enT3, .enT4,
 		.Ird, .ftu, .iEdb, .pswS,
 		.prenEmpty, .au05z, .dcr4, .ze, .AblOut( Abl), .eab, .aob0, .Irc, .oEdb,
-		.alue, .ccr);
+		.alue, .ccr, .debug_reg_select, .debug_bit_select, .debug_reg_bit,
+		.debug_pc);
 
 	nDecoder3 nDecoder( .Clks, .Nanod, .Irdecod, .enT2, .enT4, .microLatch, .nanoLatch);
 	
@@ -1164,7 +1173,11 @@ module excUnit( input s_clks Clks,
 	output [15:0] AblOut,
 	output logic [15:0] Irc,
 	output logic [15:0] oEdb,
-	output logic [23:1] eab);
+	output logic [23:1] eab,
+	input [4:0] debug_reg_select,
+	input [4:0] debug_bit_select,
+	output reg debug_reg_bit,
+	output [31:0] debug_pc);
 
 localparam REG_USP = 15;
 localparam REG_SSP = 16;
@@ -1202,6 +1215,17 @@ localparam REG_DT = 17;
 	logic [15:0] dcrOutput;
 
 	reg [15:0] PcL, PcH;
+
+	assign debug_pc = {PcH, PcL};
+	always @* begin
+		debug_reg_bit = 1'b0;
+		if (debug_reg_select < 5'd18) begin
+			if (debug_bit_select < 5'd16)
+				debug_reg_bit = regs68L[debug_reg_select][debug_bit_select];
+			else
+				debug_reg_bit = regs68H[debug_reg_select][debug_bit_select - 5'd16];
+		end
+	end
 
 	reg [31:0] auReg, aob;
 

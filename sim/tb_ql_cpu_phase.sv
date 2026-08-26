@@ -3,6 +3,7 @@
 module tb_ql_cpu_phase;
     reg clk = 1'b0;
     reg reset = 1'b1;
+    reg enable = 1'b1;
     reg [1:0] cpu_speed = 2'd0;
     wire en_phi1;
     wire en_phi2;
@@ -14,7 +15,7 @@ module tb_ql_cpu_phase;
     always #5 clk = ~clk;
 
     ql_cpu_phase dut (
-        .clk(clk), .reset(reset), .cpu_speed(cpu_speed),
+        .clk(clk), .reset(reset), .enable(enable), .cpu_speed(cpu_speed),
         .en_phi1(en_phi1), .en_phi2(en_phi2)
     );
 
@@ -58,6 +59,15 @@ module tb_ql_cpu_phase;
         end
         if (mhz24_ticks != 96)
             $fatal(1, "24 MHz mode emitted %0d/96 phase ticks", mhz24_ticks);
+
+        enable = 1'b0;
+        repeat (16) begin
+            @(posedge clk);
+            #1;
+            if (en_phi1 || en_phi2)
+                $fatal(1, "CPU phase advanced while paused");
+        end
+        enable = 1'b1;
 
         cpu_speed = 2'd0;
         repeat (8) begin

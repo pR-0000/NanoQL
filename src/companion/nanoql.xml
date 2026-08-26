@@ -25,7 +25,7 @@
       <hide/>
     </action>
   </actions>
-  <menu label="NanoQL v0.3.3">
+  <menu label="NanoQL v0.3.4">
     <menu label="System">
       <fileselector label="QL ROM:" ext="rom;bin" index="0" action="save_reset"/>
       <fileselector label="IPC ROM:" ext="hex;bin;rom" index="4" action="save_reset"/>
@@ -45,6 +45,10 @@
     <menu label="Storage">
       <fileselector label="Microdrive 1:" ext="mdv" index="2" action="save"/>
       <fileselector label="Build MDV1:" ext="nqlfolder" index="7" default="/sd/NanoQL/Microdrives"/>
+      <list label="Microdrive speed:" id="T" default="0" action="save">
+        <listentry label="Authentic" value="0"/>
+        <listentry label="Turbo" value="1"/>
+      </list>
       <fileselector label="QL-SD image:" ext="win;qxl" index="1" action="save"/>
     </menu>
     <menu label="Display">

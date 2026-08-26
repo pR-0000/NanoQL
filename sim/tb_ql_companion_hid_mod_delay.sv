@@ -66,6 +66,24 @@ module tb_ql_companion_hid_mod_delay;
         end
     endtask
 
+    task automatic send_usb_idle;
+        begin
+            @(negedge clk);
+            data_start = 1'b1;
+            data_in = 8'd7;
+            data_strobe = 1'b1;
+            @(negedge clk);
+            data_strobe = 1'b0;
+            data_start = 1'b0;
+            @(negedge clk);
+            data_in = 8'd0;
+            data_strobe = 1'b1;
+            @(negedge clk);
+            data_strobe = 1'b0;
+            @(negedge clk);
+        end
+    endtask
+
     task automatic wait_delay_tick;
         begin
             repeat (32770) @(negedge clk);
@@ -174,6 +192,19 @@ module tb_ql_companion_hid_mod_delay;
         send_hid(8'h69);
         check_delayed_key(7'h30, 13, 1'b1, 1'b0, 1'b0);
         send_hid(8'he9);
+
+        // BL616 sends an authoritative idle snapshot immediately after a
+        // short key-up report. The snapshot must repair stale raw state but
+        // preserve the minimum semantic hold long enough for the QL IPC to
+        // sample the key once.
+        send_hid(7'h04);
+        send_hid(8'h84);
+        send_usb_idle();
+        if (!matrix[36])
+            $fatal(1, "USB idle snapshot truncated a valid short press");
+        repeat (9) wait_delay_tick();
+        if (matrix[36])
+            $fatal(1, "semantic key did not release after minimum hold");
 
         $display("PASS: generated QL modifiers precede translated contacts");
         $finish;

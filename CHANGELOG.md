@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.4 - 2026-08-26
+
+- Adds an optional Microdrive Turbo mode that accelerates the virtual tape and CPU together while preserving the validated read cadence across QL, 16 MHz, and 24 MHz operation.
+- Lets the Setup Assistant download, verify, extract, and select the latest Complete GitHub release as the first installation or update step.
+- Adds a documented `Hello NanoQL` 68000 example with direct `vasmm68k_mot` and NanoQL Link commands for rapid bare-metal development.
+- Extends NanoQL Link with non-resetting 68000 register inspection, including D0-D7, A0-A7, USP, SSP, PC, IR, SR, and decoded condition flags; exact halt and resume now preserve the complete CPU state.
+- Prevents missed or stuck physical USB keys by preserving short semantic key holds and by reconciling all-released HID reports without disturbing the independent remote keyboard.
+- Makes physical USB Caps Lock select the complete shifted QL layer for letters, digits, and punctuation, with Shift selecting the opposite layer and focused AZERTY/QWERTY regression coverage.
+- Keeps Advanced MDV synchronization compatible with an active remote keyboard and improves the graphical assistant workflow, progress reporting, saved settings, and NanoQL Link status feedback.
+
 ## v0.3.3 - 2026-08-24
 
 - Calibrates QL-mode ZX8301 contention for NanoQL's fx68k-to-SDRAM bridge: the original 32-of-40 DRAM ownership pattern is represented by 20 additional gated chunks because the bridge and physical SDRAM transaction already consume part of each 68008 memory cycle.

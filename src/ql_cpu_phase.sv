@@ -1,6 +1,7 @@
 module ql_cpu_phase (
     input  wire       clk,
     input  wire       reset,
+    input  wire       enable,
     input  wire [1:0] cpu_speed,
     output reg        en_phi1,
     output reg        en_phi2
@@ -25,13 +26,17 @@ module ql_cpu_phase (
             phase_polarity <= 1'b0;
             en_phi1 <= 1'b0;
             en_phi2 <= 1'b0;
-        end else begin
+        end else if (enable) begin
             phase_accum <= (cpu_speed >= 2'd2) ? 16'd0 :
                            phase_sum[15:0];
             en_phi1 <= phase_tick && !phase_polarity;
             en_phi2 <= phase_tick && phase_polarity;
             if (phase_tick)
                 phase_polarity <= !phase_polarity;
+        end else begin
+            // Preserve the exact fx68k phase while NanoQL Link is paused.
+            en_phi1 <= 1'b0;
+            en_phi2 <= 1'b0;
         end
     end
 

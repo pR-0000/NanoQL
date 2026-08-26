@@ -21,13 +21,14 @@ Carte mémoire v1 :
 Commandes SPI de la cible 4 :
 
 - `00` : état et signature `NQL1`.
-- `01` : arrêt et reset maintenu du 68000.
+- `01` : gel de l'état courant du 68000.
 - `02 A2 A1 A0 LEN DATA...` : écriture de 1 à 8 octets.
 - `03 SSP[31:0] PC[31:0]` : installation des vecteurs et exécution.
 - `04` : désactivation des vecteurs injectés et redémarrage de QDOS.
 - `05 KEY` : événement clavier HID distant.
 - `06 A2 A1 A0 LEN` : demande de lecture de 1 à 8 octets.
 - `07` : récupération du résultat de lecture.
+- `0D` : reprise exacte du 68000 gelé, sans reset.
 
 Le script PC est `tools/nanoql_link.py`. Le firmware unifié est construit à partir des sources de `firmware/bl616/nanoql_companion` pour les révisions 3921 et 3923.
 
@@ -45,11 +46,32 @@ La démo arrête QDOS, charge un court programme 68000 à `0x030000`, écrit une
 
 La commande `python tools/nanoql_link.py --port COMx cpu-status` affiche le mode CPU actif et mesure sa fréquence effective. Pour vérifier la stabilité USB sans modifier l'état du QL, exécutez `python tools/nanoql_link.py --port COMx link-stress` ; le test dure 30 secondes par défaut.
 
+### Développement assembleur et débogage
+
+L'exemple reproductible [`examples/asm-hello`](../examples/asm-hello/README.md) assemble un programme avec `vasmm68k_mot`, l'injecte à `$30000` et affiche `HELLO NANOQL` directement dans la VRAM. Il constitue un point de départ minimal pour intégrer compilation et essai physique dans un SDK ou un éditeur.
+
+NanoQL Link propose aussi des opérations de diagnostic composables :
+
+```text
+python tools/nanoql_link.py --port COMx diagnose
+python tools/nanoql_link.py --port COMx halt
+python tools/nanoql_link.py --port COMx registers
+python tools/nanoql_link.py --port COMx resume
+python tools/nanoql_link.py --port COMx dump 0x20000 0x8000 screen.bin --halt
+python tools/nanoql_link.py --port COMx verify programme.bin --address 0x30000 --halt
+python tools/nanoql_link.py --port COMx poke 0x30000 4e 71 4e 71
+python tools/nanoql_link.py --port COMx fill 0x24000 256 0xff
+```
+
+`peek` et `watch` lisent la RAM en direct sans arrêter le QL. `registers` arrête le fx68k entre deux cycles de bus et expose directement D0-D7, A0-A7, USP, SSP, le PC interne de prélecture, l'instruction courante, le SR et les flags T/S/I/X/N/Z/V/C. Le CPU reste arrêté pour permettre `dump`, `poke` ou `fill`; ajoutez `--resume` à `registers` pour reprendre automatiquement s'il fonctionnait auparavant. `dump --halt` et `verify --halt` figent brièvement le CPU pour obtenir un instantané cohérent, puis reprennent exactement son état antérieur. `poke` et `fill` font de même autour d'une écriture vérifiée ; ajoutez `--leave-halted` pour inspecter avant reprise. `upload` charge et vérifie un binaire en laissant le CPU arrêté, puis `run --pc ADRESSE --stack ADRESSE` le démarre séparément. `qdos` reste la sortie de secours qui réinitialise le QL.
+
+Le PC exposé est celui du pipeline matériel fx68k et peut donc se trouver en avance sur l'opcode visible dans `IR`, comme sur un vrai 68000 avec prélecture. Le pas-à-pas par instruction, les points d'arrêt et le désassemblage ne sont pas encore implémentés ; le script ne devine pas ces fonctions à partir d'un état incomplet.
+
 ### Utiliser un dossier comme Microdrive
 
 Le chemin recommandé ne nécessite ni NanoQL Link ni connexion au PC. Sur la microSD, créez un sous-dossier par cartouche dans `NanoQL/Microdrives`, par exemple `NanoQL/Microdrives/Benchmark`, puis placez-y les fichiers QL. Dans l'overlay `F12`, choisissez **Build MDV1 from:** puis `Benchmark`. Le BL616 crée `NanoQL/Generated/Benchmark.mdv`, monte cette image QLAY comme `mdv1_` en lecture/écriture et redémarre uniquement le QL.
 
-La commande de développement `mdv-sync` remplace également `MDV1.mdv`, puis réinitialise uniquement le QL. Le BL616 reste en mode NanoQL Link : le même port série et le clavier distant peuvent être réutilisés immédiatement après le redémarrage de QDOS.
+La commande de développement `mdv-sync` remplace également `MDV1.mdv` et le monte sans réinitialiser QDOS. Dans l'assistant graphique, elle peut être lancée pendant que le clavier distant est actif : le processus clavier libère toutes les touches, effectue lui-même le transfert sur sa session série, puis reprend automatiquement la capture. Il n'est donc plus nécessaire d'arrêter et de relancer le clavier, et deux processus ne se disputent jamais le port NanoQL Link.
 
 Les sous-dossiers sont aplatis avec `_` ; `tests/README.md` devient `tests_README_md`. Les noms résultants doivent utiliser des caractères ASCII et tenir sur 36 caractères. La conversion accepte au plus 126 fichiers et huit niveaux de sous-dossiers. Une image QLAY mesure toujours 174 930 octets, mais 253 secteurs de 512 octets seulement sont allouables aux en-têtes et aux données. La condition exacte est `ceil((nombre_fichiers + 1) × 64 / 512) + somme(ceil((taille_fichier + 64) / 512)) <= 253` ; un fichier unique peut donc contenir au plus 128 960 octets. À l'invite QDOS, utilisez `DIR mdv1_`, puis par exemple `LRUN mdv1_programme_bas`.
 
@@ -142,7 +164,7 @@ Cette commande identifie la Flash SPI, efface les blocs nécessaires, programme 
 
 ## English
 
-NanoQL Link is the core's direct development interface. It can hold the fx68k in reset, write a program into the QL's 128 KiB RAM, and start it with developer-provided stack and program-counter values. This first mode is intentionally bare-metal and does not depend on SuperBASIC, microdrives, or private data structures from a particular QDOS release.
+NanoQL Link is the core's direct development interface. It can freeze the exact current fx68k state, write a program into the QL's 128 KiB RAM, and start it with developer-provided stack and program-counter values. This first mode is intentionally bare-metal and does not depend on SuperBASIC, microdrives, or private data structures from a particular QDOS release.
 
 The transport path is PC USB CDC, BL616, internal SPI target 4, SDRAM arbiter, then fx68k. The unified BL616 firmware normally starts as a USB host for the keyboard. Pressing S1 after FPGA configuration, including while QDOS is already running, disconnects the USB-host keyboard and enumerates the `NanoQL Link` serial port. The FPGA, QDOS, SDRAM, microSD, and overlay are not reset. The Companion task continues serving the microSD and QL-SD images below NanoQL Link's priority. The remote keyboard can then take over.
 
@@ -158,11 +180,32 @@ Flash the matching unified BL616 firmware once, boot NanoQL normally, connect th
 
 Run `python tools/nanoql_link.py --port COMx cpu-status` to display the selected CPU mode and measure its effective clock rate. The non-destructive `python tools/nanoql_link.py --port COMx link-stress` command checks USB stability for 30 seconds by default.
 
+### Assembly development and debugging
+
+The reproducible [`examples/asm-hello`](../examples/asm-hello/README.md) example assembles a program with `vasmm68k_mot`, injects it at `$30000`, and renders `HELLO NANOQL` directly into VRAM. It is a minimal starting point for integrating physical build-and-run testing into an SDK or editor.
+
+NanoQL Link also provides composable diagnostics:
+
+```text
+python tools/nanoql_link.py --port PORT diagnose
+python tools/nanoql_link.py --port PORT halt
+python tools/nanoql_link.py --port PORT registers
+python tools/nanoql_link.py --port PORT resume
+python tools/nanoql_link.py --port PORT dump 0x20000 0x8000 screen.bin --halt
+python tools/nanoql_link.py --port PORT verify program.bin --address 0x30000 --halt
+python tools/nanoql_link.py --port PORT poke 0x30000 4e 71 4e 71
+python tools/nanoql_link.py --port PORT fill 0x24000 256 0xff
+```
+
+`peek` and `watch` read live RAM without stopping the QL. `registers` halts fx68k between external bus cycles and directly exposes D0-D7, A0-A7, USP, SSP, the internal prefetch PC, current instruction, SR, and T/S/I/X/N/Z/V/C flags. The CPU remains halted for subsequent `dump`, `poke`, or `fill`; add `--resume` to continue automatically when it was previously running. `dump --halt` and `verify --halt` briefly freeze the CPU for a coherent snapshot, then resume its exact previous state. `poke` and `fill` do the same around a verified write; add `--leave-halted` to inspect before resuming. `upload` loads and verifies a binary while leaving the CPU halted, and `run --pc ADDRESS --stack ADDRESS` starts it separately. `qdos` remains the recovery command that resets the QL.
+
+The exposed PC is fx68k's hardware pipeline PC and may therefore be ahead of the opcode shown in `IR`, as expected from 68000 prefetch. Instruction stepping, breakpoints, and disassembly are not implemented yet; the script does not guess them from incomplete state.
+
 ### Using a folder as a Microdrive
 
 The recommended path requires neither NanoQL Link nor a PC connection. Create one cartridge subfolder under `NanoQL/Microdrives` on the microSD, for example `NanoQL/Microdrives/Benchmark`, and place the QL files inside it. In the `F12` overlay, select **Build MDV1 from:** and then `Benchmark`. The BL616 creates `NanoQL/Generated/Benchmark.mdv`, mounts that QLAY image read/write as `mdv1_`, and resets only the QL.
 
-The development `mdv-sync` command replaces `MDV1.mdv` and mounts it like a physical cartridge, without resetting QDOS. The BL616 remains in NanoQL Link mode, so the same serial port and remote keyboard remain available; use `DIR mdv1_` after synchronization.
+The development `mdv-sync` command replaces `MDV1.mdv` and mounts it like a physical cartridge without resetting QDOS. In the graphical assistant it can run while the remote keyboard is active: the keyboard process releases all keys, performs the transfer through its own serial session, and resumes capture automatically. The keyboard no longer needs to be stopped and restarted, and two processes never compete for the NanoQL Link port. Use `DIR mdv1_` after synchronization.
 
 Subdirectories are flattened with `_`; for example, `tests/README.md` becomes `tests_README_md`. Resulting names must be ASCII and no longer than 36 characters. Conversion accepts up to 126 files and eight nested directory levels. A QLAY image is always 174,930 bytes, but only 253 512-byte sectors are allocatable to headers and data. The exact condition is `ceil((file_count + 1) × 64 / 512) + sum(ceil((file_size + 64) / 512)) <= 253`; a single file can therefore contain at most 128,960 bytes. At the QDOS prompt, enter `DIR mdv1_`, followed by a command such as `LRUN mdv1_program_bas`.
 

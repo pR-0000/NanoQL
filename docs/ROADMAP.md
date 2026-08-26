@@ -10,10 +10,10 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 15 970 / 20 736 cellules logiques utilisées (78 %), dont 14 891 LUT.
+- FPGA : 16 671 / 20 736 cellules logiques utilisées (81 %), dont 15 595 LUT et 7 494 registres.
 - BSRAM : 21 / 46 blocs utilisés (46 %), dont les tampons sectoriels QL-SD et Microdrive et la ROM QSound optionnelle.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
-- Domaine système : 48 MHz, avec une Fmax estimée de 52,501 MHz.
+- Domaine système : 48 MHz, avec une Fmax estimée de 48,013 MHz.
 - HDMI : 720p50 natif et 720p60 de compatibilité avec audio PCM 48 kHz fonctionnel.
 
 Le pourcentage de LUT restant ne suffit pas à garantir toutes les extensions. La migration de la ROM QL dynamique vers une zone réservée de la SDRAM a toutefois libéré 32 blocs BSRAM pour les ROM et tampons des fonctions suivantes. La fréquence du domaine système devient maintenant la contrainte principale pour les modes CPU rapides.
@@ -80,13 +80,16 @@ Le support d'une vraie seconde carte QL-SD nécessitera un connecteur microSD su
 - Le BL616 convertit de façon autonome un dossier de `NanoQL/Microdrives` en image QLAY depuis l'overlay, sans mode développeur. La conversion, le montage, `DIR`, `LOAD` et `LRUN` sont validés physiquement dans les modes CPU QL et 16 MHz.
 - Les commandes `WRITE` et `ERASE` du ZX8302, les tampons modifiables, la normalisation QLAY et la persistance dans `MDV1.mdv` sont validés physiquement, y compris après reset et aux deux vitesses CPU actuelles.
 - Le flux matériel corrige aussi à la volée le checksum nul du secteur de carte et les motifs de fin de secteur absents de certaines images QLAY créées pour Q-emuLator.
-- L'assistant Tkinter distingue la première installation de la mise à jour et enregistre leur progression. Les deux parcours présentent la microSD, le firmware BL616 NanoQL, puis le FPGA dans cet ordre. Il regroupe aussi le clavier distant, la synchronisation MDV et l'injection de programme sous NanoQL Link, avec une activation S1 unique après le démarrage.
+- Le mode Microdrive authentique reste le réglage par défaut. Un mode Turbo optionnel porte simultanément le CPU et le flux de bande à leur cadence 24 MHz validée pendant la sélection du lecteur, sans modifier le rapport de polling attendu par QDOS.
+- L'assistant Tkinter distingue la première installation de la mise à jour et enregistre leur progression. Leur première étape télécharge le package complet de la dernière release GitHub, vérifie son SHA-256, l'extrait dans un cache utilisateur et sélectionne automatiquement les firmwares 3921/3923. La microSD, le firmware BL616 NanoQL et le FPGA suivent dans l'ordre requis. L'assistant regroupe aussi le clavier distant, la synchronisation MDV, l'injection de programme et le débogage sous NanoQL Link, avec une activation S1 unique après le démarrage.
 - Le guide d'installation documente Windows, macOS et Linux sans présenter FlashCube comme multiplateforme.
 - Ajouter ensuite une resynchronisation sûre des modifications de l'image vers le dossier source.
 - Le flash BL616 natif est intégré à l'assistant Python sous Windows, Linux et macOS avec l'outil UART officiel de Bouffalo Lab ; il reste à valider physiquement sur chaque système et révision.
 - Détecter la révision 3921/3923 et vérifier le firmware après programmation.
 - Garder une procédure de récupération explicite ; l'entrée dans le bootloader BL616 pourra toujours nécessiter le bouton `UPDATE`.
 - La programmation directe de la SRAM et de la Flash FPGA par NanoQL Link est validée sur révision 3923. L'installation et les mises à jour utilisent d'abord le firmware BL616 NanoQL, puis programment le FPGA ; le profil Sipeed reste réservé à la récupération JTAG externe.
+- NanoQL Link fige désormais le fx68k sans reset entre deux cycles externes et expose matériellement D0-D7, A0-A7, USP, SSP, PC de prélecture, IR, SR et les flags. Les opérations RAM peuvent être composées autour de cet état puis reprendre exactement les phases conservées.
+- Le rapport USB « toutes touches relâchées » conserve la durée minimale d'une frappe déjà reconnue : les appuis courts ne disparaissent plus avant le scan de l'IPC, tandis qu'une touche dont le relâchement aurait été perdu est encore retirée automatiquement.
 
 #### 7. Capture d'écran et vidéo
 
@@ -117,7 +120,7 @@ La capture d'écran est réaliste. La vidéo est un objectif expérimental : ell
 
 Les fonctions de Q-emuLator constituent une cible de compatibilité utile, mais NanoQL doit conserver comme priorité un chemin QL déterministe et mesurable. Les extensions seront optionnelles et ne remplaceront jamais le profil matériel original.
 
-- Priorité haute : QIMI/souris USB, joysticks, resynchronisation Microdrive, accès aux fichiers hôte via le BL616, RAM disk, débogueur 68000 matériel et ports série USB CDC.
+- Priorité haute : QIMI/souris USB, joysticks, resynchronisation Microdrive, accès aux fichiers hôte via le BL616, RAM disk, pas-à-pas/points d'arrêt du débogueur 68000 et ports série USB CDC.
 - Priorité moyenne : QL Sampled Sound System, imprimante parallèle virtuelle et extraction contrôlée des paquets ZIP/QLPAK vers une image QDOS.
 - Priorité avancée : Gold Card/SMSQ/E, Aurora et modes vidéo Q40/Q60. Les framebuffers tiennent dans 8 Mio, mais les modes 1024 pixels 16 bits exigent une hausse importante de la bande passante SDRAM.
 - Priorité expérimentale : TCP/IP par le BL616, de préférence derrière une interface QL documentée ou un lien série/SLIP afin de ne pas contourner QDOS de manière opaque.
@@ -136,10 +139,10 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 15,970 / 20,736 logic cells used (78%), including 14,891 LUTs.
+- FPGA: 16,671 / 20,736 logic cells used (81%), including 15,595 LUTs and 7,494 registers.
 - BSRAM: 21 / 46 blocks used (46%), including QL-SD and Microdrive sector buffers and the optional QSound ROM.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
-- System domain: 48 MHz, with an estimated Fmax of 52.501 MHz.
+- System domain: 48 MHz, with an estimated Fmax of 48.013 MHz.
 - HDMI: working native 720p50 and compatibility 720p60 output with 48 kHz PCM audio.
 
 The remaining LUT percentage alone does not guarantee that every extension will fit. Moving the dynamic QL ROM to a reserved SDRAM area has nevertheless freed 32 BSRAM blocks for future ROMs and buffers. System-domain timing is now the main constraint for faster CPU modes.
@@ -206,13 +209,16 @@ A real secondary QL-SD card requires an additional microSD connector on an exter
 - The BL616 autonomously converts a folder under `NanoQL/Microdrives` to a QLAY image from the overlay without development mode. Conversion, mounting, `DIR`, `LOAD`, and `LRUN` are physically validated in both QL and 16 MHz CPU modes.
 - ZX8302 `WRITE` and `ERASE`, writable buffers, QLAY normalization, and persistence to `MDV1.mdv` are physically validated across reset and at both current CPU speeds.
 - The hardware stream also repairs the zero map-sector checksum and missing physical sector-tail patterns found in some QLAY images created for Q-emuLator.
-- The Tkinter assistant distinguishes first installation from update and stores progress for both. Installation and updates follow the microSD, NanoQL BL616, then FPGA order. Restoring the Sipeed firmware is reserved for external-JTAG recovery. The assistant also groups the remote keyboard, MDV synchronization, and program injection under NanoQL Link, with a single S1 activation after startup.
+- Authentic Microdrive timing remains the default. An optional Turbo mode raises both CPU and tape to their validated 24 MHz cadence while the drive is selected, preserving the polling ratio expected by QDOS.
+- The Tkinter assistant distinguishes first installation from update and stores progress for both. Their first step downloads the latest official complete GitHub package, verifies its SHA-256, extracts it to a per-user cache, and selects the matching 3921/3923 firmware automatically. microSD, NanoQL BL616, and FPGA then follow in the required order. The assistant groups remote keyboard, MDV synchronization, program injection, and debugging under NanoQL Link with one S1 activation after startup.
 - The installation guide covers Windows, macOS, and Linux without presenting FlashCube as cross-platform.
 - Add safe synchronization of image changes back to the source folder afterward.
 - Native BL616 flashing is integrated into the Python assistant on Windows, Linux, and macOS through Bouffalo Lab's official UART tool; physical validation remains required on each operating system and board revision.
 - Detect revisions 3921/3923 and verify firmware after programming.
 - Keep an explicit recovery path; entering the BL616 bootloader may still require the `UPDATE` button.
-- Investigate a unified BL616 firmware exposing both NanoQL Link and JTAG programming, or a reliable persistent programmer controlled through NanoQL Link. This is required for a genuinely automated update without restoring the BL616 twice.
+- Direct FPGA SRAM and configuration-Flash programming through NanoQL Link is physically validated on revision 3923. Normal installation and update use NanoQL BL616 first and reserve Sipeed/JTAG for recovery.
+- NanoQL Link now freezes fx68k without reset between external bus cycles and directly exposes D0-D7, A0-A7, USP, SSP, prefetch PC, IR, SR, and flags. RAM operations can be composed around that snapshot before resuming the preserved phase state.
+- The authoritative USB all-released report now preserves the minimum hold time of a recognized press: short presses remain visible to the slower IPC scan, while a lost key-up is still repaired automatically.
 
 #### 7. Screenshot and video capture
 
@@ -243,7 +249,7 @@ Screenshots are realistic. Video recording is experimental because it depends on
 
 Q-emuLator's feature set is a useful compatibility target, but NanoQL must prioritize a deterministic, measurable QL hardware path. Every extension remains optional and never replaces the original-machine profile.
 
-- High priority: QIMI/USB mouse, joysticks, Microdrive resynchronization, BL616 host-file access, RAM disk, hardware 68000 debugger, and USB CDC serial ports.
+- High priority: QIMI/USB mouse, joysticks, Microdrive resynchronization, BL616 host-file access, RAM disk, 68000 debugger stepping/breakpoints, and USB CDC serial ports.
 - Medium priority: QL Sampled Sound System, virtual parallel printer, and controlled ZIP/QLPAK extraction into a QDOS image.
 - Advanced priority: Gold Card/SMSQ/E, Aurora, and Q40/Q60 video modes. Their framebuffers fit in 8 MiB, but 1024-pixel 16-bit modes require substantially more SDRAM bandwidth.
 - Experimental priority: TCP/IP through the BL616, preferably behind a documented QL device or serial/SLIP link rather than an opaque QDOS bypass.

@@ -18,6 +18,10 @@ module tb_ql_host_link;
     wire [31:0] boot_ssp;
     wire [31:0] boot_pc;
     wire restart_pulse;
+    wire [4:0] cpu_debug_reg_select;
+    wire [4:0] cpu_debug_bit_select;
+    localparam [31:0] DEBUG_VALUE = 32'h11223344;
+    wire cpu_debug_reg_bit = DEBUG_VALUE[cpu_debug_bit_select];
     integer writes = 0;
 
     always #5 clk = !clk;
@@ -50,6 +54,11 @@ module tb_ql_host_link;
         .mdv_data_trace(128'hfd000c10aa55aa55aa55aa55aa55aa55),
         .cpu_speed(2'd1), .cpu_phase_count(32'h12345678),
         .rom_keyboard_french(1'b0),
+        .cpu_debug_reg_select(cpu_debug_reg_select),
+        .cpu_debug_bit_select(cpu_debug_bit_select),
+        .cpu_debug_reg_bit(cpu_debug_reg_bit),
+        .cpu_debug_pc(32'h00abcdef),
+        .cpu_debug_sr(16'ha71f), .cpu_debug_ir(16'h4e71),
         .cpu_hold(cpu_hold),
         .boot_vectors_active(boot_vectors_active),
         .boot_ssp(boot_ssp), .boot_pc(boot_pc),
@@ -232,6 +241,47 @@ module tb_ql_host_link;
         send_byte(8'h01, 1'b1);
         if (!cpu_hold) $fatal(1, "HOLD did not stop the CPU");
 
+        send_byte(8'h0d, 1'b1);
+        if (cpu_hold) $fatal(1, "RESUME did not continue the CPU");
+        if (restart_pulse) $fatal(1, "RESUME unexpectedly reset the CPU");
+        send_byte(8'h01, 1'b1);
+        if (!cpu_hold) $fatal(1, "second HOLD did not stop the CPU");
+
+        send_byte(8'h0e, 1'b1);
+        if (data_out != 8'h44) $fatal(1, "debug signature D mismatch");
+        send_byte(8'h05, 1'b0);
+        if (cpu_debug_reg_select != 5'd5)
+            $fatal(1, "debug selector mismatch");
+        repeat (35) @(posedge clk);
+        send_byte(8'h0f, 1'b1);
+        if (data_out != 8'h44) $fatal(1, "debug result D mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h52) $fatal(1, "debug result R mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h11) $fatal(1, "debug register byte 0 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h22) $fatal(1, "debug register byte 1 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h33) $fatal(1, "debug register byte 2 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h44) $fatal(1, "debug register byte 3 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h00) $fatal(1, "debug PC byte 0 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'hab) $fatal(1, "debug PC byte 1 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'hcd) $fatal(1, "debug PC byte 2 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'hef) $fatal(1, "debug PC byte 3 mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'ha7) $fatal(1, "debug SR high mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h1f) $fatal(1, "debug SR low mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h4e) $fatal(1, "debug IR high mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h71) $fatal(1, "debug IR low mismatch");
+
         send_byte(8'h02, 1'b1);
         send_byte(8'h03, 1'b0);
         send_byte(8'h00, 1'b0);
@@ -257,7 +307,7 @@ module tb_ql_host_link;
             boot_ssp != 32'h0003fff0 || boot_pc != 32'h00030000)
             $fatal(1, "EXEC vectors mismatch");
 
-        $display("PASS: NanoQL Link live read and hold/write/execute");
+        $display("PASS: NanoQL Link live read, hold/resume, write, and execute");
         $finish;
     end
 endmodule

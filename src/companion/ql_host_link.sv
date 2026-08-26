@@ -52,6 +52,12 @@ module ql_host_link (
     input  wire [1:0]  cpu_speed,
     input  wire [31:0] cpu_phase_count,
     input  wire        rom_keyboard_french,
+    output reg  [4:0]  cpu_debug_reg_select,
+    output reg  [4:0]  cpu_debug_bit_select,
+    input  wire        cpu_debug_reg_bit,
+    input  wire [31:0] cpu_debug_pc,
+    input  wire [15:0] cpu_debug_sr,
+    input  wire [15:0] cpu_debug_ir,
 
     output reg         cpu_hold,
     output reg         boot_vectors_active,
@@ -72,6 +78,9 @@ module ql_host_link (
     localparam [7:0] CMD_MDV      = 8'h0a;
     localparam [7:0] CMD_MDV_TRACE = 8'h0b;
     localparam [7:0] CMD_MDV_DATA_TRACE = 8'h0c;
+    localparam [7:0] CMD_RESUME = 8'h0d;
+    localparam [7:0] CMD_DEBUG  = 8'h0e;
+    localparam [7:0] CMD_DEBUG_RESULT = 8'h0f;
 
     localparam [1:0] WR_IDLE = 2'd0;
     localparam [1:0] WR_REQ  = 2'd1;
@@ -95,6 +104,12 @@ module ql_host_link (
     reg [7:0] read_payload [0:7];
     reg exec_fetch_seen;
     reg exec_video_write_seen;
+    reg hold_pending;
+    reg [5:0] debug_capture_count;
+    reg [31:0] debug_captured_value;
+    reg [31:0] debug_captured_pc;
+    reg [15:0] debug_captured_sr;
+    reg [15:0] debug_captured_ir;
 
     wire busy = write_state != WR_IDLE;
     wire address_valid = (packet_addr >= 24'h020000) &&
@@ -249,6 +264,27 @@ module ql_host_link (
         end
     endfunction
 
+    function [7:0] debug_state_byte;
+        input [3:0] index;
+        begin
+            case (index)
+                4'd0: debug_state_byte = debug_captured_value[31:24];
+                4'd1: debug_state_byte = debug_captured_value[23:16];
+                4'd2: debug_state_byte = debug_captured_value[15:8];
+                4'd3: debug_state_byte = debug_captured_value[7:0];
+                4'd4: debug_state_byte = debug_captured_pc[31:24];
+                4'd5: debug_state_byte = debug_captured_pc[23:16];
+                4'd6: debug_state_byte = debug_captured_pc[15:8];
+                4'd7: debug_state_byte = debug_captured_pc[7:0];
+                4'd8: debug_state_byte = debug_captured_sr[15:8];
+                4'd9: debug_state_byte = debug_captured_sr[7:0];
+                4'd10: debug_state_byte = debug_captured_ir[15:8];
+                4'd11: debug_state_byte = debug_captured_ir[7:0];
+                default: debug_state_byte = 8'h00;
+            endcase
+        end
+    endfunction
+
     integer i;
     always @(posedge clk) begin
         if (reset) begin
@@ -269,11 +305,19 @@ module ql_host_link (
             result_index <= 4'd0;
             exec_fetch_seen <= 1'b0;
             exec_video_write_seen <= 1'b0;
+            hold_pending <= 1'b0;
+            debug_capture_count <= 6'd0;
+            debug_captured_value <= 32'd0;
+            debug_captured_pc <= 32'd0;
+            debug_captured_sr <= 16'd0;
+            debug_captured_ir <= 16'd0;
             mem_req <= 1'b0;
             mem_addr <= 22'd0;
             mem_ds <= 2'b00;
             mem_wdata <= 16'd0;
             cpu_hold <= 1'b0;
+            cpu_debug_reg_select <= 5'd0;
+            cpu_debug_bit_select <= 5'd0;
             boot_vectors_active <= 1'b0;
             boot_ssp <= 32'h0003fff0;
             boot_pc <= 32'h00030000;
@@ -284,6 +328,25 @@ module ql_host_link (
             end
         end else begin
             restart_pulse <= 1'b0;
+
+            // Stop only between external bus cycles. Gating fx68k's phase
+            // enables here preserves its complete microarchitectural state
+            // without abandoning a half-completed SDRAM transaction.
+            if (hold_pending && cpu_as_n) begin
+                cpu_hold <= 1'b1;
+                hold_pending <= 1'b0;
+            end
+
+            // A one-bit scan port avoids a 17 x 32-bit combinational mux in
+            // the crowded FPGA fabric. The CPU is frozen, so collecting one
+            // architectural register over 32 system clocks is coherent.
+            if (debug_capture_count != 6'd0) begin
+                debug_captured_value[cpu_debug_bit_select] <=
+                    cpu_debug_reg_bit;
+                debug_capture_count <= debug_capture_count - 6'd1;
+                if (cpu_debug_bit_select != 5'd0)
+                    cpu_debug_bit_select <= cpu_debug_bit_select - 5'd1;
+            end
 
             if (boot_vectors_active && !cpu_as_n && !cpu_dtack_n) begin
                 if (cpu_rw && cpu_fc[1] &&
@@ -346,14 +409,25 @@ module ql_host_link (
 
                     case (data_in)
                         CMD_HOLD: begin
-                            cpu_hold <= 1'b1;
+                            hold_pending <= !cpu_as_n;
+                            if (cpu_as_n)
+                                cpu_hold <= 1'b1;
                             boot_vectors_active <= 1'b0;
                             exec_fetch_seen <= 1'b0;
                             exec_video_write_seen <= 1'b0;
                             protocol_error <= 1'b0;
                         end
+                        CMD_RESUME: begin
+                            // Continue the exact frozen fx68k state. Unlike
+                            // EXEC and QDOS this does not pulse reset or alter
+                            // the boot vectors.
+                            cpu_hold <= 1'b0;
+                            hold_pending <= 1'b0;
+                            protocol_error <= 1'b0;
+                        end
                         CMD_QDOS: begin
                             cpu_hold <= 1'b0;
+                            hold_pending <= 1'b0;
                             boot_vectors_active <= 1'b0;
                             exec_fetch_seen <= 1'b0;
                             exec_video_write_seen <= 1'b0;
@@ -383,6 +457,16 @@ module ql_host_link (
                         CMD_MDV_DATA_TRACE: begin
                             status_index <= 4'd1;
                             data_out <= mdv_data_trace_byte(4'd0);
+                        end
+                        CMD_DEBUG: begin
+                            data_out <= 8'h44; // D
+                            if (!cpu_hold)
+                                protocol_error <= 1'b1;
+                        end
+                        CMD_DEBUG_RESULT: begin
+                            data_out <= 8'h44; // D
+                            if (!cpu_hold || (debug_capture_count != 6'd0))
+                                protocol_error <= 1'b1;
                         end
                         CMD_RESULT: begin
                             result_index <= 4'd1;
@@ -417,6 +501,21 @@ module ql_host_link (
                         data_out <= mdv_data_trace_byte(status_index);
                         if (status_index != 4'd15)
                             status_index <= status_index + 4'd1;
+                    end else if (command == CMD_DEBUG) begin
+                        if (field_index == 4'd0) begin
+                            cpu_debug_reg_select <= data_in[4:0];
+                            cpu_debug_bit_select <= 5'd31;
+                            debug_capture_count <= 6'd32;
+                            debug_captured_pc <= cpu_debug_pc;
+                            debug_captured_sr <= cpu_debug_sr;
+                            debug_captured_ir <= cpu_debug_ir;
+                        end
+                    end else if (command == CMD_DEBUG_RESULT) begin
+                        if (field_index == 4'd0)
+                            data_out <= 8'h52; // R
+                        else begin
+                            data_out <= debug_state_byte(field_index - 4'd1);
+                        end
                     end else if (command == CMD_RESULT) begin
                         if (result_index < 4'd8) begin
                             data_out <= read_payload[result_index];
@@ -503,6 +602,7 @@ module ql_host_link (
                                     exec_fetch_seen <= 1'b0;
                                     exec_video_write_seen <= 1'b0;
                                     cpu_hold <= 1'b0;
+                                    hold_pending <= 1'b0;
                                     protocol_error <= 1'b0;
                                     restart_pulse <= 1'b1;
                                 end

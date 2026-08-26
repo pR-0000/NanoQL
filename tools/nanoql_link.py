@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import json
 import os
 import queue
 import re
@@ -222,6 +223,9 @@ CMD_CPU_DIAG = 0x09
 CMD_MDV_DIAG = 0x0A
 CMD_MDV_TRACE = 0x0B
 CMD_MDV_DATA_TRACE = 0x0C
+CMD_RESUME = 0x0D
+CMD_DEBUG = 0x0E
+CMD_DEBUG_RESULT = 0x0F
 CMD_FS_INFO = 0xE0
 CMD_FS_LIST_BEGIN = 0xE1
 CMD_FS_LIST_NEXT = 0xE2
@@ -679,6 +683,21 @@ def crc8(data: bytes) -> int:
 
 def parse_number(value: str) -> int:
     return int(value, 0)
+
+
+def parse_byte(value: str) -> int:
+    try:
+        parsed = int(value, 0)
+    except ValueError:
+        if re.fullmatch(r"[0-9a-fA-F]{1,2}", value):
+            parsed = int(value, 16)
+        else:
+            raise argparse.ArgumentTypeError(
+                f"{value!r} is not a byte (use decimal, 0xNN, or NN hexadecimal)."
+            ) from None
+    if not 0 <= parsed <= 0xFF:
+        raise argparse.ArgumentTypeError(f"{value!r} is outside the byte range.")
+    return parsed
 
 
 QDOS_SYSVARS_BASE = 0x028000
@@ -1374,6 +1393,47 @@ class NanoQLLink:
         self.transact(bytes((CMD_HOLD,)))
         self.wait_idle(expect_hold=True)
 
+    def resume(self) -> None:
+        self.transact(bytes((CMD_RESUME,)))
+        self.wait_idle(expect_hold=False)
+
+    def cpu_debug_register(self, index: int) -> tuple[int, int, int, int]:
+        if not 0 <= index <= 16:
+            raise ValueError("The fx68k register index must be between 0 and 16.")
+        self.transact(bytes((CMD_DEBUG, index)))
+        # SPI is full duplex: the first received byte predates CMD_DEBUG_RESULT.
+        # Send one trailing dummy byte so the final IR byte reaches the host.
+        response = self.transact(bytes((CMD_DEBUG_RESULT,)) + bytes(14))
+        signature_at = response.find(b"DR")
+        if signature_at < 0 or signature_at + 14 > len(response):
+            raise RuntimeError(
+                "The FPGA debugger response is missing or truncated. Program "
+                "the current NanoQL FPGA bitstream, then retry."
+            )
+        state = response[signature_at + 2 : signature_at + 14]
+        return (
+            int.from_bytes(state[0:4], "big"),
+            int.from_bytes(state[4:8], "big"),
+            int.from_bytes(state[8:10], "big"),
+            int.from_bytes(state[10:12], "big"),
+        )
+
+    def cpu_debug_state(self) -> dict[str, object]:
+        registers = []
+        pc = sr = ir = 0
+        for index in range(17):
+            value, pc, sr, ir = self.cpu_debug_register(index)
+            registers.append(value)
+        return {
+            "data": registers[0:8],
+            "address": registers[8:15],
+            "usp": registers[15],
+            "ssp": registers[16],
+            "pc": pc,
+            "sr": sr,
+            "ir": ir,
+        }
+
     def wait_idle(self, expect_hold: bool, timeout: float = 2.0) -> int:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -1402,6 +1462,10 @@ class NanoQLLink:
     def read(self, address: int, length: int, *, live: bool = False) -> bytes:
         if length < 0 or address < 0x020000 or address + length > 0x040000:
             raise ValueError("The block must remain within QL RAM 0x020000-0x03ffff.")
+        # A live diagnostic is also legal while the user has deliberately
+        # halted fx68k. Preserve that state instead of waiting for a running
+        # CPU and eventually reporting a misleading availability timeout.
+        expected_hold = bool(self.status() & 0x08) if live else True
         result = bytearray()
         for offset in range(0, length, 8):
             block_length = min(8, length - offset)
@@ -1409,7 +1473,7 @@ class NanoQLLink:
             request = (bytes((CMD_READ,)) + block_address.to_bytes(3, "big") +
                        bytes((block_length,)))
             self.transact(request)
-            self.wait_idle(expect_hold=not live)
+            self.wait_idle(expect_hold=expected_hold)
             response = self.transact(bytes((CMD_READ_RESULT,)) + bytes(8))
             if len(response) < block_length:
                 raise RuntimeError("Incomplete RAM read response.")
@@ -1710,12 +1774,95 @@ class NanoQLLink:
             )
 
 
+def synchronize_microdrive(link: NanoQLLink, source_path: Path,
+                           medium_name: str) -> None:
+    source = source_path.expanduser().resolve()
+    if not source.is_dir():
+        raise NotADirectoryError(source)
+    files = collect_drive_files(source, source / "MDV1.mdv")
+    image = build_qlay_image(files, medium_name)
+    with tempfile.TemporaryDirectory(prefix="nanoql-mdv1-") as directory:
+        output = Path(directory) / "MDV1.mdv"
+        output.write_bytes(image)
+        print(
+            f"Built a {len(image)}-byte MDV1 image from "
+            f"{len(files)} file(s) in {source}.",
+            flush=True,
+        )
+        link.microdrive_sync_control(False)
+        try:
+            print("Uploading and verifying MDV1.mdv...", flush=True)
+            link.filesystem_put(output, "MDV1.mdv")
+        except Exception:
+            try:
+                link.microdrive_sync_control(True)
+            except Exception:
+                pass
+            raise
+        print("Upload verified; mounting MDV1...", flush=True)
+        link.microdrive_sync_control(True)
+    print(
+        "MDV1 synchronized and mounted. NanoQL Link remains active; "
+        "use DIR mdv1_ from QDOS.",
+        flush=True,
+    )
+
+
+def _atomic_json_write(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(payload), encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def keyboard_control_result_path(control_file: Path) -> Path:
+    return control_file.with_name(control_file.name + ".result")
+
+
+def service_keyboard_control(link: NanoQLLink, control_file: Path | None,
+                             release_keys) -> bool:
+    if control_file is None or not control_file.is_file():
+        return False
+    try:
+        request = json.loads(control_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    try:
+        control_file.unlink(missing_ok=True)
+    except OSError:
+        return False
+
+    request_id = str(request.get("id", ""))
+    result: dict[str, object] = {"id": request_id, "ok": False}
+    try:
+        if request.get("command") != "mdv-sync":
+            raise ValueError("Unsupported remote-keyboard control command.")
+        release_keys()
+        print(
+            "Remote keyboard paused while MDV1 is synchronized...",
+            flush=True,
+        )
+        synchronize_microdrive(
+            link,
+            Path(str(request.get("source", ""))),
+            str(request.get("name", "NANOQL")),
+        )
+        result["ok"] = True
+        print("Remote keyboard resumed.", flush=True)
+    except Exception as error:
+        result["error"] = str(error)
+        print(f"MDV1 synchronization failed: {error}", flush=True)
+    _atomic_json_write(keyboard_control_result_path(control_file), result)
+    return True
+
+
 def stop_requested(stop_file: Path | None) -> bool:
     return stop_file is not None and stop_file.exists()
 
 
 def interactive_keyboard_windows(link: NanoQLLink,
-                                 stop_file: Path | None = None) -> None:
+                                 stop_file: Path | None = None,
+                                 control_file: Path | None = None) -> None:
     import msvcrt
 
     print(f"NanoQL keyboard active (QL {link.ql_layout.upper()} profile). "
@@ -1743,10 +1890,25 @@ def interactive_keyboard_windows(link: NanoQLLink,
     remote_pressed: set[int] = set()
     f6_previous = bool(get_async_key_state(0x75) & 0x8000)
 
+    def release_remote_keys() -> None:
+        nonlocal remote_pressed, previous_keys, previous_modifiers
+        for usage in tuple(remote_pressed):
+            link.key_event(usage, False)
+        remote_pressed.clear()
+        active_bindings.clear()
+        previous_keys = {
+            virtual_key for virtual_key in ordinary_keymap
+            if get_async_key_state(virtual_key) & 0x8000
+        }
+        previous_modifiers = host_modifiers()
+
     try:
         while True:
             if stop_requested(stop_file):
                 break
+            if service_keyboard_control(
+                    link, control_file, release_remote_keys):
+                continue
             f6_pressed = bool(get_async_key_state(0x75) & 0x8000)
             if f6_pressed and not f6_previous:
                 break
@@ -1848,7 +2010,8 @@ def interactive_keyboard_windows(link: NanoQLLink,
 
 
 def interactive_keyboard_pynput(link: NanoQLLink,
-                                stop_file: Path | None = None) -> None:
+                                stop_file: Path | None = None,
+                                control_file: Path | None = None) -> None:
     try:
         from pynput import keyboard
     except ImportError:
@@ -2044,6 +2207,20 @@ def interactive_keyboard_pynput(link: NanoQLLink,
             reconcile()
         return changed
 
+    def release_remote_keys() -> None:
+        nonlocal remote_pressed
+        for usage in tuple(remote_pressed):
+            link.key_event(usage, False)
+        remote_pressed.clear()
+        active_keys.clear()
+        active_modifiers.clear()
+        pending_releases.clear()
+        while True:
+            try:
+                input_events.get_nowait()
+            except queue.Empty:
+                break
+
     print(f"NanoQL keyboard active (QL {link.ql_layout.upper()} profile). "
           "Keys are held in real time; press F6 to return to the terminal.")
     listener = None
@@ -2060,6 +2237,10 @@ def interactive_keyboard_pynput(link: NanoQLLink,
         while listener.is_alive() or not input_events.empty() or pending_releases:
             if stop_requested(stop_file):
                 break
+            if service_keyboard_control(
+                    link, control_file, release_remote_keys):
+                release_remote_keys()
+                continue
             finish_due_releases()
             release_lost_macos_keys()
             try:
@@ -2139,11 +2320,12 @@ def interactive_keyboard_pynput(link: NanoQLLink,
 
 
 def interactive_keyboard(link: NanoQLLink,
-                         stop_file: Path | None = None) -> None:
+                         stop_file: Path | None = None,
+                         control_file: Path | None = None) -> None:
     if os.name == "nt":
-        interactive_keyboard_windows(link, stop_file)
+        interactive_keyboard_windows(link, stop_file, control_file)
     else:
-        interactive_keyboard_pynput(link, stop_file)
+        interactive_keyboard_pynput(link, stop_file, control_file)
 
 
 DEMO_CODE = bytes.fromhex(
@@ -2416,7 +2598,9 @@ def program_fpga_flash_native(bitstream: Path, tool: Path | None,
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="NanoQL Link - direct 68000 code loading")
+    parser = argparse.ArgumentParser(
+        description="NanoQL Link - direct development and debugging interface"
+    )
     parser.add_argument("--port", help="serial port, for example COM6 or /dev/ttyACM0")
     parser.add_argument(
         "--keyboard-layout", choices=("host", "us"), default="host",
@@ -2456,6 +2640,23 @@ def main() -> int:
     )
     subparsers.add_parser("qlsd-status", help="read the last QL-SD sector diagnostic")
     subparsers.add_parser("mdv-status", help="read the live Microdrive diagnostic")
+    subparsers.add_parser(
+        "diagnose", help="collect a concise NanoQL Link, CPU, QDOS, QL-SD, and MDV report"
+    )
+    subparsers.add_parser(
+        "halt", help="freeze the 68000 at its current hardware state"
+    )
+    subparsers.add_parser(
+        "resume", help="continue a 68000 previously frozen with halt"
+    )
+    registers_parser = subparsers.add_parser(
+        "registers",
+        help="halt the fx68k and display its hardware registers, PC, SR, and flags",
+    )
+    registers_parser.add_argument(
+        "--resume", action="store_true",
+        help="resume afterward if the CPU was running before the snapshot",
+    )
     subparsers.add_parser("qdos", help="leave the injected program and restart QDOS")
     subparsers.add_parser("demo", help="inject a bare-metal 68000 test pattern")
     subparsers.add_parser(
@@ -2466,6 +2667,10 @@ def main() -> int:
     )
     keyboard_parser.add_argument(
         "--stop-file", type=Path,
+        help=argparse.SUPPRESS,
+    )
+    keyboard_parser.add_argument(
+        "--control-file", type=Path,
         help=argparse.SUPPRESS,
     )
 
@@ -2562,6 +2767,60 @@ def main() -> int:
     load_parser.add_argument("--address", type=parse_number, default=0x030000)
     load_parser.add_argument("--pc", type=parse_number)
     load_parser.add_argument("--stack", type=parse_number, default=0x03FFF0)
+
+    upload_parser = subparsers.add_parser(
+        "upload", help="upload and verify a raw binary, leaving the 68000 halted"
+    )
+    upload_parser.add_argument("binary", type=Path)
+    upload_parser.add_argument("--address", type=parse_number, default=0x030000)
+
+    run_parser = subparsers.add_parser(
+        "run", help="start code already present in QL RAM"
+    )
+    run_parser.add_argument("--pc", type=parse_number, required=True)
+    run_parser.add_argument("--stack", type=parse_number, default=0x03FFF0)
+
+    dump_parser = subparsers.add_parser(
+        "dump", help="save a QL RAM range to a binary file"
+    )
+    dump_parser.add_argument("address", type=parse_number)
+    dump_parser.add_argument("length", type=parse_number)
+    dump_parser.add_argument("output", type=Path)
+    dump_parser.add_argument(
+        "--halt", action="store_true",
+        help="freeze and resume the CPU around the dump for a coherent snapshot",
+    )
+
+    verify_parser = subparsers.add_parser(
+        "verify", help="compare a local binary with QL RAM"
+    )
+    verify_parser.add_argument("binary", type=Path)
+    verify_parser.add_argument("--address", type=parse_number, default=0x030000)
+    verify_parser.add_argument(
+        "--halt", action="store_true",
+        help="freeze and resume the CPU around verification",
+    )
+
+    poke_parser = subparsers.add_parser(
+        "poke", help="write and verify bytes while preserving the current CPU state"
+    )
+    poke_parser.add_argument("address", type=parse_number)
+    poke_parser.add_argument("values", type=parse_byte, nargs="+")
+    poke_parser.add_argument(
+        "--leave-halted", action="store_true",
+        help="do not resume a CPU that was running before the write",
+    )
+
+    fill_parser = subparsers.add_parser(
+        "fill", help="fill and verify a QL RAM range with one byte value"
+    )
+    fill_parser.add_argument("address", type=parse_number)
+    fill_parser.add_argument("length", type=parse_number)
+    fill_parser.add_argument("value", type=parse_byte)
+    fill_parser.add_argument(
+        "--leave-halted", action="store_true",
+        help="do not resume a CPU that was running before the write",
+    )
 
     basic_parser = subparsers.add_parser(
         "basic", help="enter a numbered SuperBASIC source file into QDOS RAM"
@@ -2796,6 +3055,90 @@ def main() -> int:
                 f"Last data block CPU reads: {data_count}; "
                 f"first bytes: {data_trace.hex(' ') if data_trace else '(none)'}"
             )
+        elif args.command == "diagnose":
+            status = link.status()
+            print(f"NanoQL Link status: 0x{status:02x}")
+            print(
+                "  SDRAM ready, busy, error, CPU halted, injected vectors: "
+                + " ".join(
+                    "yes" if status & mask else "no"
+                    for mask in (0x01, 0x02, 0x04, 0x08, 0x10)
+                )
+            )
+            speed, rate = link.measure_cpu_rate(interval=0.1)
+            print(
+                f"CPU: { {0: 'QL', 1: '16 MHz', 2: '24 MHz'}.get(speed, speed) }; "
+                f"measured phase rate={rate / 1_000_000:.3f} MHz"
+            )
+            try:
+                memory = link.qdos_memory_map()
+                print(f"QDOS memory: RAM top=0x{memory['SV_RAMT']:06x}")
+            except (RuntimeError, ValueError) as error:
+                print(f"QDOS memory: unavailable ({error})")
+            try:
+                qlsd = link.qlsd_status()
+                print(f"QL-SD: flags=0x{qlsd[0]:02x}, last LBA={qlsd[1]}")
+            except (RuntimeError, ValueError) as error:
+                print(f"QL-SD: unavailable ({error})")
+            try:
+                mdv = link.mdv_diagnostic()
+                print(f"Microdrive: flags=0x{mdv[0]:02x}, position={mdv[1]}")
+            except (RuntimeError, ValueError) as error:
+                print(f"Microdrive: unavailable ({error})")
+        elif args.command == "halt":
+            link.hold()
+            print("68000 halted. Use 'resume', 'run', or 'qdos' to continue.")
+        elif args.command == "resume":
+            link.resume()
+            print("68000 resumed without reset.")
+        elif args.command == "registers":
+            was_held = bool(link.status() & 0x08)
+            if not was_held:
+                link.hold()
+            state = link.cpu_debug_state()
+            data_registers = state["data"]
+            address_registers = state["address"]
+            sr = state["sr"]
+            active_a7 = state["ssp"] if sr & 0x2000 else state["usp"]
+            print("fx68k hardware state:")
+            print("  " + "  ".join(
+                f"D{index}=0x{value:08x}"
+                for index, value in enumerate(data_registers[:4])
+            ))
+            print("  " + "  ".join(
+                f"D{index + 4}=0x{value:08x}"
+                for index, value in enumerate(data_registers[4:])
+            ))
+            print("  " + "  ".join(
+                f"A{index}=0x{value:08x}"
+                for index, value in enumerate(address_registers[:4])
+            ))
+            print("  " + "  ".join(
+                [
+                    *(f"A{index + 4}=0x{value:08x}"
+                      for index, value in enumerate(address_registers[4:])),
+                    f"A7=0x{active_a7:08x}",
+                ]
+            ))
+            print(
+                f"  USP=0x{state['usp']:08x}  SSP=0x{state['ssp']:08x}"
+            )
+            print(
+                f"  PC(prefetch)=0x{state['pc']:08x}  "
+                f"IR=0x{state['ir']:04x}  SR=0x{sr:04x}"
+            )
+            print(
+                "  Flags: "
+                f"T={(sr >> 15) & 1} S={(sr >> 13) & 1} "
+                f"I={(sr >> 8) & 7} X={(sr >> 4) & 1} "
+                f"N={(sr >> 3) & 1} Z={(sr >> 2) & 1} "
+                f"V={(sr >> 1) & 1} C={sr & 1}"
+            )
+            if args.resume and not was_held:
+                link.resume()
+                print("68000 resumed without reset.")
+            else:
+                print("68000 remains halted; use 'resume' to continue.")
         elif args.command == "qdos":
             link.qdos()
             print("QDOS restart requested.")
@@ -2810,7 +3153,12 @@ def main() -> int:
         elif args.command == "keyboard":
             if args.stop_file:
                 args.stop_file.unlink(missing_ok=True)
-            interactive_keyboard(link, args.stop_file)
+            if args.control_file:
+                args.control_file.unlink(missing_ok=True)
+                keyboard_control_result_path(args.control_file).unlink(
+                    missing_ok=True
+                )
+            interactive_keyboard(link, args.stop_file, args.control_file)
         elif args.command == "link-stress":
             run_link_stress(link, args.seconds)
         elif args.command == "sd-info":
@@ -2875,35 +3223,7 @@ def main() -> int:
                 link.filesystem_put(output, destination)
             print("MDV1.mdv is ready; mount it from the Microdrive 1 menu entry.")
         elif args.command == "mdv-sync":
-            source = args.source.expanduser().resolve()
-            if not source.is_dir():
-                raise NotADirectoryError(source)
-            files = collect_drive_files(source, source / "MDV1.mdv")
-            image = build_qlay_image(files, args.name)
-            with tempfile.TemporaryDirectory(prefix="nanoql-mdv1-") as directory:
-                output = Path(directory) / "MDV1.mdv"
-                output.write_bytes(image)
-                print(
-                    f"Built a {len(image)}-byte MDV1 image from "
-                    f"{len(files)} file(s) in {source}."
-                )
-                link.microdrive_sync_control(False)
-                try:
-                    print("Uploading and verifying MDV1.mdv...")
-                    link.filesystem_put(output, "MDV1.mdv")
-                except Exception:
-                    try:
-                        link.microdrive_sync_control(True)
-                    except Exception:
-                        pass
-                    raise
-                print("Upload verified; mounting MDV1...")
-                link.microdrive_sync_control(True)
-            print(
-                "MDV1 synchronized and mounted. NanoQL Link remains active; "
-                "use DIR mdv1_ from QDOS.",
-                flush=True,
-            )
+            synchronize_microdrive(link, args.source, args.name)
         elif args.command == "mdv-extract":
             remote_path_bytes(args.source)
             source_name = args.source.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
@@ -2922,6 +3242,103 @@ def main() -> int:
             link.type_text(args.text)
             if args.enter:
                 link.tap_key(0x28, hold_time=0.15)
+        elif args.command == "load":
+            data = args.binary.read_bytes()
+            pc = args.address if args.pc is None else args.pc
+            load_binary(link, data, args.address, pc, args.stack)
+        elif args.command == "upload":
+            data = args.binary.read_bytes()
+            print(
+                f"Halting the 68000 and uploading {len(data)} bytes to "
+                f"0x{args.address:06x}..."
+            )
+            link.hold()
+            link.write(args.address, data)
+            readback = link.read(args.address, len(data))
+            if readback != data:
+                mismatch = next(
+                    index for index, pair in enumerate(zip(data, readback))
+                    if pair[0] != pair[1]
+                )
+                raise RuntimeError(
+                    f"Verification failed at 0x{args.address + mismatch:06x}."
+                )
+            print("Upload verified. The 68000 remains halted; use 'run' or 'qdos'.")
+        elif args.command == "run":
+            if not (link.status() & 0x08):
+                link.hold()
+            status = link.execute(args.stack, args.pc)
+            print(
+                f"Execution started with SSP=0x{args.stack:08x}, "
+                f"PC=0x{args.pc:08x} (status=0x{status:02x})."
+            )
+        elif args.command in ("dump", "verify"):
+            if args.command == "dump":
+                address, length = args.address, args.length
+                halt_for_snapshot = args.halt
+            else:
+                expected = args.binary.read_bytes()
+                address, length = args.address, len(expected)
+                halt_for_snapshot = args.halt
+            if length <= 0:
+                raise ValueError("The memory length must be greater than zero.")
+            was_held = bool(link.status() & 0x08)
+            if halt_for_snapshot and not was_held:
+                link.hold()
+            try:
+                data = link.read(
+                    address, length,
+                    live=not (halt_for_snapshot or was_held),
+                )
+            finally:
+                if halt_for_snapshot and not was_held:
+                    link.resume()
+            if args.command == "dump":
+                output = args.output.expanduser().resolve()
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(data)
+                print(
+                    f"Dumped {len(data)} bytes from 0x{address:06x} to {output}."
+                )
+            elif data == expected:
+                print(
+                    f"RAM matches {args.binary} at 0x{address:06x} "
+                    f"({len(data)} bytes)."
+                )
+            else:
+                mismatch = next(
+                    index for index, pair in enumerate(zip(expected, data))
+                    if pair[0] != pair[1]
+                )
+                raise RuntimeError(
+                    f"RAM differs at 0x{address + mismatch:06x}: "
+                    f"file=0x{expected[mismatch]:02x}, RAM=0x{data[mismatch]:02x}."
+                )
+        elif args.command in ("poke", "fill"):
+            if args.command == "poke":
+                address = args.address
+                data = bytes(args.values)
+            else:
+                if args.length <= 0:
+                    raise ValueError("The fill length must be greater than zero.")
+                address = args.address
+                data = bytes((args.value,)) * args.length
+            was_held = bool(link.status() & 0x08)
+            if not was_held:
+                link.hold()
+            try:
+                link.write(address, data)
+                readback = link.read(address, len(data))
+                if readback != data:
+                    raise RuntimeError("Memory write verification failed.")
+            finally:
+                if not was_held and not args.leave_halted:
+                    link.resume()
+            state = "halted" if was_held or args.leave_halted else "resumed"
+            print(
+                f"Wrote and verified {len(data)} byte(s) at 0x{address:06x}; "
+                f"the 68000 is {state}."
+            )
         elif args.command == "fpga":
             source, data, gowin_checksum = load_gowin_bitstream(
                 args.bitstream, require_checksum=True
@@ -2969,9 +3386,7 @@ def main() -> int:
             )
             print(f"Persistent programming completed in {flash_elapsed:.1f} seconds.")
         else:
-            data = args.binary.read_bytes()
-            pc = args.address if args.pc is None else args.pc
-            load_binary(link, data, args.address, pc, args.stack)
+            raise RuntimeError(f"Unhandled NanoQL Link command: {args.command}")
     finally:
         link.close()
     return 0
