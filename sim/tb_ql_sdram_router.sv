@@ -20,6 +20,11 @@ module tb_ql_sdram_router;
     reg [21:0] ram_addr = 22'd0;
     reg [1:0] ram_ds = 2'b00;
     reg [15:0] ram_wdata = 16'd0;
+    reg snapshot_req = 1'b0;
+    reg snapshot_we = 1'b0;
+    reg [21:0] snapshot_addr = 22'd0;
+    reg [1:0] snapshot_ds = 2'b00;
+    reg [15:0] snapshot_wdata = 16'd0;
     reg system_ready = 1'b1;
     reg system_data_valid = 1'b0;
     reg [15:0] system_data = 16'd0;
@@ -40,6 +45,10 @@ module tb_ql_sdram_router;
     wire ram_data_valid;
     wire [15:0] ram_data;
     wire ram_write_done;
+    wire snapshot_ready;
+    wire snapshot_data_valid;
+    wire [15:0] snapshot_data;
+    wire snapshot_write_done;
     wire system_req;
     wire system_we;
     wire [21:0] system_addr;
@@ -65,6 +74,12 @@ module tb_ql_sdram_router;
         .ram_ds(ram_ds), .ram_wdata(ram_wdata), .ram_ready(ram_ready),
         .ram_data_valid(ram_data_valid), .ram_data(ram_data),
         .ram_write_done(ram_write_done),
+        .snapshot_req(snapshot_req), .snapshot_we(snapshot_we),
+        .snapshot_addr(snapshot_addr), .snapshot_ds(snapshot_ds),
+        .snapshot_wdata(snapshot_wdata), .snapshot_ready(snapshot_ready),
+        .snapshot_data_valid(snapshot_data_valid),
+        .snapshot_data(snapshot_data),
+        .snapshot_write_done(snapshot_write_done),
         .system_req(system_req), .system_we(system_we),
         .system_addr(system_addr), .system_ds(system_ds),
         .system_wdata(system_wdata), .system_ready(system_ready),
@@ -134,6 +149,18 @@ module tb_ql_sdram_router;
         #1;
         if (!host_ready || ram_ready || system_addr != host_addr)
             $fatal(1, "NanoQL Link did not receive highest priority");
+
+        host_req = 1'b0;
+        snapshot_req = 1'b1;
+        snapshot_addr = 22'h3f0010;
+        #1;
+        if (!ram_ready || snapshot_ready || system_addr != ram_addr)
+            $fatal(1, "QL RAM did not arbitrate ahead of HDMI snapshot");
+
+        ram_req = 1'b0;
+        #1;
+        if (!snapshot_ready || system_addr != snapshot_addr)
+            $fatal(1, "HDMI snapshot did not use the free SDRAM slot");
 
         $display("PASS: SDRAM routing priority and response ownership");
         $finish;

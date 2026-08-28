@@ -83,11 +83,25 @@ module nanoql_top(
     wire blank_active;
     wire fetch_underflow;
 
-    wire [18:0] video_mem_addr;
+    wire [21:0] video_mem_addr;
     wire video_mem_rd;
     wire video_mem_ready;
     wire video_mem_data_valid;
     wire [15:0] video_mem_data;
+    wire video_snapshot_valid;
+    wire video_snapshot_buffer_select;
+    wire [21:0] video_snapshot_base;
+    wire video_scanout_buffer_select;
+    wire video_membase_active;
+    wire video_snapshot_req;
+    wire video_snapshot_we;
+    wire [21:0] video_snapshot_addr;
+    wire [1:0] video_snapshot_ds;
+    wire [15:0] video_snapshot_wdata;
+    wire video_snapshot_ready;
+    wire video_snapshot_data_valid;
+    wire [15:0] video_snapshot_data;
+    wire video_snapshot_write_done;
     wire zx8301_mc_stat_wr;
     wire [7:0] zx8301_mc_stat_data;
     wire zx8302_wr;
@@ -377,8 +391,8 @@ module nanoql_top(
     reg [7:0] ipc_keyboard_report_count = 8'd0;
     reg [31:0] cpu_phase_count = 32'd0;
 
-    // Reserve the final 64 KiB of the 8 MiB SDRAM for the runtime QL ROM.
-    // QL RAM can later grow to 4 MiB without colliding with this region.
+    // The final 128 KiB of SDRAM hold two 32 KiB HDMI snapshots followed by
+    // the 64 KiB runtime QL ROM. QL RAM can still grow to 4 MiB safely.
     localparam [21:0] DYNAMIC_ROM_SDRAM_BASE = 22'h3f8000;
     wire [21:0] rom_loader_sdram_addr = DYNAMIC_ROM_SDRAM_BASE +
                                          rom_loader_addr;
@@ -423,6 +437,15 @@ module nanoql_top(
         .ram_data_valid(mapped_sdram_data_valid),
         .ram_data(mapped_sdram_data),
         .ram_write_done(mapped_sdram_write_done),
+        .snapshot_req(video_snapshot_req),
+        .snapshot_we(video_snapshot_we),
+        .snapshot_addr(video_snapshot_addr),
+        .snapshot_ds(video_snapshot_ds),
+        .snapshot_wdata(video_snapshot_wdata),
+        .snapshot_ready(video_snapshot_ready),
+        .snapshot_data_valid(video_snapshot_data_valid),
+        .snapshot_data(video_snapshot_data),
+        .snapshot_write_done(video_snapshot_write_done),
         .system_req(sdram_system_req),
         .system_we(sdram_system_we),
         .system_addr(sdram_system_addr),
@@ -432,6 +455,30 @@ module nanoql_top(
         .system_data_valid(sdram_system_data_valid),
         .system_data(sdram_system_data),
         .system_write_done(sdram_system_write_done)
+    );
+
+    // Two high-SDRAM frame snapshots decouple the 50.080 Hz native QL raster
+    // from 50/60 Hz HDMI. Publication is atomic, and the old snapshot is not
+    // reused until scanout acknowledges the replacement at HDMI line zero.
+    ql_video_snapshot video_snapshot (
+        .clk(clk_pixel),
+        .reset(video_reset),
+        .enable(sdram_init_done && !sdram_init_fail),
+        .native_frame(ql_native_frame),
+        .membase(video_membase_active),
+        .scanout_buffer_select(video_scanout_buffer_select),
+        .snapshot_valid(video_snapshot_valid),
+        .snapshot_buffer_select(video_snapshot_buffer_select),
+        .snapshot_base(video_snapshot_base),
+        .req(video_snapshot_req),
+        .we(video_snapshot_we),
+        .addr(video_snapshot_addr),
+        .ds(video_snapshot_ds),
+        .wdata(video_snapshot_wdata),
+        .ready(video_snapshot_ready),
+        .data_valid(video_snapshot_data_valid),
+        .rdata(video_snapshot_data),
+        .write_done(video_snapshot_write_done)
     );
 
     mcu_spi companion_spi (
@@ -979,6 +1026,11 @@ module nanoql_top(
         .reset(video_reset),
         .core_reset(ql_system_reset),
         .video_mode(companion_video_mode),
+        .snapshot_valid(video_snapshot_valid),
+        .snapshot_base(video_snapshot_base),
+        .snapshot_buffer_select(video_snapshot_buffer_select),
+        .scanout_buffer_select(video_scanout_buffer_select),
+        .membase_active(video_membase_active),
         .mem_addr(video_mem_addr),
         .mem_rd(video_mem_rd),
         .mem_ready(video_mem_ready),

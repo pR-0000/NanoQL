@@ -76,6 +76,7 @@ HOMEBREW_URL = "https://brew.sh/"
 AUTO_PORT = "Automatic detection"
 SELECT_PORT = "Select a serial port"
 WORKFLOW_REVISION = "7"
+CURRENT_RELEASE_TAG = "v0.3.5"
 GITHUB_RELEASE_API = (
     "https://api.github.com/repos/pR-0000/NanoQL/releases/latest"
 )
@@ -116,6 +117,12 @@ TRANSLATIONS = {
         "The GitHub release does not contain a complete package for this board revision.": "La release GitHub ne contient pas de package complet pour cette révision de carte.",
         "The downloaded release archive contains an unsafe path.": "L'archive de release téléchargée contient un chemin non sûr.",
         "Latest release downloaded and selected": "Dernière release téléchargée et sélectionnée",
+        "NanoQL update available": "Mise à jour NanoQL disponible",
+        "A newer NanoQL release ({version}) is available. Download it now?": "Une nouvelle release NanoQL ({version}) est disponible. Voulez-vous la télécharger maintenant ?",
+        "Assistant update ready": "Mise à jour de l'assistant prête",
+        "NanoQL {version} includes a newer Assistant and command-line tools. Install them and restart the Assistant now?": "NanoQL {version} contient une nouvelle version de l'Assistant et des outils en ligne de commande. Voulez-vous les installer et redémarrer l'Assistant maintenant ?",
+        "The NanoQL Assistant was updated and will now restart.": "L'Assistant NanoQL a été mis à jour et va maintenant redémarrer.",
+        "Assistant update failed": "Échec de la mise à jour de l'Assistant",
         "Extracted release folder": "Dossier de release extrait",
         "Select release folder...": "Choisir le dossier de release...",
         "Select an extracted NanoQL release folder.": "Sélectionnez un dossier de release NanoQL extrait.",
@@ -408,7 +415,7 @@ def release_cache_path() -> Path:
     return root / "NanoQL" / "releases"
 
 
-def _github_request(url: str):
+def _github_request(url: str, timeout: float = 45):
     request = urllib.request.Request(
         url,
         headers={
@@ -417,7 +424,83 @@ def _github_request(url: str):
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
-    return urllib.request.urlopen(request, timeout=45)
+    return urllib.request.urlopen(request, timeout=timeout)
+
+
+def _release_version(tag: str) -> tuple[int, ...] | None:
+    match = re.fullmatch(r"v(\d+(?:\.\d+)*)", tag.strip())
+    if match is None:
+        return None
+    return tuple(int(part) for part in match.group(1).split("."))
+
+
+def latest_release_tag(timeout: float = 4.0) -> str:
+    with _github_request(GITHUB_RELEASE_API, timeout=timeout) as response:
+        release = json.loads(response.read().decode("utf-8"))
+    if not isinstance(release, dict):
+        raise RuntimeError("Invalid GitHub release metadata.")
+    tag = str(release.get("tag_name", ""))
+    if _release_version(tag) is None:
+        raise RuntimeError("Invalid GitHub release tag.")
+    return tag
+
+
+def _assistant_version(script: Path) -> tuple[int, ...] | None:
+    try:
+        text = script.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    match = re.search(
+        r'^CURRENT_RELEASE_TAG\s*=\s*["\'](v\d+(?:\.\d+)+)["\']',
+        text,
+        flags=re.MULTILINE,
+    )
+    return _release_version(match.group(1)) if match else None
+
+
+def install_assistant_update(source_tools: Path, target_tools: Path) -> list[str]:
+    """Atomically replace public scripts, restoring every file on failure."""
+    required = ("nanoql_setup.pyw", "nanoql_setup.py", "nanoql_link.py")
+    for name in required:
+        if not (source_tools / name).is_file():
+            raise FileNotFoundError(f"The release is missing tools/{name}.")
+
+    sources = sorted(
+        path for path in source_tools.iterdir()
+        if path.is_file() and path.suffix.lower() in (".py", ".pyw", ".ps1")
+    )
+    for source in sources:
+        if source.suffix.lower() in (".py", ".pyw"):
+            compile(source.read_text(encoding="utf-8"), str(source), "exec")
+
+    token = f"{os.getpid()}-{time.time_ns()}"
+    staging = target_tools / f".nanoql-update-{token}"
+    backup = target_tools / f".nanoql-backup-{token}"
+    replaced: list[tuple[Path, Path | None]] = []
+    staging.mkdir(parents=True, exist_ok=False)
+    backup.mkdir(parents=True, exist_ok=False)
+    try:
+        for source in sources:
+            shutil.copy2(source, staging / source.name)
+        for source in sources:
+            target = target_tools / source.name
+            old_copy = None
+            if target.exists():
+                old_copy = backup / source.name
+                shutil.copy2(target, old_copy)
+            os.replace(staging / source.name, target)
+            replaced.append((target, old_copy))
+    except Exception:
+        for target, old_copy in reversed(replaced):
+            if old_copy is None:
+                target.unlink(missing_ok=True)
+            elif old_copy.exists():
+                os.replace(old_copy, target)
+        raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+        shutil.rmtree(backup, ignore_errors=True)
+    return [source.name for source in sources]
 
 
 def _release_asset(release: dict[str, object], predicate) -> dict[str, object]:
@@ -1062,6 +1145,71 @@ class NanoQLSetup(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.after(100, self._poll_events)
         self.port_poll_after = self.after(1200, self._poll_serial_ports)
+        self.after(800, self._start_release_check)
+
+    def _installed_release_version(self) -> tuple[int, ...]:
+        return _release_version(CURRENT_RELEASE_TAG) or (0,)
+
+    def _start_release_check(self) -> None:
+        installed_version = self._installed_release_version()
+
+        def worker() -> None:
+            try:
+                tag = latest_release_tag()
+                version = _release_version(tag)
+                if version is not None and version > installed_version:
+                    self.events.put(("update_available", tag))
+            except Exception:
+                # Startup remains fully offline-capable and silent.
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _offer_release_update(self, tag: str) -> None:
+        if self.operation_busy:
+            self.after(1000, lambda: self._offer_release_update(tag))
+            return
+        prompt = self._t(
+            "A newer NanoQL release ({version}) is available. Download it now?"
+        ).format(version=tag)
+        if messagebox.askyesno(self._t("NanoQL update available"), prompt):
+            self.download_latest_release()
+
+    def _offer_assistant_update(self, folder: str, tag: str) -> None:
+        source_tools = Path(folder) / "tools"
+        source_setup = source_tools / "nanoql_setup.pyw"
+        source_version = _assistant_version(source_setup)
+        current_version = _release_version(CURRENT_RELEASE_TAG) or (0,)
+        if source_version is None or source_version <= current_version:
+            return
+        prompt = self._t(
+            "NanoQL {version} includes a newer Assistant and command-line "
+            "tools. Install them and restart the Assistant now?"
+        ).format(version=tag)
+        if not messagebox.askyesno(self._t("Assistant update ready"), prompt):
+            return
+        try:
+            updated = install_assistant_update(source_tools, TOOLS)
+            self._save_settings()
+            subprocess.Popen(
+                [sys.executable, str(TOOLS / "nanoql_setup.pyw")],
+                cwd=str(REPOSITORY),
+                creationflags=CREATE_NO_WINDOW,
+            )
+        except Exception as error:
+            self._append_log(f"Assistant update: ERROR: {error}\n")
+            messagebox.showerror(
+                self._t("Assistant update failed"), str(error)
+            )
+            return
+        self._append_log(
+            f"Assistant update: {len(updated)} tool file(s) installed.\n"
+        )
+        messagebox.showinfo(
+            self._t("Assistant update ready"),
+            self._t("The NanoQL Assistant was updated and will now restart."),
+        )
+        self.destroy()
 
     def _load_settings(self) -> None:
         parser = configparser.ConfigParser(interpolation=None)
@@ -3280,6 +3428,9 @@ class NanoQLSetup(tk.Tk):
                         f"{self._t('Latest release downloaded and selected')}: "
                         f"{tag}\n"
                     )
+                    self._offer_assistant_update(str(folder), str(tag))
+                elif event == "update_available":
+                    self._offer_release_update(str(payload))
                 elif event == "error":
                     title, error = payload
                     self._finish_busy("Error")

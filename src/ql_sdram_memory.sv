@@ -5,7 +5,7 @@ module ql_sdram_memory #(
     input  wire        reset,
     input  wire        fast_cpu,
 
-    input  wire [18:0] client_addr,
+    input  wire [21:0] client_addr,
     input  wire        client_rd,
     output wire        client_ready,
     output reg         client_data_valid,
@@ -256,7 +256,7 @@ module ql_sdram_memory #(
                         wait_count <= 4'd0;
                         state <= ST_CLIENT_WAIT;
                     end else if (grant_video) begin
-                        ram_addr <= {3'd0, client_addr};
+                        ram_addr <= client_addr;
                         ram_we <= 1'b0;
                         ram_ds <= 2'b00;
                         ram_refresh <= 1'b0;

@@ -23,6 +23,7 @@ add_file src/ql_boot_status.sv
 add_file src/ql_zx8301.sv
 add_file $zx8302_source
 add_file src/ql_video_scanout.sv
+add_file src/ql_video_snapshot.sv
 add_file src/ql_test_pattern.sv
 add_file src/ql_sdram_memory.sv
 add_file src/ql_sdram_router.sv

@@ -12,19 +12,22 @@ module ql_video_scanout(
     input wire [7:0] ql_y,
     input wire mode8,
     input wire blank,
-    input wire membase,
+    input wire [21:0] frame_base,
+    input wire frame_buffer_select,
     input wire flash_phase,
-    output wire [18:0] addr,
+    output wire [21:0] addr,
     output wire rd,
     input wire rd_ready,
     input wire din_valid,
     input wire [15:0] din,
     output wire fetch_underflow,
+    output wire scanout_buffer_select,
     output wire [23:0] rgb
 );
-    assign addr = 19'd0;
+    assign addr = 22'd0;
     assign rd = 1'b0;
     assign fetch_underflow = 1'b0;
+    assign scanout_buffer_select = frame_buffer_select;
     assign rgb = 24'd0;
 endmodule
 
@@ -67,6 +70,8 @@ module tb_ql_zx8301;
         .ql_fetch_y(8'd0),
         .ql_x(9'd0),
         .ql_y(8'd0),
+        .frame_base(22'h010000),
+        .frame_buffer_select(1'b0),
         .addr(),
         .rd(),
         .rd_ready(1'b0),

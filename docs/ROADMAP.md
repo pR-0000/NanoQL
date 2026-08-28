@@ -10,7 +10,7 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 16 671 / 20 736 cellules logiques utilisées (81 %), dont 15 595 LUT et 7 494 registres.
+- FPGA : 16 809 / 20 736 cellules logiques utilisées (82 %), dont 15 732 LUT et 7 535 registres.
 - BSRAM : 21 / 46 blocs utilisés (46 %), dont les tampons sectoriels QL-SD et Microdrive et la ROM QSound optionnelle.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
 - Domaine système : 48 MHz, avec une Fmax estimée de 48,013 MHz.
@@ -82,6 +82,7 @@ Le support d'une vraie seconde carte QL-SD nécessitera un connecteur microSD su
 - Le flux matériel corrige aussi à la volée le checksum nul du secteur de carte et les motifs de fin de secteur absents de certaines images QLAY créées pour Q-emuLator.
 - Le mode Microdrive authentique reste le réglage par défaut. Un mode Turbo optionnel porte simultanément le CPU et le flux de bande à leur cadence 24 MHz validée pendant la sélection du lecteur, sans modifier le rapport de polling attendu par QDOS.
 - L'assistant Tkinter distingue la première installation de la mise à jour et enregistre leur progression. Leur première étape télécharge le package complet de la dernière release GitHub, vérifie son SHA-256, l'extrait dans un cache utilisateur et sélectionne automatiquement les firmwares 3921/3923. La microSD, le firmware BL616 NanoQL et le FPGA suivent dans l'ordre requis. L'assistant regroupe aussi le clavier distant, la synchronisation MDV, l'injection de programme et le débogage sous NanoQL Link, avec une activation S1 unique après le démarrage.
+- Au démarrage, l'assistant vérifie silencieusement la dernière release. Après téléchargement et validation du package complet, il peut remplacer de façon transactionnelle ses propres scripts et les outils NanoQL Link, restaurer les anciens fichiers en cas d'échec et redémarrer sans perdre l'INI utilisateur.
 - Le guide d'installation documente Windows, macOS et Linux sans présenter FlashCube comme multiplateforme.
 - Ajouter ensuite une resynchronisation sûre des modifications de l'image vers le dossier source.
 - Le flash BL616 natif est intégré à l'assistant Python sous Windows, Linux et macOS avec l'outil UART officiel de Bouffalo Lab ; il reste à valider physiquement sur chaque système et révision.
@@ -105,6 +106,7 @@ La capture d'écran est réaliste. La vidéo est un objectif expérimental : ell
 - Le ZX8301 unifié est validé sur Tang Nano 20K : MC_STAT, PAL/NTSC, HBL/VBL, HSYNC/VSYNC, interruption de trame et clignotement suivent la trame QL native indépendamment du HDMI.
 - Le ZX8302 mémorise le front VSYNC jusqu'à l'acquittement du 68000 et la contention vidéo reste active avec un Microdrive monté en mode `QL`, conformément à QL_MiSTer et au budget CPU du matériel original.
 - La contention effective du pont fx68k/SDRAM et la priorité CPU face au préchargement HDMI sont validées physiquement avec Kizuna en profil QL 128 Kio : plus de carrés transitoires ni de sous-alimentation magenta, et transition fractales/textes proche de l'enregistrement sur QL réel.
+- Deux instantanés complets de 32 Kio en haut de la SDRAM découplent maintenant le raster QL du HDMI. Une page n'est publiée qu'après sa copie intégrale, l'ancien tampon reste protégé jusqu'à l'acquittement du début de trame HDMI, et la copie de fond cède toujours la SDRAM au CPU afin de préserver le Microdrive Turbo.
 - Mesurer ultérieurement VBL, VSYNC, contention et accès mémoire sur un QL réel avec un analyseur logique afin de dépasser la fidélité fonctionnelle actuelle et de valider les écarts électriques restants.
 - Remplacer progressivement les autres approximations restantes par les chemins fidèles de QL_MiSTer.
 - Resynchroniser de façon optionnelle les modifications d'une image Microdrive vers son dossier source.
@@ -139,7 +141,7 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 16,671 / 20,736 logic cells used (81%), including 15,595 LUTs and 7,494 registers.
+- FPGA: 16,751 / 20,736 logic cells used (81%), including 15,673 LUTs and 7,537 registers.
 - BSRAM: 21 / 46 blocks used (46%), including QL-SD and Microdrive sector buffers and the optional QSound ROM.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
 - System domain: 48 MHz, with an estimated Fmax of 48.013 MHz.
@@ -211,6 +213,7 @@ A real secondary QL-SD card requires an additional microSD connector on an exter
 - The hardware stream also repairs the zero map-sector checksum and missing physical sector-tail patterns found in some QLAY images created for Q-emuLator.
 - Authentic Microdrive timing remains the default. An optional Turbo mode raises both CPU and tape to their validated 24 MHz cadence while the drive is selected, preserving the polling ratio expected by QDOS.
 - The Tkinter assistant distinguishes first installation from update and stores progress for both. Their first step downloads the latest official complete GitHub package, verifies its SHA-256, extracts it to a per-user cache, and selects the matching 3921/3923 firmware automatically. microSD, NanoQL BL616, and FPGA then follow in the required order. The assistant groups remote keyboard, MDV synchronization, program injection, and debugging under NanoQL Link with one S1 activation after startup.
+- At startup, the Assistant silently checks the latest release. After downloading and validating a Complete package, it can transactionally replace itself and the NanoQL Link tools, restore the previous files on failure, and restart without losing the per-user INI.
 - The installation guide covers Windows, macOS, and Linux without presenting FlashCube as cross-platform.
 - Add safe synchronization of image changes back to the source folder afterward.
 - Native BL616 flashing is integrated into the Python assistant on Windows, Linux, and macOS through Bouffalo Lab's official UART tool; physical validation remains required on each operating system and board revision.
@@ -234,6 +237,7 @@ Screenshots are realistic. Video recording is experimental because it depends on
 - The unified ZX8301 is validated on Tang Nano 20K: MC_STAT, PAL/NTSC, HBL/VBL, HSYNC/VSYNC, frame interrupt, and flashing follow the native QL raster independently of HDMI.
 - ZX8302 latches the VSYNC edge until the 68000 acknowledges it, and video contention remains active with a mounted Microdrive in `QL` mode, matching QL_MiSTer and the original hardware CPU budget.
 - Effective fx68k/SDRAM bridge contention and CPU priority over HDMI prefetch are physically validated with Kizuna in the QL 128 KiB profile: no transient squares or magenta underflow, and a fractal-to-text transition close to the real-QL recording.
+- Two complete 32 KiB snapshots in high SDRAM now decouple the QL raster from HDMI. A page is published only after a complete copy, the old buffer remains protected until HDMI acknowledges its frame start, and background copying always yields SDRAM to the CPU so Microdrive Turbo timing is preserved.
 - Later measure VBL, VSYNC, contention, and memory accesses on a physical QL with a logic analyzer to move beyond current functional fidelity and validate the remaining electrical differences.
 - Progressively replace the remaining approximations with faithful QL_MiSTer paths.
 - Optionally synchronize changes from a Microdrive image back to its source folder.

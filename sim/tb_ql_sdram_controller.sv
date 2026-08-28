@@ -29,7 +29,7 @@ module tb_ql_sdram_controller;
     wire [15:0] system_data;
     wire system_write_done;
 
-    reg [18:0] client_addr = 19'h10000;
+    reg [21:0] client_addr = 22'h010000;
     reg client_rd = 1'b0;
     wire client_ready;
     wire client_data_valid;

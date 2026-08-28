@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.5 - 2026-08-28
+
+- Adds two complete 32 KiB SDRAM video snapshots between the native 50.080 Hz QL raster and independent 720p scanout, publishing a new page only after its full copy and eliminating mixed-page tearing and sprite flicker.
+- Gives QL CPU RAM accesses priority over background HDMI snapshot copies, preserving Microdrive Turbo timing while allowing video to keep updating after a cartridge load.
+- Extends the SDRAM router and video path to 22-bit word addresses while keeping the dynamic QL ROM and snapshots in documented non-overlapping high-memory regions.
+- Adds focused HDL coverage for atomic frame publication, HDMI acknowledgement, interrupted-copy restart, SDRAM ownership, and the original 128 KiB contention boundary.
+- Silently checks for a newer GitHub release when the Setup Assistant starts, with no warning or delay requirement when the computer is offline.
+- Lets a verified Complete package transactionally update the bilingual Setup Assistant, NanoQL Link, and public helper scripts, restore the previous files on failure, preserve user settings, and restart automatically.
+
 ## v0.3.4 - 2026-08-26
 
 - Adds an optional Microdrive Turbo mode that accelerates the virtual tape and CPU together while preserving the validated read cadence across QL, 16 MHz, and 24 MHz operation.

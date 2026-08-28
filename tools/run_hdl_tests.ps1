@@ -31,6 +31,8 @@ $sdramRouterOutput = Join-Path $env:TEMP "nanoql_sdram_router.vvp"
 $memoryMapOutput = Join-Path $env:TEMP "nanoql_memory_map_ram.vvp"
 $cpuPhaseOutput = Join-Path $env:TEMP "nanoql_cpu_phase.vvp"
 $qlTimingOutput = Join-Path $env:TEMP "nanoql_ql_timing.vvp"
+$videoScanoutOutput = Join-Path $env:TEMP "nanoql_video_scanout.vvp"
+$videoSnapshotOutput = Join-Path $env:TEMP "nanoql_video_snapshot.vvp"
 $qlromextOutput = Join-Path $env:TEMP "nanoql_qlromext.vvp"
 $qlsdBufferOutput = Join-Path $env:TEMP "nanoql_qlsd_buffer.vvp"
 $microdriveOutput = Join-Path $env:TEMP "nanoql_microdrive_stream.vvp"
@@ -57,6 +59,32 @@ if ($LASTEXITCODE -ne 0) {
 & $vvp $qlTimingOutput
 if ($LASTEXITCODE -ne 0) {
     throw "QL timing simulation failed."
+}
+
+& $iverilog -g2012 -s tb_ql_video_scanout -o $videoScanoutOutput `
+    (Join-Path $projectRoot "src\ql_video_scanout.sv") `
+    (Join-Path $projectRoot "sim\tb_ql_video_scanout.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "QL video scanout simulation compilation failed."
+}
+
+& $vvp $videoScanoutOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "QL video scanout simulation failed."
+}
+
+& $iverilog -g2012 -s tb_ql_video_snapshot -o $videoSnapshotOutput `
+    (Join-Path $projectRoot "src\ql_video_snapshot.sv") `
+    (Join-Path $projectRoot "sim\tb_ql_video_snapshot.sv")
+
+if ($LASTEXITCODE -ne 0) {
+    throw "QL video snapshot simulation compilation failed."
+}
+
+& $vvp $videoSnapshotOutput
+if ($LASTEXITCODE -ne 0) {
+    throw "QL video snapshot simulation failed."
 }
 
 & $iverilog -g2012 -s tb_ql_ipc_rom_loader -o $ipcRomLoaderOutput `

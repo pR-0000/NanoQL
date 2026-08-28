@@ -4,7 +4,12 @@ module ql_video_test(
     input  wire        reset,
     input  wire        core_reset,
     input  wire [2:0]  video_mode,
-    output wire [18:0] mem_addr,
+    input  wire        snapshot_valid,
+    input  wire [21:0] snapshot_base,
+    input  wire        snapshot_buffer_select,
+    output wire        scanout_buffer_select,
+    output wire        membase_active,
+    output wire [21:0] mem_addr,
     output wire        mem_rd,
     input  wire        mem_ready,
     input  wire        mem_data_valid,
@@ -74,6 +79,11 @@ module ql_video_test(
 
     wire video_membase;
     wire video_ntsc;
+    wire [21:0] live_frame_base = video_membase ?
+                                        22'h014000 : 22'h010000;
+    wire [21:0] selected_frame_base = snapshot_valid ?
+                                            snapshot_base : live_frame_base;
+    assign membase_active = video_membase;
 
     ql_zx8301 zx8301 (
         .reset(reset),
@@ -88,12 +98,15 @@ module ql_video_test(
         .ql_fetch_y(ql_fetch_y_now),
         .ql_x(ql_x_now),
         .ql_y(ql_y_now),
+        .frame_base(selected_frame_base),
+        .frame_buffer_select(snapshot_valid ? snapshot_buffer_select : 1'b0),
         .addr(mem_addr),
         .rd(mem_rd),
         .rd_ready(mem_ready),
         .din_valid(mem_data_valid),
         .din(mem_data),
         .fetch_underflow(fetch_underflow),
+        .scanout_buffer_select(scanout_buffer_select),
         .mode8(mode8_active),
         .blank(blank_active),
         .membase(video_membase),

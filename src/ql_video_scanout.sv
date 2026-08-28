@@ -10,27 +10,29 @@ module ql_video_scanout(
     input  wire [7:0]  ql_y,
     input  wire        mode8,
     input  wire        blank,
-    input  wire        membase,
+    input  wire [21:0] frame_base,
+    input  wire        frame_buffer_select,
     input  wire        flash_phase,
 
-    output wire [18:0] addr,
+    output wire [21:0] addr,
     output wire        rd,
     input  wire        rd_ready,
     input  wire        din_valid,
     input  wire [15:0] din,
 
     output reg         fetch_underflow,
+    output reg         scanout_buffer_select,
     output reg  [23:0] rgb
 );
-
-    localparam [18:0] QL_SCREEN_BASE_0 = 19'h10000;
-    localparam [18:0] QL_SCREEN_BASE_1 = 19'h14000;
 
     // Both QL modes use exactly 64 16-bit words per scanline. Fetch one
     // complete line sequentially, then scan it out from this small buffer.
     reg [15:0] line_buffer [0:127];
     reg        fetch_active;
-    reg        fetch_membase;
+    // frame_base points to an immutable SDRAM snapshot. Adopt a newly
+    // published snapshot only with source line zero and acknowledge it to the
+    // copy engine, which then knows the former buffer can safely be reused.
+    reg [21:0] fetch_frame_base;
     reg [1:0]  line_ready;
     reg        fetch_bank;
     reg [7:0]  fetch_y;
@@ -56,14 +58,14 @@ module ql_video_scanout(
     end
 
     wire [13:0] fetch_offset = {fetch_y, issue_count[5:0]};
-    assign addr = (fetch_membase ? QL_SCREEN_BASE_1 : QL_SCREEN_BASE_0) +
-                  {5'd0, fetch_offset};
+    assign addr = fetch_frame_base + {8'd0, fetch_offset};
     assign rd = fetch_active && (issue_count < 7'd64);
 
     always @(posedge clk_bus) begin
         if (reset) begin
             fetch_active <= 1'b0;
-            fetch_membase <= 1'b0;
+            fetch_frame_base <= 22'h010000;
+            scanout_buffer_select <= 1'b0;
             line_ready <= 2'b00;
             fetch_bank <= 1'b0;
             fetch_y <= 8'd0;
@@ -79,7 +81,10 @@ module ql_video_scanout(
                 (fetch_request_sync[1] != fetch_request_seen)) begin
                 fetch_request_seen <= fetch_request_sync[1];
                 fetch_active <= 1'b1;
-                fetch_membase <= membase;
+                if (fetch_request_y == 8'd0) begin
+                    fetch_frame_base <= frame_base;
+                    scanout_buffer_select <= frame_buffer_select;
+                end
                 line_ready[fetch_request_y[0]] <= 1'b0;
                 fetch_bank <= fetch_request_y[0];
                 fetch_y <= fetch_request_y;

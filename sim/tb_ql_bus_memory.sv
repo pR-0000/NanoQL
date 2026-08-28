@@ -29,7 +29,7 @@ module tb_ql_bus_memory;
     wire [15:0] system_data;
     wire system_write_done;
 
-    reg [18:0] client_addr = 19'd0;
+    reg [21:0] client_addr = 22'd0;
     reg client_rd = 1'b0;
     wire client_ready;
     wire client_data_valid;

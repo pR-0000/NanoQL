@@ -71,7 +71,7 @@ Sous macOS/Linux, utilisez `python3` si nécessaire. L'assistant installe automa
 
 Le sélecteur **Language** du premier onglet bascule immédiatement toute l'interface entre le français et l'anglais. Ce choix est mémorisé avec les autres réglages. Les illustrations intégrées montrent les boutons **UPDATE** et **S1** à utiliser ; aucun fichier image externe n'est requis.
 
-Dans **Commencer**, choisissez la révision 3921 ou 3923 puis cliquez sur **Télécharger la dernière release**. L'assistant télécharge le package complet depuis la release GitHub officielle, vérifie son empreinte avec le fichier `SHA256SUMS.txt`, l'extrait dans un cache propre à l'utilisateur et renseigne automatiquement le firmware BL616 `.bin` et le bitstream FPGA `.fs`. La sélection manuelle d'un dossier déjà extrait reste disponible pour une installation hors ligne.
+Dans **Commencer**, choisissez la révision 3921 ou 3923 puis cliquez sur **Télécharger la dernière release**. L'assistant télécharge le package complet depuis la release GitHub officielle, vérifie son empreinte avec le fichier `SHA256SUMS.txt`, l'extrait dans un cache propre à l'utilisateur et renseigne automatiquement le firmware BL616 `.bin` et le bitstream FPGA `.fs`. Si le package contient une version plus récente de l'assistant et des outils NanoQL Link, leur installation atomique et le redémarrage sont proposés. Les réglages utilisateur restent dans leur fichier INI. La sélection manuelle d'un dossier déjà extrait reste disponible pour une installation hors ligne.
 
 ### Ordre de première installation
 
@@ -252,7 +252,7 @@ Use `python3` on macOS/Linux when needed. The assistant installs PySerial automa
 
 The first tab's **Language** selector immediately switches the complete interface between English and French. The choice is stored with the other settings. Embedded illustrations identify the **UPDATE** and **S1** buttons; no external image file is required.
 
-In **Start here**, select revision 3921 or 3923 and click **Download latest release**. The assistant downloads the complete package from the official GitHub release, verifies it against `SHA256SUMS.txt`, extracts it into a per-user cache, and fills the matching BL616 `.bin` and FPGA `.fs` fields automatically. Manual selection of an already extracted folder remains available for offline installation.
+In **Start here**, select revision 3921 or 3923 and click **Download latest release**. The assistant downloads the complete package from the official GitHub release, verifies it against `SHA256SUMS.txt`, extracts it into a per-user cache, and fills the matching BL616 `.bin` and FPGA `.fs` fields automatically. If the package contains a newer Assistant and NanoQL Link tools, it offers an atomic installation and restart while preserving the per-user INI settings. Manual selection of an already extracted folder remains available for offline installation.
 
 ### First-install order
 

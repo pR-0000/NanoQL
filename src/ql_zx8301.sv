@@ -22,14 +22,17 @@ module ql_zx8301 #(
     input  wire [7:0]  ql_fetch_y,
     input  wire [8:0]  ql_x,
     input  wire [7:0]  ql_y,
+    input  wire [21:0] frame_base,
+    input  wire        frame_buffer_select,
 
-    output wire [18:0] addr,
+    output wire [21:0] addr,
     output wire        rd,
     input  wire        rd_ready,
     input  wire        din_valid,
     input  wire [15:0] din,
 
     output wire        fetch_underflow,
+    output wire        scanout_buffer_select,
     output wire        mode8,
     output wire        blank,
     output wire        membase,
@@ -182,7 +185,8 @@ module ql_zx8301 #(
         .ql_y(ql_y),
         .mode8(mode8),
         .blank(blank),
-        .membase(membase),
+        .frame_base(frame_base),
+        .frame_buffer_select(frame_buffer_select),
         .flash_phase(flash_phase),
         .addr(addr),
         .rd(rd),
@@ -190,6 +194,7 @@ module ql_zx8301 #(
         .din_valid(din_valid),
         .din(din),
         .fetch_underflow(fetch_underflow),
+        .scanout_buffer_select(scanout_buffer_select),
         .rgb(rgb)
     );
 
