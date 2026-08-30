@@ -10,11 +10,11 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 16 809 / 20 736 cellules logiques utilisées (82 %), dont 15 732 LUT et 7 535 registres.
+- FPGA : 16 729 / 20 736 cellules logiques utilisées (81 %), dont 15 650 LUT et 7 536 registres.
 - BSRAM : 21 / 46 blocs utilisés (46 %), dont les tampons sectoriels QL-SD et Microdrive et la ROM QSound optionnelle.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
 - Domaine système : 48 MHz, avec une Fmax estimée de 48,013 MHz.
-- HDMI : 720p50 natif et 720p60 de compatibilité avec audio PCM 48 kHz fonctionnel.
+- HDMI : 720p50 à cadence rapprochée du QL et 720p60 de compatibilité avec audio PCM 48 kHz fonctionnel.
 
 Le pourcentage de LUT restant ne suffit pas à garantir toutes les extensions. La migration de la ROM QL dynamique vers une zone réservée de la SDRAM a toutefois libéré 32 blocs BSRAM pour les ROM et tampons des fonctions suivantes. La fréquence du domaine système devient maintenant la contrainte principale pour les modes CPU rapides.
 
@@ -141,11 +141,11 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 16,751 / 20,736 logic cells used (81%), including 15,673 LUTs and 7,537 registers.
+- FPGA: 16,729 / 20,736 logic cells used (81%), including 15,650 LUTs and 7,536 registers.
 - BSRAM: 21 / 46 blocks used (46%), including QL-SD and Microdrive sector buffers and the optional QSound ROM.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
 - System domain: 48 MHz, with an estimated Fmax of 48.013 MHz.
-- HDMI: working native 720p50 and compatibility 720p60 output with 48 kHz PCM audio.
+- HDMI: working QL-matched 720p50 and compatibility 720p60 output with 48 kHz PCM audio.
 
 The remaining LUT percentage alone does not guarantee that every extension will fit. Moving the dynamic QL ROM to a reserved SDRAM area has nevertheless freed 32 BSRAM blocks for future ROMs and buffers. System-domain timing is now the main constraint for faster CPU modes.
 

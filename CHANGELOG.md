@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.6 - 2026-08-30
+
+- Retimes the 720p50 horizontal blanking from 1980 to 1977 pixel clocks while preserving the 74.25 MHz pixel clock and 1280x720 active image, bringing HDMI scanout from exactly 50.000 Hz to 50.07587 Hz versus the native QL's 50.08013 Hz.
+- Reduces the unavoidable PAL QL/HDMI frame-cadence slip from approximately once every 12.5 seconds to once every 235 seconds, removing the recurring smooth/judder cycle reported with VBL-synchronized double buffering.
+- Keeps native ZX8301 timing, frame interrupts, software speed, atomic SDRAM snapshots, and the standard 720p60 compatibility path unchanged.
+- Documents the distinction between spatial frame coherence, fixed by the v0.3.5 snapshots, and temporal clock-rate matching, improved by this release.
+
 ## v0.3.5 - 2026-08-28
 
 - Adds two complete 32 KiB SDRAM video snapshots between the native 50.080 Hz QL raster and independent 720p scanout, publishing a new page only after its full copy and eliminating mixed-page tearing and sprite flicker.

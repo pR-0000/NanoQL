@@ -95,9 +95,14 @@ wire [39:0] vtiming2  = { 10'd501, 10'd400,  10'd5,  10'd5 };
 wire [7:0] cea2 = 8'd2;
 
 // CEA VIC 19/4: 1280x720p at 50/60 Hz. Both use a 74.25 MHz pixel clock.
-wire [43:0] htiming3 = {rate_60 ? 11'd1650 : 11'd1980,
+// The PAL path shortens only the horizontal front porch by three pixels.
+// Its 1977*750 raster runs at 50.07587 Hz, closely tracking the native
+// 50.08013 Hz QL raster and avoiding a visible frame-cadence beat every
+// 12.5 seconds. The active image, sync width, back porch and pixel clock are
+// unchanged; 60 Hz deliberately retains the standard VIC 4 timing.
+wire [43:0] htiming3 = {rate_60 ? 11'd1650 : 11'd1977,
                         11'd1280,
-                        rate_60 ? 11'd110 : 11'd440,
+                        rate_60 ? 11'd110 : 11'd437,
                         11'd40};
 wire [39:0] vtiming3 = {10'd750, 10'd720, 10'd5, 10'd5};
 wire [7:0] cea3 = rate_60 ? 8'd4 : 8'd19;

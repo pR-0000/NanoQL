@@ -76,7 +76,7 @@ HOMEBREW_URL = "https://brew.sh/"
 AUTO_PORT = "Automatic detection"
 SELECT_PORT = "Select a serial port"
 WORKFLOW_REVISION = "7"
-CURRENT_RELEASE_TAG = "v0.3.5"
+CURRENT_RELEASE_TAG = "v0.3.6"
 GITHUB_RELEASE_API = (
     "https://api.github.com/repos/pR-0000/NanoQL/releases/latest"
 )

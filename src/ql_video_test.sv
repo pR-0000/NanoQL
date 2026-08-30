@@ -32,10 +32,11 @@ module ql_video_test(
     output reg  [9:0]  y
 );
 
-    // 720p50 and 720p60 share the same 74.25 MHz pixel clock. Only the
-    // horizontal blanking and the AVI VIC differ.
+    // Both rates share the 74.25 MHz pixel clock. The PAL-compatible raster
+    // uses 1977 clocks per line so its frame cadence closely tracks the
+    // native 50.080 Hz QL raster; the 60 Hz compatibility mode remains VIC 4.
     wire video_60hz = video_mode >= 3'd3;
-    wire [10:0] frame_w = video_60hz ? 11'd1650 : 11'd1980;
+    wire [10:0] frame_w = video_60hz ? 11'd1650 : 11'd1977;
     localparam [9:0]  FRAME_H = 10'd750;
 
     wire visible_now;

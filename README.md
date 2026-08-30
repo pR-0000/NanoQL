@@ -8,7 +8,7 @@ Sinclair QL FPGA core for the Sipeed Tang Nano 20K.
 
 NanoQL transforme une Tang Nano 20K en Sinclair QL autonome. Le cœur démarre depuis une carte microSD, produit une image HDMI 720p50 ou 720p60 et utilise le BL616 intégré pour le clavier USB, l'overlay et les services de stockage.
 
-Le projet privilégie la fidélité matérielle : CPU 68000, timings vidéo natifs, contention RAM, interruption VBL, IPC 8049, ZX8302 et flux Microdrive sont reproduits dans le FPGA plutôt que remplacés par une émulation logicielle. La contention du ZX8301 est limitée aux 128 Kio internes et calibrée avec une démo exécutée sur QL réel, sans faire subir une seconde contention au lecteur HDMI.
+Le projet privilégie la fidélité matérielle : CPU 68000, timings vidéo natifs, contention RAM, interruption VBL, IPC 8049, ZX8302 et flux Microdrive sont reproduits dans le FPGA plutôt que remplacés par une émulation logicielle. La contention du ZX8301 est limitée aux 128 Kio internes et calibrée avec une démo exécutée sur QL réel, sans faire subir une seconde contention au lecteur HDMI. Des instantanés complets empêchent le mélange de deux banques vidéo, tandis que la cadence HDMI 50 Hz est rapprochée des 50,080 Hz natifs afin de rendre le double buffering durablement fluide.
 
 ### Fonctions disponibles
 
@@ -118,19 +118,19 @@ Sur le QL original de 128 Kio, `RESPR(65536)` peut normalement produire `Out of 
 
 | Ressource |            Utilisation |
 | --------- | ---------------------: |
-| Logique   | 16 671 / 20 736 (81 %) |
-| LUT       |                 15 595 |
-| Registres |                  7 494 |
+| Logique   | 16 729 / 20 736 (81 %) |
+| LUT       |                 15 650 |
+| Registres |                  7 536 |
 | BSRAM     |         21 / 46 (46 %) |
 | DSP       |               0,5 / 24 |
 
-Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 48,013 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,622 MHz. L'analyse de puissance Gowin estime 327,938 mW et une température de jonction de 34,786 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
+Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 48,013 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,622 MHz. L'analyse de puissance Gowin estime 327,972 mW et une température de jonction de 34,787 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
 
 ## English
 
 NanoQL turns a Tang Nano 20K into a standalone Sinclair QL. It boots from microSD, outputs 720p50 or 720p60 HDMI, and uses the integrated BL616 for USB keyboard, overlay, and storage services.
 
-The project emphasizes hardware fidelity: the 68000 CPU, native video timing, RAM contention, VBL interrupt, 8049 IPC, ZX8302, and Microdrive stream are implemented in FPGA logic instead of being replaced by software emulation. ZX8301 contention is restricted to the internal 128 KiB and calibrated against a demo running on real QL hardware, without charging HDMI scanout with a second layer of contention.
+The project emphasizes hardware fidelity: the 68000 CPU, native video timing, RAM contention, VBL interrupt, 8049 IPC, ZX8302, and Microdrive stream are implemented in FPGA logic instead of being replaced by software emulation. ZX8301 contention is restricted to the internal 128 KiB and calibrated against a demo running on real QL hardware, without charging HDMI scanout with a second layer of contention. Complete snapshots prevent mixed video banks, while the 50 Hz HDMI cadence closely tracks the native 50.080 Hz raster for consistently smooth double buffering.
 
 ### Available features
 
@@ -240,13 +240,13 @@ On an original 128 KiB QL, `RESPR(65536)` can normally report `Out of Memory`: Q
 
 | Resource  |                 Usage |
 | --------- | --------------------: |
-| Logic     | 16,671 / 20,736 (81%) |
-| LUT       |                15,595 |
-| Registers |                 7,494 |
+| Logic     | 16,729 / 20,736 (81%) |
+| LUT       |                15,650 |
+| Registers |                 7,536 |
 | BSRAM     |         21 / 46 (46%) |
 | DSP       |              0.5 / 24 |
 
-The system domain runs at 48 MHz with an estimated Fmax of 48.013 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.622 MHz. Gowin power analysis estimates 327.938 mW and a 34.786 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
+The system domain runs at 48 MHz with an estimated Fmax of 48.013 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.622 MHz. Gowin power analysis estimates 327.972 mW and a 34.787 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
 
 ## Credits and licenses
 
