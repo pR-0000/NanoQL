@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.7 - 2026-09-01
+
+- Adds a hardware MC68000 debugger under NanoQL Link with one shared serial-port selector, copyable D0-D7/A0-A7/USP/SSP/PC/IR/SR/flags, and synchronized raw-opcode and readable-disassembly views.
+- Reads both the SDRAM-backed 64 KiB system ROM and base QL RAM, captures configurable instruction ranges before and after PC, and clearly marks the current fx68k prefetch/IR location.
+- Exports arbitrary ROM or RAM ranges as binary, hexadecimal text, or assembly-ready disassembly containing one tab-indented instruction per line without addresses or raw opcodes.
+- Adds a controlled PC/SSP restart path for system ROM or base RAM while deliberately keeping live register editing read-only until fx68k can guarantee an instruction-boundary halt.
+- Moves the NanoQL Link connection check beside the shared port refresh control and keeps debugger settings in the per-user Assistant configuration.
+- Bounds stalled microSD upload finalization in NanoQL Link and the Assistant so a failing or overheated card cannot leave synchronization waiting indefinitely.
+
 ## v0.3.6 - 2026-08-30
 
 - Retimes the 720p50 horizontal blanking from 1980 to 1977 pixel clocks while preserving the 74.25 MHz pixel clock and 1280x720 active image, bringing HDMI scanout from exactly 50.000 Hz to 50.07587 Hz versus the native QL's 50.08013 Hz.

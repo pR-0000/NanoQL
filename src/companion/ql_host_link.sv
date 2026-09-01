@@ -1,6 +1,8 @@
 // NanoQL Link: bounded SPI commands for direct 68000 RAM upload and start.
 // Byte addresses and payload data use the 68000's big-endian convention.
-module ql_host_link (
+module ql_host_link #(
+    parameter [21:0] ROM_SDRAM_BASE = 22'h3f8000
+) (
     input  wire        clk,
     input  wire        reset,
     input  wire        data_strobe,
@@ -81,6 +83,7 @@ module ql_host_link (
     localparam [7:0] CMD_RESUME = 8'h0d;
     localparam [7:0] CMD_DEBUG  = 8'h0e;
     localparam [7:0] CMD_DEBUG_RESULT = 8'h0f;
+    localparam [7:0] CMD_DEBUG_INFO = 8'h10;
 
     localparam [1:0] WR_IDLE = 2'd0;
     localparam [1:0] WR_REQ  = 2'd1;
@@ -112,8 +115,10 @@ module ql_host_link (
     reg [15:0] debug_captured_ir;
 
     wire busy = write_state != WR_IDLE;
-    wire address_valid = (packet_addr >= 24'h020000) &&
-                         (packet_addr <= 24'h03ffff);
+    wire ram_address_valid = (packet_addr >= 24'h020000) &&
+                             (packet_addr <= 24'h03ffff);
+    wire rom_address_valid = packet_addr <= 24'h00ffff;
+    wire read_address_valid = ram_address_valid || rom_address_valid;
     assign mem_we = transfer_write;
 
     function [7:0] status_byte;
@@ -361,7 +366,14 @@ module ql_host_link (
             case (write_state)
                 WR_REQ: begin
                     mem_req <= 1'b1;
-                    mem_addr <= write_addr[22:1];
+                    // Host reads use logical QL addresses. RAM is stored at
+                    // its native address, while the dynamic 64 KiB system ROM
+                    // lives in the reserved final SDRAM block.
+                    mem_addr <= (!transfer_write &&
+                                 (write_addr <= 24'h00ffff)) ?
+                                (ROM_SDRAM_BASE +
+                                 {7'd0, write_addr[15:1]}) :
+                                write_addr[22:1];
                     if (!transfer_write) begin
                         mem_ds <= 2'b00;
                         mem_wdata <= 16'h0000;
@@ -468,6 +480,12 @@ module ql_host_link (
                             if (!cpu_hold || (debug_capture_count != 6'd0))
                                 protocol_error <= 1'b1;
                         end
+                        CMD_DEBUG_INFO: begin
+                            // An explicit signature lets the host reject old
+                            // bitstreams before attempting logical ROM reads.
+                            status_index <= 4'd0;
+                            data_out <= 8'h44; // D
+                        end
                         CMD_RESULT: begin
                             result_index <= 4'd1;
                             data_out <= read_payload[0];
@@ -516,6 +534,17 @@ module ql_host_link (
                         else begin
                             data_out <= debug_state_byte(field_index - 4'd1);
                         end
+                    end else if (command == CMD_DEBUG_INFO) begin
+                        case (status_index)
+                            4'd0: data_out <= 8'h42; // B
+                            4'd1: data_out <= 8'h32; // protocol 2
+                            // coherent reads, logical ROM, fx68k registers
+                            4'd2: data_out <= 8'h07;
+                            4'd3: data_out <= 8'h08; // max read length
+                            default: data_out <= 8'h00;
+                        endcase
+                        if (status_index != 4'd15)
+                            status_index <= status_index + 4'd1;
                     end else if (command == CMD_RESULT) begin
                         if (result_index < 4'd8) begin
                             data_out <= read_payload[result_index];
@@ -541,7 +570,7 @@ module ql_host_link (
                                 if ((payload_count + 4'd1 == packet_length) &&
                                     (packet_length != 4'd0)) begin
                                     if (!cpu_hold || busy || !sdram_ready ||
-                                        !address_valid ||
+                                        !ram_address_valid ||
                                         ({1'b0, packet_addr} + packet_length >
                                          25'h0040000)) begin
                                         protocol_error <= 1'b1;
@@ -562,10 +591,14 @@ module ql_host_link (
                             4'd3: begin
                                 packet_length <= data_in[3:0];
                                 if (busy || !sdram_ready ||
-                                    !address_valid || (data_in == 8'd0) ||
+                                    !read_address_valid || (data_in == 8'd0) ||
                                     (data_in > 8'd8) ||
-                                    ({1'b0, packet_addr} + data_in >
-                                     25'h0040000)) begin
+                                    (rom_address_valid &&
+                                     ({1'b0, packet_addr} + data_in >
+                                      25'h0010000)) ||
+                                    (ram_address_valid &&
+                                     ({1'b0, packet_addr} + data_in >
+                                      25'h0040000))) begin
                                     protocol_error <= 1'b1;
                                 end else begin
                                     protocol_error <= 1'b0;
@@ -591,8 +624,12 @@ module ql_host_link (
                                 if (!cpu_hold || busy || !sdram_ready ||
                                     (exec_ssp < 32'h00020000) ||
                                     (exec_ssp > 32'h00040000) ||
-                                    ({exec_pc[31:8], data_in} < 32'h00020000) ||
-                                    ({exec_pc[31:8], data_in} > 32'h0003ffff) ||
+                                    !((({exec_pc[31:8], data_in} <=
+                                        32'h0000ffff)) ||
+                                      (({exec_pc[31:8], data_in} >=
+                                        32'h00020000) &&
+                                       ({exec_pc[31:8], data_in} <=
+                                        32'h0003ffff))) ||
                                     exec_ssp[0] || data_in[0]) begin
                                     protocol_error <= 1'b1;
                                 end else begin

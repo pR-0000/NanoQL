@@ -3,6 +3,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
+from unittest.mock import patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -100,6 +101,13 @@ class InlineCommitDriveLink(FakeDriveLink):
         return super().transact(request)
 
 
+class StalledCommitDriveLink(FakeDriveLink):
+    def transact(self, request: bytes) -> bytes:
+        if request[0] == CMD_FS_PUT_COMMIT:
+            return bytes((0xFE, 2))
+        return super().transact(request)
+
+
 class DriveUploadTimeoutTests(unittest.TestCase):
     def test_slow_card_timeouts_are_scoped_to_upload(self) -> None:
         payload = bytes(range(256)) * 3
@@ -148,6 +156,18 @@ class DriveUploadTimeoutTests(unittest.TestCase):
             link.filesystem_put(source, "MDV1.mdv")
 
         self.assertEqual(link.commit_attempts, 0)
+        self.assertEqual(link.serial.timeout, 2.0)
+
+    def test_stalled_commit_is_bounded_and_cancelled(self) -> None:
+        payload = b"NanoQL stalled commit" * 32
+        link = StalledCommitDriveLink(payload)
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "MDV1.mdv"
+            source.write_bytes(payload)
+            with patch("nanoql_link.SD_COMMIT_STALL_TIMEOUT", 0.0):
+                with self.assertRaisesRegex(TimeoutError, "did not complete"):
+                    link.filesystem_put(source, "MDV1.mdv")
+
         self.assertEqual(link.serial.timeout, 2.0)
 
 

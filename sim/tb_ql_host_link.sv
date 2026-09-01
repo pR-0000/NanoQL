@@ -13,6 +13,8 @@ module tb_ql_host_link;
     wire [1:0] mem_ds;
     wire [15:0] mem_wdata;
     reg mem_write_done = 1'b0;
+    reg mem_data_valid = 1'b0;
+    reg [15:0] mem_rdata = 16'h4e71;
     wire cpu_hold;
     wire boot_vectors_active;
     wire [31:0] boot_ssp;
@@ -23,6 +25,7 @@ module tb_ql_host_link;
     localparam [31:0] DEBUG_VALUE = 32'h11223344;
     wire cpu_debug_reg_bit = DEBUG_VALUE[cpu_debug_bit_select];
     integer writes = 0;
+    integer reads = 0;
 
     always #5 clk = !clk;
 
@@ -32,7 +35,7 @@ module tb_ql_host_link;
         .sdram_ready(1'b1), .mem_req(mem_req), .mem_we(mem_we),
         .mem_addr(mem_addr), .mem_ds(mem_ds), .mem_wdata(mem_wdata),
         .mem_ready(1'b1), .mem_write_done(mem_write_done),
-        .mem_data_valid(1'b0), .mem_rdata(16'd0),
+        .mem_data_valid(mem_data_valid), .mem_rdata(mem_rdata),
         .cpu_addr(24'd0), .cpu_as_n(1'b1), .cpu_rw(1'b1),
         .cpu_dtack_n(1'b1), .cpu_fc(3'd0),
         .keyboard_report_count(8'h5a),
@@ -67,6 +70,17 @@ module tb_ql_host_link;
 
     always @(posedge clk) begin
         mem_write_done <= mem_req;
+        mem_data_valid <= mem_req && !mem_we;
+        if (mem_req && !mem_we) begin
+            if (reads < 8) begin
+                if (mem_addr != (22'h014000 + (reads >> 1)))
+                    $fatal(1, "RAM read address mismatch");
+            end else begin
+                if (mem_addr != (22'h3f8080 + ((reads - 8) >> 1)))
+                    $fatal(1, "ROM debug read address mismatch");
+            end
+            reads <= reads + 1;
+        end
         if (mem_req && mem_we) begin
             case (writes)
                 0: if (mem_addr != 22'h018000 || mem_ds != 2'b01 ||
@@ -234,6 +248,16 @@ module tb_ql_host_link;
         wait (mem_req);
         if (mem_we || mem_addr != 22'h014000)
             $fatal(1, "live read request mismatch");
+        wait (reads == 8);
+
+        // Debug reads use logical QL ROM addresses but reach the dynamic ROM
+        // block reserved at the end of SDRAM.
+        send_byte(8'h06, 1'b1);
+        send_byte(8'h00, 1'b0);
+        send_byte(8'h01, 1'b0);
+        send_byte(8'h00, 1'b0);
+        send_byte(8'h04, 1'b0);
+        wait (reads == 12);
         reset = 1'b1;
         repeat (2) @(posedge clk);
         reset = 1'b0;
@@ -282,6 +306,17 @@ module tb_ql_host_link;
         send_byte(8'h00, 1'b0);
         if (data_out != 8'h71) $fatal(1, "debug IR low mismatch");
 
+        send_byte(8'h10, 1'b1);
+        if (data_out != 8'h44) $fatal(1, "debug info D mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h42) $fatal(1, "debug info B mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h32) $fatal(1, "debug info version mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h07) $fatal(1, "debug capabilities mismatch");
+        send_byte(8'h00, 1'b0);
+        if (data_out != 8'h08) $fatal(1, "debug max read mismatch");
+
         send_byte(8'h02, 1'b1);
         send_byte(8'h03, 1'b0);
         send_byte(8'h00, 1'b0);
@@ -307,7 +342,21 @@ module tb_ql_host_link;
             boot_ssp != 32'h0003fff0 || boot_pc != 32'h00030000)
             $fatal(1, "EXEC vectors mismatch");
 
-        $display("PASS: NanoQL Link live read, hold/resume, write, and execute");
+        send_byte(8'h01, 1'b1);
+        send_byte(8'h03, 1'b1);
+        send_byte(8'h00, 1'b0);
+        send_byte(8'h03, 1'b0);
+        send_byte(8'hff, 1'b0);
+        send_byte(8'hf0, 1'b0);
+        send_byte(8'h00, 1'b0);
+        send_byte(8'h00, 1'b0);
+        send_byte(8'h0a, 1'b0);
+        send_byte(8'h40, 1'b0);
+        @(posedge clk);
+        if (cpu_hold || !boot_vectors_active || boot_pc != 32'h00000a40)
+            $fatal(1, "ROM EXEC target mismatch");
+
+        $display("PASS: NanoQL Link live read, debug, write, and RAM/ROM execute");
         $finish;
     end
 endmodule

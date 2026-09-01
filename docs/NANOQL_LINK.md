@@ -12,6 +12,7 @@ Ce mode CDC n'est pas le périphérique double canal `SIPEED USB Debugger` du fi
 
 Carte mémoire v1 :
 
+- ROM système accessible en lecture pour le débogage : `0x000000` à `0x00ffff`.
 - RAM accessible : `0x020000` à `0x03ffff`.
 - Adresse de chargement conseillée : `0x030000`.
 - Pile conseillée : `0x03fff0`.
@@ -56,16 +57,24 @@ NanoQL Link propose aussi des opérations de diagnostic composables :
 python tools/nanoql_link.py --port COMx diagnose
 python tools/nanoql_link.py --port COMx halt
 python tools/nanoql_link.py --port COMx registers
+python tools/nanoql_link.py --port COMx disassemble --count 12
 python tools/nanoql_link.py --port COMx resume
-python tools/nanoql_link.py --port COMx dump 0x20000 0x8000 screen.bin --halt
+python tools/nanoql_link.py --port COMx dump 0x20000 0x8000 screen.bin --halt --format binary
+python tools/nanoql_link.py --port COMx dump 0x30000 0x100 code.txt --halt --format disassembly
 python tools/nanoql_link.py --port COMx verify programme.bin --address 0x30000 --halt
 python tools/nanoql_link.py --port COMx poke 0x30000 4e 71 4e 71
 python tools/nanoql_link.py --port COMx fill 0x24000 256 0xff
 ```
 
-`peek` et `watch` lisent la RAM en direct sans arrêter le QL. `registers` arrête le fx68k entre deux cycles de bus et expose directement D0-D7, A0-A7, USP, SSP, le PC interne de prélecture, l'instruction courante, le SR et les flags T/S/I/X/N/Z/V/C. Le CPU reste arrêté pour permettre `dump`, `poke` ou `fill`; ajoutez `--resume` à `registers` pour reprendre automatiquement s'il fonctionnait auparavant. `dump --halt` et `verify --halt` figent brièvement le CPU pour obtenir un instantané cohérent, puis reprennent exactement son état antérieur. `poke` et `fill` font de même autour d'une écriture vérifiée ; ajoutez `--leave-halted` pour inspecter avant reprise. `upload` charge et vérifie un binaire en laissant le CPU arrêté, puis `run --pc ADRESSE --stack ADRESSE` le démarre séparément. `qdos` reste la sortie de secours qui réinitialise le QL.
+`peek` et `watch` lisent la mémoire en direct sans arrêter le QL. `registers` arrête le fx68k entre deux cycles de bus et expose directement D0-D7, A0-A7, USP, SSP, le PC interne de prélecture, l'instruction courante, le SR et les flags T/S/I/X/N/Z/V/C. Il affiche également les octets bruts et le désassemblage MC68000 près de l'instruction courante. `disassemble --count N` fournit cette vue seule. Le décodeur Capstone est installé automatiquement lors de la première utilisation. Les lectures du débogueur couvrent la ROM système de 64 Kio et la RAM QL de base. Le CPU reste arrêté pour permettre `dump`, `poke` ou `fill`; ajoutez `--resume` à `registers` ou `disassemble` pour reprendre automatiquement s'il fonctionnait auparavant. `dump --halt` et `verify --halt` figent brièvement le CPU pour obtenir un instantané cohérent, puis reprennent exactement son état antérieur. `poke` et `fill` font de même autour d'une écriture vérifiée ; ajoutez `--leave-halted` pour inspecter avant reprise. `upload` charge et vérifie un binaire en laissant le CPU arrêté, puis `run --pc ADRESSE --stack ADRESSE` le démarre séparément. `qdos` reste la sortie de secours qui réinitialise le QL.
 
-Le PC exposé est celui du pipeline matériel fx68k et peut donc se trouver en avance sur l'opcode visible dans `IR`, comme sur un vrai 68000 avec prélecture. Le pas-à-pas par instruction, les points d'arrêt et le désassemblage ne sont pas encore implémentés ; le script ne devine pas ces fonctions à partir d'un état incomplet.
+Le PC exposé est celui du pipeline matériel fx68k et peut donc se trouver en avance sur l'opcode visible dans `IR`, comme sur un vrai 68000 avec prélecture. NanoQL Link recherche l'opcode `IR` le plus proche avant ce PC et marque cette adresse par `>`. Les instructions suivant cette adresse sont exactes ; celles affichées avant sont une reconstruction heuristique, car le MC68000 utilise des instructions de longueur variable et ne fournit pas leurs limites en remontant la mémoire. Le pas-à-pas par instruction et les points d'arrêt matériels ne sont pas encore implémentés.
+
+Dans l'Assistant, le port série est choisi une seule fois au-dessus des sous-onglets de **NanoQL Link**. Son sous-onglet **Débogueur** conserve la dernière capture des registres et flags dans des champs en lecture seule mais copiables. Ses deux vues synchronisées séparent les adresses et opcodes bruts du désassemblage lisible. Par défaut, la capture demande 20 instructions avant et 20 après le PC ; ces deux valeurs et une adresse de code facultative sont réglables.
+
+La section mémoire exporte n'importe quelle plage valide de ROM système ou de RAM QL sous forme binaire, hexadécimale ou désassemblée. Le format désassemblé ne contient que les instructions lisibles, chacune précédée d'une tabulation, sans adresses ni opcodes bruts, afin de pouvoir être copié directement dans un source assembleur ; utilisez le format hexadécimal pour conserver les octets. **Redémarrer le CPU au PC** réinitialise proprement le cœur 68000 avec le PC et le SSP choisis ; l'adresse peut se trouver dans la ROM système ou la RAM QL de base. Il ne s'agit pas d'une modification à chaud : l'état interne, les registres et l'instruction partiellement exécutée sont réinitialisés. Modifier arbitrairement D0-D7, A0-A7, SR ou PC pendant une pause entre deux cycles de bus ne serait pas matériellement sûr, car fx68k peut se trouver au milieu d'une instruction ; l'Assistant les laisse donc volontairement en lecture seule.
+
+Le protocole interroge une signature de capacités explicite : si le bitstream actif est trop ancien pour lire la ROM, l'outil demande de programmer le nouveau `.fs` au lieu de renvoyer un code d'état ambigu.
 
 ### Utiliser un dossier comme Microdrive
 
@@ -111,6 +120,8 @@ python tools/nanoql_link.py --port COMx mdv-sync chemin/vers/dossier --name NANO
 ```
 
 Cette commande de développement expérimentale convertit récursivement le dossier en cartouche QLAY, démonte l'ancienne image, envoie `MDV1.mdv`, la remonte pour la session en cours, puis redémarre uniquement le QL. Elle ne maintient plus le QL en reset pendant le transfert, afin qu'une interruption USB ne puisse pas bloquer la carte. Pour l'usage courant, préférez **Build MDV1 from:** dans l'overlay, qui ne dépend pas du PC ni du transport USB CDC.
+
+Chaque transaction série possède déjà un délai borné. La finalisation d'un upload est en plus annulée si une même phase microSD ne progresse pas pendant 120 secondes, et l'Assistant arrête le processus après 150 secondes sans aucune sortie. Une carte anormalement chaude ou plusieurs blocages consécutifs indiquent généralement un contrôleur microSD défaillant : sauvegardez son contenu, reformatez-la en FAT32 ou exFAT, puis remplacez-la si le défaut revient.
 
 Le dossier du PC n'est pas un partage en temps réel : relancez `mdv-sync` après chaque modification. La commande avancée `sd-build-mdv` reste disponible pour reconstruire une image à partir des fichiers déjà présents dans `NanoQL/Drive1`.
 
@@ -190,16 +201,24 @@ NanoQL Link also provides composable diagnostics:
 python tools/nanoql_link.py --port PORT diagnose
 python tools/nanoql_link.py --port PORT halt
 python tools/nanoql_link.py --port PORT registers
+python tools/nanoql_link.py --port PORT disassemble --count 12
 python tools/nanoql_link.py --port PORT resume
-python tools/nanoql_link.py --port PORT dump 0x20000 0x8000 screen.bin --halt
+python tools/nanoql_link.py --port PORT dump 0x20000 0x8000 screen.bin --halt --format binary
+python tools/nanoql_link.py --port PORT dump 0x30000 0x100 code.txt --halt --format disassembly
 python tools/nanoql_link.py --port PORT verify program.bin --address 0x30000 --halt
 python tools/nanoql_link.py --port PORT poke 0x30000 4e 71 4e 71
 python tools/nanoql_link.py --port PORT fill 0x24000 256 0xff
 ```
 
-`peek` and `watch` read live RAM without stopping the QL. `registers` halts fx68k between external bus cycles and directly exposes D0-D7, A0-A7, USP, SSP, the internal prefetch PC, current instruction, SR, and T/S/I/X/N/Z/V/C flags. The CPU remains halted for subsequent `dump`, `poke`, or `fill`; add `--resume` to continue automatically when it was previously running. `dump --halt` and `verify --halt` briefly freeze the CPU for a coherent snapshot, then resume its exact previous state. `poke` and `fill` do the same around a verified write; add `--leave-halted` to inspect before resuming. `upload` loads and verifies a binary while leaving the CPU halted, and `run --pc ADDRESS --stack ADDRESS` starts it separately. `qdos` remains the recovery command that resets the QL.
+`peek` and `watch` read memory live without stopping the QL. `registers` halts fx68k between external bus cycles and directly exposes D0-D7, A0-A7, USP, SSP, the internal prefetch PC, current instruction, SR, and T/S/I/X/N/Z/V/C flags. It also prints raw bytes and MC68000 disassembly near the current instruction. `disassemble --count N` provides that code view alone. Capstone is installed automatically on first use. Debug reads cover the 64 KiB system ROM and base QL RAM. The CPU remains halted for subsequent `dump`, `poke`, or `fill`; add `--resume` to `registers` or `disassemble` to continue automatically when it was previously running. `dump --halt` and `verify --halt` briefly freeze the CPU for a coherent snapshot, then resume its exact previous state. `poke` and `fill` do the same around a verified write; add `--leave-halted` to inspect before resuming. `upload` loads and verifies a binary while leaving the CPU halted, and `run --pc ADDRESS --stack ADDRESS` starts it separately. `qdos` remains the recovery command that resets the QL.
 
-The exposed PC is fx68k's hardware pipeline PC and may therefore be ahead of the opcode shown in `IR`, as expected from 68000 prefetch. Instruction stepping, breakpoints, and disassembly are not implemented yet; the script does not guess them from incomplete state.
+The exposed PC is fx68k's hardware pipeline PC and may therefore be ahead of the opcode shown in `IR`, as expected from 68000 prefetch. NanoQL Link searches for the nearest matching `IR` word before that PC and marks it with `>`. Instructions after that address are exact; instructions shown before it are a heuristic reconstruction because MC68000 instructions have variable lengths and memory does not encode their reverse boundaries. Instruction stepping and hardware breakpoints are not implemented yet.
+
+The serial port is selected once above the Assistant's **NanoQL Link** subtabs. Its **Debugger** subtab retains the latest register and flag capture in read-only but copyable fields. Synchronized panes separate raw addresses/opcodes from readable disassembly. A capture requests 20 instructions before and after PC by default; both counts and an optional direct code address are configurable.
+
+The memory section exports any valid system-ROM or QL-RAM range as binary, hexadecimal text, or disassembled text. Disassembly output contains readable instructions only, each prefixed by one tab, without addresses or raw opcodes, so it can be pasted directly into assembly source; use hexadecimal output when byte values are required. **Restart CPU at PC** cleanly resets the 68000 core with the selected PC and SSP; PC may target system ROM or base QL RAM. This is not hot editing: internal state, registers, and any partially executed instruction are reset. Arbitrarily changing D0-D7, A0-A7, SR, or PC while paused between external bus cycles would be unsafe because fx68k may be in the middle of an instruction, so those fields intentionally remain read-only.
+
+An explicit capability signature identifies the active FPGA debugger: an old bitstream produces a clear request to program the new `.fs` instead of an opaque status code.
 
 ### Using a folder as a Microdrive
 
@@ -245,6 +264,8 @@ python tools/nanoql_link.py --port COMx mdv-sync path/to/folder --name NANOQL
 ```
 
 This experimental developer command recursively converts the folder to a QLAY cartridge, unmounts the previous image, uploads `MDV1.mdv`, mounts it for the current session, and resets only the QL. It no longer holds the QL in reset during transfer, so a USB interruption cannot leave the board blocked. For normal use, prefer **Build MDV1 from:** in the overlay; it does not depend on a PC or USB CDC.
+
+Every serial transaction is already bounded. Upload finalization is additionally cancelled when one microSD phase makes no progress for 120 seconds, and the Assistant stops its child process after 150 seconds without output. An unusually hot card or repeated stalls usually indicates a failing microSD controller: back up its contents, reformat it as FAT32 or exFAT, and replace it if the fault returns.
 
 This is a synchronization operation rather than a live PC share, so rerun `mdv-sync` after changing the source folder. The advanced `sd-build-mdv` command remains available to rebuild an image from files already stored under `NanoQL/Drive1`.
 

@@ -23,7 +23,7 @@ Le projet privilégie la fidélité matérielle : CPU 68000, timings vidéo nati
 - Microdrive QLAY lisible et inscriptible ;
 - conversion autonome d'un dossier microSD en cartouche `.mdv` ;
 - programmation FPGA temporaire ou permanente et outils de développement par USB ;
-- téléchargement automatique de la dernière release et débogage matériel du 68000.
+- téléchargement automatique de la dernière release et débogage matériel du 68000 dans NanoQL Link, avec registres, flags, dumps mémoire et désassemblage autour du PC.
 
 Les fonctions annoncées comme validées ont été testées sur une Tang Nano 20K révision 3923. La révision 3921 utilise le même bitstream avec un firmware BL616 adapté.
 
@@ -118,13 +118,13 @@ Sur le QL original de 128 Kio, `RESPR(65536)` peut normalement produire `Out of 
 
 | Ressource |            Utilisation |
 | --------- | ---------------------: |
-| Logique   | 16 729 / 20 736 (81 %) |
-| LUT       |                 15 650 |
-| Registres |                  7 536 |
+| Logique   | 16 783 / 20 736 (81 %) |
+| LUT       |                 15 706 |
+| Registres |                  7 537 |
 | BSRAM     |         21 / 46 (46 %) |
 | DSP       |               0,5 / 24 |
 
-Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 48,013 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,622 MHz. L'analyse de puissance Gowin estime 327,972 mW et une température de jonction de 34,787 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
+Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 50,877 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,255 MHz. L'analyse de puissance Gowin estime 327,998 mW et une température de jonction de 34,787 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
 
 ## English
 
@@ -145,7 +145,7 @@ The project emphasizes hardware fidelity: the 68000 CPU, native video timing, RA
 - readable and writable QLAY Microdrive cartridges;
 - standalone microSD-folder to `.mdv` conversion;
 - temporary or persistent FPGA programming and USB development tools;
-- automatic latest-release download and hardware 68000 debugging.
+- automatic latest-release download and hardware 68000 debugging inside NanoQL Link, with registers, flags, memory dumps, and disassembly around the PC.
 
 Features described as validated were physically tested on a revision 3923 Tang Nano 20K. Revision 3921 uses the same FPGA bitstream with matching BL616 firmware.
 
@@ -240,13 +240,13 @@ On an original 128 KiB QL, `RESPR(65536)` can normally report `Out of Memory`: Q
 
 | Resource  |                 Usage |
 | --------- | --------------------: |
-| Logic     | 16,729 / 20,736 (81%) |
-| LUT       |                15,650 |
-| Registers |                 7,536 |
+| Logic     | 16,783 / 20,736 (81%) |
+| LUT       |                15,706 |
+| Registers |                 7,537 |
 | BSRAM     |         21 / 46 (46%) |
 | DSP       |              0.5 / 24 |
 
-The system domain runs at 48 MHz with an estimated Fmax of 48.013 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.622 MHz. Gowin power analysis estimates 327.972 mW and a 34.787 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
+The system domain runs at 48 MHz with an estimated Fmax of 50.877 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.255 MHz. Gowin power analysis estimates 327.998 mW and a 34.787 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
 
 ## Credits and licenses
 

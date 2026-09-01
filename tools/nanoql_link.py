@@ -38,6 +38,7 @@ REQUEST_MAGIC = b"NQ"
 RESPONSE_MAGIC = b"QN"
 PROTOCOL_VERSION = 1
 MAX_LINK_PAYLOAD = 245
+SD_COMMIT_STALL_TIMEOUT = 120.0
 GOWIN_BITSTREAM_MIN_SIZE = 256 * 1024
 GOWIN_BITSTREAM_MAX_SIZE = 2 * 1024 * 1024
 GOWIN_PREAMBLE = b"\xff" * 22 + b"\xa5\xc3"
@@ -89,6 +90,81 @@ FATFS_ERRORS = {
     18: "FR_TOO_MANY_OPEN_FILES",
     19: "FR_INVALID_PARAMETER",
 }
+
+
+def load_capstone():
+    """Load the optional MC68000 decoder only when debugging needs it."""
+    try:
+        import capstone
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "capstone"])
+        import capstone
+    return capstone
+
+
+def disassemble_m68000(data: bytes, address: int) -> list[tuple[int, bytes, str]]:
+    """Return raw bytes and readable MC68000 instructions."""
+    capstone = load_capstone()
+    decoder = capstone.Cs(
+        capstone.CS_ARCH_M68K,
+        capstone.CS_MODE_M68K_000 | capstone.CS_MODE_BIG_ENDIAN,
+    )
+    result = []
+    consumed = 0
+    for instruction in decoder.disasm(data, address):
+        relative = instruction.address - address
+        while consumed + 1 < relative:
+            raw = data[consumed:consumed + 2]
+            result.append((
+                address + consumed, raw,
+                f"dc.w ${int.from_bytes(raw, 'big'):04x}",
+            ))
+            consumed += 2
+        text = instruction.mnemonic
+        if instruction.op_str:
+            text += " " + instruction.op_str
+        raw = bytes(instruction.bytes)
+        result.append((instruction.address, raw, text))
+        consumed = relative + len(raw)
+    while consumed + 1 < len(data):
+        raw = data[consumed:consumed + 2]
+        result.append((
+            address + consumed, raw,
+            f"dc.w ${int.from_bytes(raw, 'big'):04x}",
+        ))
+        consumed += 2
+    return result
+
+
+def find_ir_address(data: bytes, base: int, pc: int, ir: int) -> int:
+    """Find the nearest aligned copy of IR at or just before prefetch PC."""
+    needle = ir.to_bytes(2, "big")
+    candidates = [
+        base + offset
+        for offset in range(0, max(0, len(data) - 1), 2)
+        if data[offset:offset + 2] == needle and base + offset <= pc
+    ]
+    return max(candidates) if candidates else max(base, (pc - 2) & ~1)
+
+
+def format_hex_dump(data: bytes, address: int) -> str:
+    lines = []
+    for offset in range(0, len(data), 16):
+        block = data[offset:offset + 16]
+        hexadecimal = " ".join(f"{value:02x}" for value in block)
+        text = "".join(chr(value) if 32 <= value < 127 else "." for value in block)
+        lines.append(f"{address + offset:06x}: {hexadecimal:<47}  {text}")
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def format_disassembly_dump(data: bytes, address: int) -> str:
+    # Keep this export directly reusable as assembly source. Addresses and raw
+    # opcodes remain available through the separate hexadecimal dump format.
+    lines = [
+        "\t" + instruction
+        for _item_address, _raw, instruction in disassemble_m68000(data, address)
+    ]
+    return "\n".join(lines) + ("\n" if lines else "")
 
 
 def _validate_gowin_binary(data: bytes, source: Path) -> None:
@@ -226,6 +302,7 @@ CMD_MDV_DATA_TRACE = 0x0C
 CMD_RESUME = 0x0D
 CMD_DEBUG = 0x0E
 CMD_DEBUG_RESULT = 0x0F
+CMD_DEBUG_INFO = 0x10
 CMD_FS_INFO = 0xE0
 CMD_FS_LIST_BEGIN = 0xE1
 CMD_FS_LIST_NEXT = 0xE2
@@ -1279,8 +1356,22 @@ class NanoQLLink:
                     2: "Installing the uploaded file...",
                     3: "Removing the previous backup...",
                 }
+                commit_deadline = time.monotonic() + SD_COMMIT_STALL_TIMEOUT
+                previous_phase = None
                 while len(response) == 2 and response[0] == 0xFE:
                     phase = response[1]
+                    if phase != previous_phase:
+                        commit_deadline = (
+                            time.monotonic() + SD_COMMIT_STALL_TIMEOUT
+                        )
+                        previous_phase = phase
+                    elif time.monotonic() >= commit_deadline:
+                        raise TimeoutError(
+                            "The microSD did not complete the file update within "
+                            f"{int(SD_COMMIT_STALL_TIMEOUT)} seconds. The upload was "
+                            "cancelled; power-cycle NanoQL before retrying, and replace "
+                            "the microSD if it becomes unusually hot."
+                        )
                     print(
                         commit_steps.get(
                             phase, "Completing the microSD update..."
@@ -1434,6 +1525,21 @@ class NanoQLLink:
             "ir": ir,
         }
 
+    def debugger_info(self) -> dict[str, int]:
+        response = self.transact(bytes((CMD_DEBUG_INFO,)) + bytes(8))
+        signature_at = response.find(b"DB2")
+        if signature_at < 0 or signature_at + 5 > len(response):
+            raise RuntimeError(
+                "This FPGA bitstream predates the current NanoQL debugger. "
+                "Program the newly generated NanoQL_sd_rom.fs into FPGA SRAM "
+                "or Flash, then retry."
+            )
+        return {
+            "version": 2,
+            "capabilities": response[signature_at + 3],
+            "max_read": response[signature_at + 4],
+        }
+
     def wait_idle(self, expect_hold: bool, timeout: float = 2.0) -> int:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -1460,8 +1566,13 @@ class NanoQLLink:
             self.wait_idle(expect_hold=True)
 
     def read(self, address: int, length: int, *, live: bool = False) -> bytes:
-        if length < 0 or address < 0x020000 or address + length > 0x040000:
-            raise ValueError("The block must remain within QL RAM 0x020000-0x03ffff.")
+        in_rom = address >= 0 and address + length <= 0x010000
+        in_ram = address >= 0x020000 and address + length <= 0x040000
+        if length < 0 or not (in_rom or in_ram):
+            raise ValueError(
+                "The block must remain within system ROM 0x000000-0x00ffff "
+                "or QL RAM 0x020000-0x03ffff."
+            )
         # A live diagnostic is also legal while the user has deliberately
         # halted fx68k. Preserve that state instead of waiting for a running
         # CPU and eventually reporting a misleading availability timeout.
@@ -1479,6 +1590,67 @@ class NanoQLLink:
                 raise RuntimeError("Incomplete RAM read response.")
             result.extend(response[-8:][:block_length])
         return bytes(result)
+
+    def disassembly_near_pc(
+        self, state: dict[str, object], instruction_count: int = 10,
+        before_count: int = 0,
+    ) -> tuple[int, list[tuple[int, bytes, str]]]:
+        if not 1 <= instruction_count <= 64 or not 0 <= before_count <= 64:
+            raise ValueError("Instruction counts must be between 0 and 64.")
+        info = self.debugger_info()
+        if not (info["capabilities"] & 0x02):
+            raise RuntimeError(
+                "The active FPGA bitstream cannot read the system ROM for "
+                "debugging. Program the current NanoQL_sd_rom.fs first."
+            )
+        pc = int(state["pc"]) & 0xFFFFFF
+        ir = int(state["ir"]) & 0xFFFF
+        if pc <= 0x00FFFF:
+            region_start, region_end = 0x000000, 0x010000
+        elif 0x020000 <= pc <= 0x03FFFF:
+            region_start, region_end = 0x020000, 0x040000
+        else:
+            raise ValueError(
+                f"PC 0x{pc:06x} is outside the readable system ROM and base QL RAM."
+            )
+        context_start = max(
+            region_start, (pc - max(12, before_count * 6 + 16)) & ~1
+        )
+        context_end = min(region_end, pc + instruction_count * 10 + 32)
+        context = self.read(context_start, context_end - context_start)
+        current = find_ir_address(context, context_start, pc, ir)
+        current_offset = current - context_start
+        previous = disassemble_m68000(context[:current_offset], context_start)
+        previous = [
+            item for item in previous if item[0] + len(item[1]) <= current
+        ][-before_count:] if before_count else []
+        following = disassemble_m68000(
+            context[current_offset:], current
+        )[:instruction_count + 1]
+        return current, previous + following
+
+    def disassembly_at(
+        self, address: int, instruction_count: int = 16
+    ) -> list[tuple[int, bytes, str]]:
+        if instruction_count < 1 or instruction_count > 64:
+            raise ValueError("The instruction count must be between 1 and 64.")
+        info = self.debugger_info()
+        if address <= 0x00FFFF:
+            region_end = 0x010000
+            required_capability = 0x02
+        elif 0x020000 <= address <= 0x03FFFF:
+            region_end = 0x040000
+            required_capability = 0x01
+        else:
+            raise ValueError(
+                "The address must be in system ROM 0x000000-0x00ffff or "
+                "QL RAM 0x020000-0x03ffff."
+            )
+        if not (info["capabilities"] & required_capability):
+            raise RuntimeError("The active FPGA debugger cannot read this region.")
+        address &= ~1
+        code = self.read(address, min(192, region_end - address))
+        return disassemble_m68000(code, address)[:instruction_count]
 
     def qdos_memory_map(self) -> dict[str, int]:
         # A live host read is arbitrated between normal CPU SDRAM cycles. Read
@@ -2657,6 +2829,35 @@ def main() -> int:
         "--resume", action="store_true",
         help="resume afterward if the CPU was running before the snapshot",
     )
+    registers_parser.add_argument(
+        "--no-disassembly", action="store_true",
+        help="do not decode instructions around the captured PC",
+    )
+    disassemble_parser = subparsers.add_parser(
+        "disassemble",
+        aliases=("disasm",),
+        help="halt the 68000 and show raw bytes plus MC68000 code around its PC",
+    )
+    disassemble_parser.add_argument(
+        "--count", type=int, default=10,
+        help="number of decoded instructions (default: 10)",
+    )
+    disassemble_parser.add_argument(
+        "--resume", action="store_true",
+        help="resume afterward if the CPU was running before the snapshot",
+    )
+    disassemble_parser.add_argument(
+        "--address", type=parse_number,
+        help="decode from this ROM/RAM address instead of locating the current IR",
+    )
+    snapshot_parser = subparsers.add_parser(
+        "debug-snapshot",
+        help="capture registers and machine-readable code for the graphical debugger",
+    )
+    snapshot_parser.add_argument("--before", type=int, default=20)
+    snapshot_parser.add_argument("--after", type=int, default=20)
+    snapshot_parser.add_argument("--address", type=parse_number)
+    snapshot_parser.add_argument("--resume", action="store_true")
     subparsers.add_parser("qdos", help="leave the injected program and restart QDOS")
     subparsers.add_parser("demo", help="inject a bare-metal 68000 test pattern")
     subparsers.add_parser(
@@ -2789,6 +2990,11 @@ def main() -> int:
     dump_parser.add_argument(
         "--halt", action="store_true",
         help="freeze and resume the CPU around the dump for a coherent snapshot",
+    )
+    dump_parser.add_argument(
+        "--format", choices=("auto", "binary", "hex", "disassembly"),
+        default="auto",
+        help="output format; auto uses binary for .bin and hex text otherwise",
     )
 
     verify_parser = subparsers.add_parser(
@@ -3091,49 +3297,99 @@ def main() -> int:
         elif args.command == "resume":
             link.resume()
             print("68000 resumed without reset.")
-        elif args.command == "registers":
+        elif args.command in (
+            "registers", "disassemble", "disasm", "debug-snapshot"
+        ):
             was_held = bool(link.status() & 0x08)
             if not was_held:
                 link.hold()
             state = link.cpu_debug_state()
-            data_registers = state["data"]
-            address_registers = state["address"]
-            sr = state["sr"]
-            active_a7 = state["ssp"] if sr & 0x2000 else state["usp"]
-            print("fx68k hardware state:")
-            print("  " + "  ".join(
-                f"D{index}=0x{value:08x}"
-                for index, value in enumerate(data_registers[:4])
-            ))
-            print("  " + "  ".join(
-                f"D{index + 4}=0x{value:08x}"
-                for index, value in enumerate(data_registers[4:])
-            ))
-            print("  " + "  ".join(
-                f"A{index}=0x{value:08x}"
-                for index, value in enumerate(address_registers[:4])
-            ))
-            print("  " + "  ".join(
-                [
-                    *(f"A{index + 4}=0x{value:08x}"
-                      for index, value in enumerate(address_registers[4:])),
-                    f"A7=0x{active_a7:08x}",
-                ]
-            ))
-            print(
-                f"  USP=0x{state['usp']:08x}  SSP=0x{state['ssp']:08x}"
-            )
-            print(
-                f"  PC(prefetch)=0x{state['pc']:08x}  "
-                f"IR=0x{state['ir']:04x}  SR=0x{sr:04x}"
-            )
-            print(
-                "  Flags: "
-                f"T={(sr >> 15) & 1} S={(sr >> 13) & 1} "
-                f"I={(sr >> 8) & 7} X={(sr >> 4) & 1} "
-                f"N={(sr >> 3) & 1} Z={(sr >> 2) & 1} "
-                f"V={(sr >> 1) & 1} C={sr & 1}"
-            )
+            if args.command == "registers":
+                data_registers = state["data"]
+                address_registers = state["address"]
+                sr = state["sr"]
+                active_a7 = state["ssp"] if sr & 0x2000 else state["usp"]
+                print("fx68k hardware state:")
+                print("  " + "  ".join(
+                    f"D{index}=0x{value:08x}"
+                    for index, value in enumerate(data_registers[:4])
+                ))
+                print("  " + "  ".join(
+                    f"D{index + 4}=0x{value:08x}"
+                    for index, value in enumerate(data_registers[4:])
+                ))
+                print("  " + "  ".join(
+                    f"A{index}=0x{value:08x}"
+                    for index, value in enumerate(address_registers[:4])
+                ))
+                print("  " + "  ".join(
+                    [
+                        *(f"A{index + 4}=0x{value:08x}"
+                          for index, value in enumerate(address_registers[4:])),
+                        f"A7=0x{active_a7:08x}",
+                    ]
+                ))
+                print(
+                    f"  USP=0x{state['usp']:08x}  SSP=0x{state['ssp']:08x}"
+                )
+                print(
+                    f"  PC(prefetch)=0x{state['pc']:08x}  "
+                    f"IR=0x{state['ir']:04x}  SR=0x{sr:04x}"
+                )
+                print(
+                    "  Flags: "
+                    f"T={(sr >> 15) & 1} S={(sr >> 13) & 1} "
+                    f"I={(sr >> 8) & 7} X={(sr >> 4) & 1} "
+                    f"N={(sr >> 3) & 1} Z={(sr >> 2) & 1} "
+                    f"V={(sr >> 1) & 1} C={sr & 1}"
+                )
+            if args.command != "registers" or not args.no_disassembly:
+                count = (
+                    args.after if args.command == "debug-snapshot"
+                    else args.count if args.command in ("disassemble", "disasm")
+                    else 10
+                )
+                try:
+                    requested_address = getattr(args, "address", None)
+                    if requested_address is None:
+                        current, instructions = link.disassembly_near_pc(
+                            state, count,
+                            args.before if args.command == "debug-snapshot" else 0,
+                        )
+                    else:
+                        current = requested_address & ~1
+                        instructions = link.disassembly_at(current, count)
+                    if args.command == "debug-snapshot":
+                        snapshot = {
+                            **state,
+                            "current": current,
+                            "was_held": was_held,
+                            "instructions": [
+                                {
+                                    "address": address,
+                                    "raw": raw.hex(" "),
+                                    "text": text,
+                                }
+                                for address, raw, text in instructions
+                            ],
+                        }
+                        print("NANOQL_DEBUG_JSON " + json.dumps(snapshot))
+                    else:
+                        print(
+                            f"MC68000 code near PC (current at 0x{current:06x}):"
+                        )
+                        for address, raw, text in instructions:
+                            marker = ">" if address == current else " "
+                            print(
+                                f"{marker} 0x{address:06x}: "
+                                f"{raw.hex(' '):<29}  {text}"
+                            )
+                except Exception as error:
+                    if args.command == "debug-snapshot":
+                        if args.resume and not was_held:
+                            link.resume()
+                        raise
+                    print(f"Disassembly unavailable: {error}")
             if args.resume and not was_held:
                 link.resume()
                 print("68000 resumed without reset.")
@@ -3296,9 +3552,20 @@ def main() -> int:
             if args.command == "dump":
                 output = args.output.expanduser().resolve()
                 output.parent.mkdir(parents=True, exist_ok=True)
-                output.write_bytes(data)
+                output_format = args.format
+                if output_format == "auto":
+                    output_format = "binary" if output.suffix.lower() == ".bin" else "hex"
+                if output_format == "binary":
+                    output.write_bytes(data)
+                elif output_format == "disassembly":
+                    output.write_text(
+                        format_disassembly_dump(data, address), encoding="utf-8"
+                    )
+                else:
+                    output.write_text(format_hex_dump(data, address), encoding="utf-8")
                 print(
-                    f"Dumped {len(data)} bytes from 0x{address:06x} to {output}."
+                    f"Dumped {len(data)} bytes from 0x{address:06x} to {output} "
+                    f"as {output_format}."
                 )
             elif data == expected:
                 print(

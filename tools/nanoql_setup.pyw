@@ -76,7 +76,7 @@ HOMEBREW_URL = "https://brew.sh/"
 AUTO_PORT = "Automatic detection"
 SELECT_PORT = "Select a serial port"
 WORKFLOW_REVISION = "7"
-CURRENT_RELEASE_TAG = "v0.3.6"
+CURRENT_RELEASE_TAG = "v0.3.7"
 GITHUB_RELEASE_API = (
     "https://api.github.com/repos/pR-0000/NanoQL/releases/latest"
 )
@@ -143,9 +143,38 @@ TRANSLATIONS = {
         "2. BL616": "2. BL616",
         "3. FPGA": "3. FPGA",
         "4. NanoQL Link": "4. NanoQL Link",
+        "Debugger": "Débogueur",
         "Connection and remote keyboard": "Connexion et clavier distant",
         "Microdrive synchronization": "Synchronisation Microdrive",
         "Program injection": "Injection de programme",
+        "Capture and halt": "Capturer et arrêter",
+        "Capture and continue": "Capturer et continuer",
+        "Code address (empty = current PC)": "Adresse du code (vide = PC courant)",
+        "Instructions": "Instructions",
+        "Before PC": "Avant le PC",
+        "After PC": "Après le PC",
+        "Memory and execution": "Mémoire et exécution",
+        "RAM/ROM address": "Adresse RAM/ROM",
+        "Length": "Longueur",
+        "Output file": "Fichier de sortie",
+        "Dump memory": "Dumper la mémoire",
+        "New PC": "Nouveau PC",
+        "Restart CPU at PC": "Redémarrer le CPU au PC",
+        "Dumping memory": "Dump de la mémoire",
+        "Restarting CPU at PC": "Redémarrage du CPU au PC",
+        "Select the memory dump output": "Choisir le fichier du dump mémoire",
+        "Raw opcodes": "Opcodes bruts",
+        "MC68000 disassembly": "Désassemblage MC68000",
+        "Latest hardware capture": "Dernière capture matérielle",
+        "Processor state": "État du processeur",
+        "No capture yet": "Aucune capture",
+        "Capturing 68000 state": "Capture de l'état du 68000",
+        "Code ranges must be between 0 and 64 instructions.": "Les plages de code doivent être comprises entre 0 et 64 instructions.",
+        "The code address is invalid.": "L'adresse du code est invalide.",
+        "The dump address or length is invalid.": "L'adresse ou la longueur du dump est invalide.",
+        "PC must be an even ROM/base-RAM address and SSP must be an even base-RAM address.": "Le PC doit être une adresse paire de ROM/RAM de base et le SSP une adresse paire de RAM de base.",
+        "68000 was already halted": "Le 68000 était déjà arrêté",
+        "68000 captured from running state": "68000 capturé pendant son exécution",
         "Advanced": "Avancé",
         "External JTAG (recovery)": "JTAG externe (récupération)",
         "NanoQL Link (normal updates)": "NanoQL Link (mises à jour normales)",
@@ -1089,6 +1118,24 @@ class NanoQLSetup(tk.Tk):
         self.binary_address = tk.StringVar(value="0x030000")
         self.binary_pc = tk.StringVar()
         self.binary_stack = tk.StringVar(value="0x03FFF0")
+        self.debug_address = tk.StringVar()
+        self.debug_before = tk.StringVar(value="20")
+        self.debug_after = tk.StringVar(value="20")
+        self.debug_dump_address = tk.StringVar(value="0x020000")
+        self.debug_dump_length = tk.StringVar(value="0x8000")
+        self.debug_dump_path = tk.StringVar()
+        self.debug_dump_format = tk.StringVar(value="binary")
+        self.debug_restart_pc = tk.StringVar(value="0x030000")
+        self.debug_restart_ssp = tk.StringVar(value="0x03FFF0")
+        self.debug_state = tk.StringVar(value=self._t("No capture yet"))
+        self.debug_register_vars = {
+            name: tk.StringVar(value="--------")
+            for name in (
+                *(f"D{index}" for index in range(8)),
+                *(f"A{index}" for index in range(8)),
+                "USP", "SSP", "PC", "IR", "SR", "FLAGS",
+            )
+        }
         self.link_port = tk.StringVar(value=AUTO_PORT)
         self.gowin_path = tk.StringVar(value=find_gowin())
         self.loader_path = tk.StringVar(value=find_fpga_programmer())
@@ -1129,6 +1176,15 @@ class NanoQLSetup(tk.Tk):
             "binary_address": self.binary_address,
             "binary_pc": self.binary_pc,
             "binary_stack": self.binary_stack,
+            "debug_address": self.debug_address,
+            "debug_before": self.debug_before,
+            "debug_after": self.debug_after,
+            "debug_dump_address": self.debug_dump_address,
+            "debug_dump_length": self.debug_dump_length,
+            "debug_dump_path": self.debug_dump_path,
+            "debug_dump_format": self.debug_dump_format,
+            "debug_restart_pc": self.debug_restart_pc,
+            "debug_restart_ssp": self.debug_restart_ssp,
             "link_port": self.link_port,
             "gowin_path": self.gowin_path,
             "loader_path": self.loader_path,
@@ -1999,7 +2055,7 @@ class NanoQLSetup(tk.Tk):
 
     def _build_link_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(2, weight=1)
+        parent.rowconfigure(3, weight=1)
         self._instruction(
             parent, 0, "Connection",
             "Connect the Tang Nano to the computer with a USB-C data cable before using any of these tools.",
@@ -2011,46 +2067,53 @@ class NanoQLSetup(tk.Tk):
             wraplength=650,
         )
 
+        port_bar = ttk.Frame(parent)
+        port_bar.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        port_bar.columnconfigure(1, weight=1)
+        ttk.Label(port_bar, text="NanoQL Link port", style="Section.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        self.link_port_combo = ttk.Combobox(
+            port_bar, textvariable=self.link_port, state="readonly", width=62
+        )
+        self.link_port_combo.grid(row=0, column=1, sticky="ew", padx=8)
+        ttk.Button(port_bar, text="Refresh", command=self.refresh_ports).grid(
+            row=0, column=2
+        )
+        self._button(port_bar, "Check connection", self.link_status).grid(
+            row=0, column=3, padx=(8, 0)
+        )
+
         notebook = ttk.Notebook(parent)
-        notebook.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
+        notebook.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
         connection = ttk.Frame(notebook, padding=14)
         microdrive = ttk.Frame(notebook, padding=14)
         binary = ttk.Frame(notebook, padding=14)
+        debugger = ttk.Frame(notebook, padding=14)
         notebook.add(connection, text="Connection and remote keyboard")
         notebook.add(microdrive, text="Microdrive synchronization")
         notebook.add(binary, text="Program injection")
+        notebook.add(debugger, text="Debugger")
         self._build_link_connection_tab(connection)
         self._build_microdrive_tab(microdrive)
         self._build_binary_tab(binary)
+        self._build_debugger_tab(debugger)
 
         BoardGuide(
             parent,
             "s1",
             "After NanoQL starts, briefly press the highlighted S1 button to enable NanoQL Link.",
-        ).grid(row=0, column=1, rowspan=3, sticky="ne", padx=(18, 0))
+        ).grid(row=0, column=1, rowspan=4, sticky="ne", padx=(18, 0))
 
     def _build_link_connection_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
-        ttk.Label(parent, text="NanoQL Link port", style="Section.TLabel").grid(
-            row=0, column=0, sticky="w", pady=8
-        )
-        self.link_port_combo = ttk.Combobox(
-            parent, textvariable=self.link_port, state="readonly", width=62
-        )
-        self.link_port_combo.grid(row=0, column=1, sticky="ew", padx=8, pady=8)
-        ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
-            row=0, column=2, pady=8
-        )
         ttk.Label(
             parent,
             text="QL ROM keyboard: automatic from the FPGA overlay",
             style="Section.TLabel",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=8)
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=8)
         actions = ttk.Frame(parent)
-        actions.grid(row=2, column=0, columnspan=3, sticky="w", pady=(18, 8))
-        self._button(actions, "Check connection", self.link_status).pack(
-            side="left", padx=(0, 8)
-        )
+        actions.grid(row=1, column=0, columnspan=3, sticky="w", pady=(18, 8))
         self.start_keyboard_button = self._button(
             actions, "Start remote keyboard", self.start_remote_keyboard
         )
@@ -2064,22 +2127,22 @@ class NanoQLSetup(tk.Tk):
         self.stop_keyboard_button.pack(side="left", padx=(0, 8))
         self._button(actions, "30 s USB test", self.link_stress).pack(side="left")
         self._instruction(
-            parent, 3, "Purpose",
+            parent, 2, "Purpose",
             "The remote keyboard uses the computer keyboard through NanoQL Link; it is separate from a physical USB keyboard connected through a hub.",
             columnspan=3, wraplength=440,
         )
         self._instruction(
-            parent, 4, "Connection",
+            parent, 3, "Connection",
             "Connect the Tang Nano directly to the computer with a USB-C data cable.",
             columnspan=3, wraplength=440,
         )
         self._instruction(
-            parent, 5, "Layout",
+            parent, 4, "Layout",
             "The QL ROM layout is selected automatically from the FPGA overlay. The computer layout is read by the operating system.",
             columnspan=3, wraplength=440,
         )
         self._instruction(
-            parent, 6, "Stop",
+            parent, 5, "Stop",
             "Use the Stop button or F6 to return control to the assistant.",
             columnspan=3, wraplength=440,
         )
@@ -2102,52 +2165,193 @@ class NanoQLSetup(tk.Tk):
             ttk.Entry(parent, textvariable=variable, width=20).grid(
                 row=row, column=1, sticky="w", padx=8, pady=8
             )
-        ttk.Label(parent, text="NanoQL Link port", style="Section.TLabel").grid(
-            row=4, column=0, sticky="w", pady=8
-        )
-        self.binary_port_combo = ttk.Combobox(
-            parent, textvariable=self.link_port, state="readonly", width=62
-        )
-        self.binary_port_combo.grid(row=4, column=1, sticky="ew", padx=8, pady=8)
-        ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
-            row=4, column=2, pady=8
-        )
         actions = ttk.Frame(parent)
-        actions.grid(row=5, column=0, columnspan=3, sticky="w", pady=(18, 8))
+        actions.grid(row=4, column=0, columnspan=3, sticky="w", pady=(18, 8))
         self._button(actions, "Inject and execute", self.inject_binary).pack(
             side="left", padx=(0, 8)
         )
         self._button(actions, "Restart QDOS", self.restart_qdos).pack(side="left")
-        debug_actions = ttk.Frame(parent)
-        debug_actions.grid(
-            row=6, column=0, columnspan=3, sticky="w", pady=(0, 8)
-        )
-        self._button(debug_actions, "Diagnostics", self.link_diagnose).pack(
-            side="left", padx=(0, 8)
-        )
-        self._button(debug_actions, "Halt 68000", self.halt_cpu).pack(
-            side="left", padx=(0, 8)
-        )
-        self._button(
-            debug_actions, "68000 registers", self.read_cpu_registers
-        ).pack(side="left", padx=(0, 8))
-        self._button(debug_actions, "Resume 68000", self.resume_cpu).pack(
-            side="left"
-        )
         self._instruction(
-            parent, 7, "Program",
+            parent, 5, "Program",
             "Select a raw big-endian 68000 program, then choose its load address, PC, and SSP.",
             columnspan=3,
         )
         self._instruction(
-            parent, 8, "Addresses",
+            parent, 6, "Addresses",
             "NanoQL stops the CPU, writes and verifies the program, then executes it directly.",
             columnspan=3,
         )
         self._instruction(
-            parent, 9, "Limits",
+            parent, 7, "Limits",
             "QDOS executable headers and relocation are not supported in this direct mode.",
             columnspan=3,
+        )
+
+    def _build_debugger_tab(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(3, weight=1)
+
+        controls = ttk.Frame(parent)
+        controls.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        ttk.Label(
+            controls, text="Code address (empty = current PC)",
+            style="Section.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Entry(controls, textvariable=self.debug_address, width=12).grid(
+            row=0, column=1, padx=(8, 16)
+        )
+        ttk.Label(controls, text="Before PC", style="Section.TLabel").grid(
+            row=0, column=2, sticky="w"
+        )
+        ttk.Spinbox(
+            controls, from_=0, to=64, textvariable=self.debug_before, width=5
+        ).grid(row=0, column=3, padx=(8, 16))
+        ttk.Label(controls, text="After PC", style="Section.TLabel").grid(
+            row=0, column=4, sticky="w"
+        )
+        ttk.Spinbox(
+            controls, from_=1, to=64, textvariable=self.debug_after, width=5
+        ).grid(row=0, column=5, padx=(8, 0))
+
+        actions = ttk.Frame(parent)
+        actions.grid(row=1, column=0, sticky="w", pady=(0, 8))
+        self._button(actions, "Capture and halt", self.debug_capture).pack(
+            side="left", padx=(0, 8)
+        )
+        self._button(
+            actions, "Capture and continue",
+            lambda: self.debug_capture(resume=True),
+        ).pack(side="left", padx=(0, 8))
+        self._button(actions, "Halt 68000", self.halt_cpu).pack(
+            side="left", padx=(0, 8)
+        )
+        self._button(actions, "Resume 68000", self.resume_cpu).pack(
+            side="left", padx=(0, 8)
+        )
+        self._button(actions, "Restart QDOS", self.restart_qdos).pack(
+            side="left", padx=(0, 8)
+        )
+        self._button(actions, "Diagnostics", self.link_diagnose).pack(side="left")
+
+        registers = ttk.LabelFrame(
+            parent, text="Latest hardware capture", padding=8
+        )
+        registers.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        for column in range(8):
+            registers.columnconfigure(column, weight=1)
+        register_names = [
+            *(f"D{i}" for i in range(8)), *(f"A{i}" for i in range(8)),
+            "USP", "SSP", "PC", "IR", "SR", "FLAGS",
+        ]
+        for index, name in enumerate(register_names):
+            row, column = divmod(index, 8)
+            cell = ttk.Frame(registers)
+            cell.grid(row=row, column=column, sticky="w", padx=5, pady=2)
+            ttk.Label(cell, text=f"{name}:", style="Section.TLabel").pack(
+                side="left"
+            )
+            ttk.Entry(
+                cell, textvariable=self.debug_register_vars[name],
+                font=("Consolas", 9), width=10 if name != "FLAGS" else 28,
+                state="readonly",
+            ).pack(side="left", padx=(4, 0))
+        ttk.Label(
+            registers, textvariable=self.debug_state
+        ).grid(row=3, column=0, columnspan=8, sticky="w", padx=5, pady=(4, 0))
+
+        code = ttk.Frame(parent)
+        code.grid(row=3, column=0, sticky="nsew")
+        code.columnconfigure(0, weight=1)
+        code.columnconfigure(1, weight=1)
+        code.rowconfigure(1, weight=1)
+        ttk.Label(code, text="Raw opcodes", style="Section.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(code, text="MC68000 disassembly", style="Section.TLabel").grid(
+            row=0, column=1, sticky="w", padx=(8, 0)
+        )
+        self.debug_raw = tk.Text(
+            code, wrap="none", state="disabled", font=("Consolas", 10),
+            width=42, height=12,
+        )
+        self.debug_asm = tk.Text(
+            code, wrap="none", state="disabled", font=("Consolas", 10),
+            width=54, height=12,
+        )
+        scrollbar = ttk.Scrollbar(code, orient="vertical")
+        raw_horizontal = ttk.Scrollbar(
+            code, orient="horizontal", command=self.debug_raw.xview
+        )
+        asm_horizontal = ttk.Scrollbar(
+            code, orient="horizontal", command=self.debug_asm.xview
+        )
+        self.debug_raw.configure(xscrollcommand=raw_horizontal.set)
+        self.debug_asm.configure(xscrollcommand=asm_horizontal.set)
+        self.debug_raw.grid(row=1, column=0, sticky="nsew")
+        self.debug_asm.grid(row=1, column=1, sticky="nsew", padx=(8, 0))
+        scrollbar.grid(row=1, column=2, sticky="ns")
+        raw_horizontal.grid(row=2, column=0, sticky="ew")
+        asm_horizontal.grid(row=2, column=1, sticky="ew", padx=(8, 0))
+
+        def scroll_both(*args) -> None:
+            self.debug_raw.yview(*args)
+            self.debug_asm.yview(*args)
+
+        scrollbar.configure(command=scroll_both)
+        self.debug_raw.configure(yscrollcommand=scrollbar.set)
+        for widget in (self.debug_raw, self.debug_asm):
+            widget.bind(
+                "<MouseWheel>",
+                lambda event: self._scroll_debug_code(event), add="+",
+            )
+
+        tools = ttk.LabelFrame(parent, text="Memory and execution", padding=8)
+        tools.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        for column in (1, 3, 5):
+            tools.columnconfigure(column, weight=1 if column == 5 else 0)
+        ttk.Label(tools, text="RAM/ROM address", style="Section.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Entry(tools, textvariable=self.debug_dump_address, width=12).grid(
+            row=0, column=1, sticky="w", padx=(8, 16)
+        )
+        ttk.Label(tools, text="Length", style="Section.TLabel").grid(
+            row=0, column=2, sticky="w"
+        )
+        ttk.Entry(tools, textvariable=self.debug_dump_length, width=12).grid(
+            row=0, column=3, sticky="w", padx=(8, 16)
+        )
+        ttk.Label(tools, text="Output file", style="Section.TLabel").grid(
+            row=0, column=4, sticky="w"
+        )
+        ttk.Entry(tools, textvariable=self.debug_dump_path).grid(
+            row=0, column=5, sticky="ew", padx=8
+        )
+        ttk.Button(tools, text="Browse...", command=self._browse_debug_dump).grid(
+            row=0, column=6
+        )
+        self.debug_dump_format_combo = ttk.Combobox(
+            tools, textvariable=self.debug_dump_format, state="readonly",
+            values=("binary", "hex", "disassembly"), width=14,
+        )
+        self.debug_dump_format_combo.grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self._button(tools, "Dump memory", self.debug_dump_memory).grid(
+            row=1, column=1, sticky="w", padx=(8, 20), pady=(8, 0)
+        )
+        ttk.Label(tools, text="New PC", style="Section.TLabel").grid(
+            row=1, column=2, sticky="e", pady=(8, 0)
+        )
+        ttk.Entry(tools, textvariable=self.debug_restart_pc, width=12).grid(
+            row=1, column=3, sticky="w", padx=(8, 16), pady=(8, 0)
+        )
+        ttk.Label(tools, text="SSP", style="Section.TLabel").grid(
+            row=1, column=4, sticky="e", pady=(8, 0)
+        )
+        ttk.Entry(tools, textvariable=self.debug_restart_ssp, width=12).grid(
+            row=1, column=5, sticky="w", padx=8, pady=(8, 0)
+        )
+        self._button(tools, "Restart CPU at PC", self.debug_restart_at_pc).grid(
+            row=1, column=6, sticky="e", pady=(8, 0)
         )
 
     def _build_advanced_tab(self, parent: ttk.Frame) -> None:
@@ -2193,29 +2397,19 @@ class NanoQLSetup(tk.Tk):
         ttk.Entry(parent, textvariable=self.mdv_name, width=16).grid(
             row=1, column=1, sticky="w", padx=8, pady=8
         )
-        ttk.Label(parent, text="NanoQL Link port", style="Section.TLabel").grid(
-            row=2, column=0, sticky="w", pady=8
-        )
-        self.mdv_port_combo = ttk.Combobox(
-            parent, textvariable=self.link_port, state="readonly", width=62
-        )
-        self.mdv_port_combo.grid(row=2, column=1, sticky="ew", padx=8, pady=8)
-        ttk.Button(parent, text="Refresh", command=self.refresh_ports).grid(
-            row=2, column=2, pady=8
-        )
         self.sync_microdrive_button = self._button(
             parent, "Synchronize and mount MDV1", self.sync_microdrive
         )
         self.sync_microdrive_button.grid(
-            row=3, column=0, columnspan=3, sticky="w", pady=(18, 8)
+            row=2, column=0, columnspan=3, sticky="w", pady=(18, 8)
         )
         self._instruction(
-            parent, 4, "Remote keyboard",
+            parent, 3, "Remote keyboard",
             "The active remote keyboard is paused automatically during synchronization and resumes immediately afterward.",
             columnspan=3, wraplength=720,
         )
         self._instruction(
-            parent, 5, "Alternative",
+            parent, 4, "Alternative",
             "Normal users can copy folders to NanoQL/Microdrives on the microSD and build MDV1 from the F12 overlay without NanoQL Link.",
             columnspan=3, wraplength=720,
         )
@@ -2454,6 +2648,17 @@ class NanoQLSetup(tk.Tk):
         if path:
             self.binary_path.set(path)
 
+    def _browse_debug_dump(self) -> None:
+        output_format = self.debug_dump_format.get()
+        extension = ".bin" if output_format == "binary" else ".txt"
+        path = filedialog.asksaveasfilename(
+            title=self._t("Select the memory dump output"),
+            defaultextension=extension,
+            filetypes=(("Binary", "*.bin"), ("Text", "*.txt"), ("All files", "*")),
+        )
+        if path:
+            self.debug_dump_path.set(path)
+
     def _open_url(self, url: str) -> None:
         webbrowser.open(url)
 
@@ -2547,8 +2752,6 @@ class NanoQLSetup(tk.Tk):
         bl616_values = (select_port, *labels)
         self.link_port_combo.configure(values=link_values)
         self.fpga_link_port_combo.configure(values=link_values)
-        self.mdv_port_combo.configure(values=link_values)
-        self.binary_port_combo.configure(values=link_values)
         self.bl616_port_combo.configure(values=bl616_values)
 
         self.link_port.set(next(
@@ -2899,6 +3102,175 @@ class NanoQLSetup(tk.Tk):
 
     def read_cpu_registers(self) -> None:
         self._run(self._link_command("registers"), "Reading 68000 registers")
+
+    def _scroll_debug_code(self, event):
+        delta = getattr(event, "delta", 0)
+        if delta:
+            units = -max(1, abs(int(delta / 120))) if delta > 0 else max(
+                1, abs(int(delta / 120))
+            )
+            self.debug_raw.yview_scroll(units, "units")
+            self.debug_asm.yview_scroll(units, "units")
+        return "break"
+
+    def debug_capture(self, resume: bool = False) -> None:
+        try:
+            before = int(self.debug_before.get().strip(), 0)
+            after = int(self.debug_after.get().strip(), 0)
+            if not 0 <= before <= 64 or not 1 <= after <= 64:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror(
+                self._t("Debugger"),
+                self._t("Code ranges must be between 0 and 64 instructions."),
+            )
+            return
+
+        command = self._link_command("debug-snapshot")
+        command.extend(["--before", str(before), "--after", str(after)])
+        address = self.debug_address.get().strip()
+        if address:
+            try:
+                int(address, 0)
+            except ValueError:
+                messagebox.showerror(
+                    self._t("Debugger"), self._t("The code address is invalid.")
+                )
+                return
+            command.extend(["--address", address])
+        if resume:
+            command.append("--resume")
+
+        title = "Capturing 68000 state"
+        self.operation_busy = True
+        self._set_status(title)
+        self._start_progress(title)
+        for widget in self.busy_widgets:
+            widget.configure(state="disabled")
+        self._refresh_keyboard_buttons()
+        self._append_log(f"\n> {' '.join(command)}\n")
+
+        def worker() -> None:
+            try:
+                completed = subprocess.run(
+                    command, cwd=REPOSITORY, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=120,
+                    creationflags=CREATE_NO_WINDOW,
+                )
+                output = (completed.stdout or "") + (completed.stderr or "")
+                marker = "NANOQL_DEBUG_JSON "
+                snapshot_line = next(
+                    (line[len(marker):] for line in output.splitlines()
+                     if line.startswith(marker)),
+                    None,
+                )
+                visible = "\n".join(
+                    line for line in output.splitlines()
+                    if not line.startswith(marker)
+                )
+                if visible:
+                    self.events.put(("log", visible + "\n"))
+                if completed.returncode or snapshot_line is None:
+                    raise RuntimeError(command_failure_message(
+                        command, output, completed.returncode or 1
+                    ))
+                self.events.put(("debug_snapshot_done", json.loads(snapshot_line)))
+            except Exception as error:
+                self.events.put(("error", (title, str(error))))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _display_debug_snapshot(self, snapshot: dict) -> None:
+        data = snapshot["data"]
+        address = snapshot["address"]
+        sr = int(snapshot["sr"])
+        active_a7 = int(snapshot["ssp"] if sr & 0x2000 else snapshot["usp"])
+        for index, value in enumerate(data):
+            self.debug_register_vars[f"D{index}"].set(f"{int(value):08X}")
+        for index, value in enumerate(address):
+            self.debug_register_vars[f"A{index}"].set(f"{int(value):08X}")
+        self.debug_register_vars["A7"].set(f"{active_a7:08X}")
+        for name in ("usp", "ssp", "pc"):
+            self.debug_register_vars[name.upper()].set(
+                f"{int(snapshot[name]):08X}"
+            )
+        self.debug_register_vars["IR"].set(f"{int(snapshot['ir']):04X}")
+        self.debug_register_vars["SR"].set(f"{sr:04X}")
+        flags = (
+            f"T{(sr >> 15) & 1} S{(sr >> 13) & 1} I{(sr >> 8) & 7} "
+            f"X{(sr >> 4) & 1} N{(sr >> 3) & 1} Z{(sr >> 2) & 1} "
+            f"V{(sr >> 1) & 1} C{sr & 1}"
+        )
+        self.debug_register_vars["FLAGS"].set(flags)
+        self.debug_restart_pc.set(f"0x{int(snapshot['pc']) & 0xFFFFFF:06X}")
+        self.debug_restart_ssp.set(f"0x{active_a7:08X}")
+        self.debug_state.set(
+            self._t("68000 was already halted") if snapshot.get("was_held")
+            else self._t("68000 captured from running state")
+        )
+
+        current = int(snapshot["current"])
+        raw_lines = []
+        asm_lines = []
+        for instruction in snapshot["instructions"]:
+            marker = ">" if int(instruction["address"]) == current else " "
+            raw_lines.append(
+                f"{marker} {int(instruction['address']):06X}  "
+                f"{instruction['raw']}"
+            )
+            asm_lines.append(f"{marker} {instruction['text']}")
+        for widget, lines in (
+            (self.debug_raw, raw_lines), (self.debug_asm, asm_lines)
+        ):
+            widget.configure(state="normal")
+            widget.delete("1.0", "end")
+            widget.insert("1.0", "\n".join(lines))
+            widget.configure(state="disabled")
+            widget.yview_moveto(0.0)
+
+    def debug_dump_memory(self) -> None:
+        try:
+            address = int(self.debug_dump_address.get().strip(), 0)
+            length = int(self.debug_dump_length.get().strip(), 0)
+            if length <= 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror(
+                self._t("Debugger"), self._t("The dump address or length is invalid.")
+            )
+            return
+        output = self.debug_dump_path.get().strip()
+        if not output:
+            self._browse_debug_dump()
+            output = self.debug_dump_path.get().strip()
+        if not output:
+            return
+        command = self._link_command("dump")
+        command.extend([
+            f"0x{address:x}", f"0x{length:x}", output,
+            "--halt", "--format", self.debug_dump_format.get(),
+        ])
+        self._run(command, "Dumping memory")
+
+    def debug_restart_at_pc(self) -> None:
+        try:
+            pc = int(self.debug_restart_pc.get().strip(), 0)
+            ssp = int(self.debug_restart_ssp.get().strip(), 0)
+            pc_valid = 0 <= pc <= 0x00FFFF or 0x020000 <= pc <= 0x03FFFF
+            if not pc_valid or pc & 1 or not 0x020000 <= ssp <= 0x040000 or ssp & 1:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror(
+                self._t("Debugger"),
+                self._t(
+                    "PC must be an even ROM/base-RAM address and SSP must be an "
+                    "even base-RAM address."
+                ),
+            )
+            return
+        command = self._link_command("run")
+        command.extend(["--pc", f"0x{pc:x}", "--stack", f"0x{ssp:x}"])
+        self._run(command, "Restarting CPU at PC")
 
     def resume_cpu(self) -> None:
         self._run(self._link_command("resume"), "Resuming 68000")
@@ -3329,6 +3701,7 @@ class NanoQLSetup(tk.Tk):
                     )
                     assert process.stdout is not None
                     is_gowin_cli = "programmer_cli" in Path(command[0]).name.lower()
+                    is_mdv_sync = "mdv-sync" in command
                     timed_out = threading.Event()
                     watchdog = None
                     if is_gowin_cli:
@@ -3349,7 +3722,26 @@ class NanoQLSetup(tk.Tk):
                         )
                         watchdog.daemon = True
                         watchdog.start()
+                    elif is_mdv_sync:
+                        # NanoQL Link reports transfer/finalization activity.
+                        # Stop a wedged card instead of waiting forever.
+                        last_output = [time.monotonic()]
+
+                        def stop_stalled_mdv_sync() -> None:
+                            while process.poll() is None:
+                                if time.monotonic() - last_output[0] >= 150.0:
+                                    timed_out.set()
+                                    process.kill()
+                                    return
+                                time.sleep(1.0)
+
+                        watchdog = threading.Thread(
+                            target=stop_stalled_mdv_sync, daemon=True
+                        )
+                        watchdog.start()
                     for line in process.stdout:
+                        if is_mdv_sync:
+                            last_output[0] = time.monotonic()
                         output_lines.append(line)
                         progress = self._progress_from_output(line)
                         if progress is None:
@@ -3364,11 +3756,18 @@ class NanoQLSetup(tk.Tk):
                             except subprocess.TimeoutExpired:
                                 process.kill()
                             break
-                    if watchdog is not None:
+                    if isinstance(watchdog, threading.Timer):
                         watchdog.cancel()
                     code = process.wait()
                     output = "".join(output_lines)
                     if timed_out.is_set():
+                        if is_mdv_sync:
+                            raise RuntimeError(
+                                "MDV1 synchronization produced no progress for "
+                                "150 seconds and was stopped. Power-cycle NanoQL "
+                                "before retrying. If the microSD is unusually hot "
+                                "or this repeats, back it up and replace it."
+                            )
                         raise RuntimeError(
                             f"Gowin operation {operation} did not terminate after "
                             f"{int(timeout_seconds)} seconds. It was stopped so it "
@@ -3431,6 +3830,10 @@ class NanoQLSetup(tk.Tk):
                     self._offer_assistant_update(str(folder), str(tag))
                 elif event == "update_available":
                     self._offer_release_update(str(payload))
+                elif event == "debug_snapshot_done":
+                    self._finish_busy("Complete")
+                    self._display_debug_snapshot(payload)
+                    self._append_log("68000 debugger snapshot captured.\n")
                 elif event == "error":
                     title, error = payload
                     self._finish_busy("Error")

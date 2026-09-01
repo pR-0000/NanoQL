@@ -10,10 +10,10 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 16 729 / 20 736 cellules logiques utilisées (81 %), dont 15 650 LUT et 7 536 registres.
+- FPGA : 16 783 / 20 736 cellules logiques utilisées (81 %), dont 15 706 LUT et 7 537 registres.
 - BSRAM : 21 / 46 blocs utilisés (46 %), dont les tampons sectoriels QL-SD et Microdrive et la ROM QSound optionnelle.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
-- Domaine système : 48 MHz, avec une Fmax estimée de 48,013 MHz.
+- Domaine système : 48 MHz, avec une Fmax estimée de 50,877 MHz.
 - HDMI : 720p50 à cadence rapprochée du QL et 720p60 de compatibilité avec audio PCM 48 kHz fonctionnel.
 
 Le pourcentage de LUT restant ne suffit pas à garantir toutes les extensions. La migration de la ROM QL dynamique vers une zone réservée de la SDRAM a toutefois libéré 32 blocs BSRAM pour les ROM et tampons des fonctions suivantes. La fréquence du domaine système devient maintenant la contrainte principale pour les modes CPU rapides.
@@ -90,6 +90,7 @@ Le support d'une vraie seconde carte QL-SD nécessitera un connecteur microSD su
 - Garder une procédure de récupération explicite ; l'entrée dans le bootloader BL616 pourra toujours nécessiter le bouton `UPDATE`.
 - La programmation directe de la SRAM et de la Flash FPGA par NanoQL Link est validée sur révision 3923. L'installation et les mises à jour utilisent d'abord le firmware BL616 NanoQL, puis programment le FPGA ; le profil Sipeed reste réservé à la récupération JTAG externe.
 - NanoQL Link fige désormais le fx68k sans reset entre deux cycles externes et expose matériellement D0-D7, A0-A7, USP, SSP, PC de prélecture, IR, SR et les flags. Les opérations RAM peuvent être composées autour de cet état puis reprendre exactement les phases conservées.
+- NanoQL Link lit aussi la ROM système chargée en SDRAM, capture une plage configurable autour du PC, exporte la ROM ou la RAM en binaire/hexadécimal/désassemblage et peut redémarrer proprement le 68000 à un couple PC/SSP choisi. Les registres restent volontairement non modifiables à chaud tant qu'un arrêt garanti sur une frontière d'instruction n'existe pas. Les uploads MDV possèdent des délais d'inactivité bornés dans le client et l'Assistant.
 - Le rapport USB « toutes touches relâchées » conserve la durée minimale d'une frappe déjà reconnue : les appuis courts ne disparaissent plus avant le scan de l'IPC, tandis qu'une touche dont le relâchement aurait été perdu est encore retirée automatiquement.
 
 #### 7. Capture d'écran et vidéo
@@ -141,10 +142,10 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 16,729 / 20,736 logic cells used (81%), including 15,650 LUTs and 7,536 registers.
+- FPGA: 16,783 / 20,736 logic cells used (81%), including 15,706 LUTs and 7,537 registers.
 - BSRAM: 21 / 46 blocks used (46%), including QL-SD and Microdrive sector buffers and the optional QSound ROM.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
-- System domain: 48 MHz, with an estimated Fmax of 48.013 MHz.
+- System domain: 48 MHz, with an estimated Fmax of 50.877 MHz.
 - HDMI: working QL-matched 720p50 and compatibility 720p60 output with 48 kHz PCM audio.
 
 The remaining LUT percentage alone does not guarantee that every extension will fit. Moving the dynamic QL ROM to a reserved SDRAM area has nevertheless freed 32 BSRAM blocks for future ROMs and buffers. System-domain timing is now the main constraint for faster CPU modes.
@@ -221,6 +222,7 @@ A real secondary QL-SD card requires an additional microSD connector on an exter
 - Keep an explicit recovery path; entering the BL616 bootloader may still require the `UPDATE` button.
 - Direct FPGA SRAM and configuration-Flash programming through NanoQL Link is physically validated on revision 3923. Normal installation and update use NanoQL BL616 first and reserve Sipeed/JTAG for recovery.
 - NanoQL Link now freezes fx68k without reset between external bus cycles and directly exposes D0-D7, A0-A7, USP, SSP, prefetch PC, IR, SR, and flags. RAM operations can be composed around that snapshot before resuming the preserved phase state.
+- NanoQL Link also reads the SDRAM-backed system ROM, captures a configurable range around PC, exports ROM or RAM as binary/hex/disassembly, and can cleanly restart the 68000 at a chosen PC/SSP pair. Registers intentionally remain non-editable until the core can guarantee a halt at an instruction boundary. MDV uploads have bounded inactivity timeouts in both the client and Assistant.
 - The authoritative USB all-released report now preserves the minimum hold time of a recognized press: short presses remain visible to the slower IPC scan, while a lost key-up is still repaired automatically.
 
 #### 7. Screenshot and video capture
