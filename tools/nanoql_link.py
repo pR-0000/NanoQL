@@ -38,6 +38,66 @@ REQUEST_MAGIC = b"NQ"
 RESPONSE_MAGIC = b"QN"
 PROTOCOL_VERSION = 1
 MAX_LINK_PAYLOAD = 245
+SCREENSHOT_ADDRESS = 0x7D8000
+SCREENSHOT_SIZE = 32768
+
+
+def ql_screen_png(frame: bytes, flags: int) -> bytes:
+    """Encode native QL pixels as RGB PNG using the scanout palettes/flash latch."""
+    if len(frame) != SCREENSHOT_SIZE:
+        raise ValueError("A QL screen must contain exactly 32768 bytes.")
+    palette = (
+        b"\x00\x00\x00", b"\x20\x40\xd0", b"\xd0\x20\x20", b"\xd0\x30\xd0",
+        b"\x20\xb0\x40", b"\x20\xc0\xc0", b"\xe0\xd0\x40", b"\xff\xff\xff",
+    )
+    mode4 = (palette[0], palette[2], palette[4], palette[7])
+    rows = bytearray()
+    for y in range(256):
+        rows.append(0)  # PNG filter: none.
+        flash_latch = False
+        flash_color = 0
+        for offset in range(y * 128, (y + 1) * 128, 2):
+            high, low = frame[offset:offset + 2]
+            if flags & 2:
+                rows.extend(bytes(24))
+            elif flags & 1:
+                for shift in (6, 4, 2, 0):
+                    color = (((high >> (shift + 1)) & 1) << 2 |
+                             ((low >> (shift + 1)) & 1) << 1 |
+                             ((low >> shift) & 1))
+                    displayed = flash_color if flash_latch and flags & 4 else color
+                    rows.extend(palette[displayed] * 2)
+                    # Like scanout, the F bit takes effect after this pixel.
+                    if (high >> shift) & 1:
+                        flash_latch = not flash_latch
+                        flash_color = color
+            else:
+                for shift in range(7, -1, -1):
+                    rows.extend(mode4[(((high >> shift) & 1) << 1) |
+                                      ((low >> shift) & 1)])
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + kind + data +
+                struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+
+    return (b"\x89PNG\r\n\x1a\n" +
+            chunk(b"IHDR", struct.pack(">IIBBBBB", 512, 256, 8, 2, 0, 0, 0)) +
+            chunk(b"IDAT", zlib.compress(bytes(rows))) + chunk(b"IEND", b""))
+
+
+def save_screenshot(link, destination: Path) -> Path:
+    destination = destination.expanduser().resolve()
+    destination.mkdir(parents=True, exist_ok=True)
+    frame, flags = link.screenshot()
+    png = ql_screen_png(frame, flags)
+    name = time.strftime("NanoQL-%Y%m%d-%H%M%S") + f"-{time.time_ns() % 1000000000:09d}.png"
+    output = destination / name
+    with output.open("xb") as stream:
+        stream.write(png)
+    print(f"Screenshot saved: {output}", flush=True)
+    return output
+
+
 SD_COMMIT_STALL_TIMEOUT = 120.0
 GOWIN_BITSTREAM_MIN_SIZE = 256 * 1024
 GOWIN_BITSTREAM_MAX_SIZE = 2 * 1024 * 1024
@@ -303,6 +363,9 @@ CMD_RESUME = 0x0D
 CMD_DEBUG = 0x0E
 CMD_DEBUG_RESULT = 0x0F
 CMD_DEBUG_INFO = 0x10
+CMD_SCREEN_START = 0x11
+CMD_SCREEN_INFO = 0x12
+CMD_SCREEN_END = 0x13
 CMD_FS_INFO = 0xE0
 CMD_FS_LIST_BEGIN = 0xE1
 CMD_FS_LIST_NEXT = 0xE2
@@ -1591,6 +1654,59 @@ class NanoQLLink:
             result.extend(response[-8:][:block_length])
         return bytes(result)
 
+    def screenshot_info(self) -> tuple[bool, int]:
+        response = self.transact(bytes((CMD_SCREEN_INFO,)) + bytes(8))
+        at = response.find(b"SC1")
+        if at < 0 or at + 5 > len(response):
+            raise RuntimeError(
+                "This FPGA bitstream does not support screenshots. Program "
+                "the new NanoQL_sd_rom.fs, then retry."
+            )
+        return bool(response[at + 3] & 1), response[at + 4]
+
+    def screenshot(self) -> tuple[bytes, int]:
+        self.screenshot_info()  # Check capability before touching any state.
+        self.transact(bytes((CMD_SCREEN_END,)))
+        self.transact(bytes((CMD_SCREEN_START,)))
+        try:
+            deadline = time.monotonic() + 5.0
+            while True:
+                ready, flags = self.screenshot_info()
+                if ready:
+                    break
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("No complete QL video frame became available within 5 seconds.")
+                time.sleep(0.01)
+            print("Transferring the captured QL screen...", flush=True)
+            held = bool(self.status() & 0x08)
+            frame = bytearray()
+            deadline = time.monotonic() + 120.0
+            reconnects = self.reconnect_count
+            for offset in range(0, SCREENSHOT_SIZE, 8):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Screenshot transfer exceeded 120 seconds.")
+                address = SCREENSHOT_ADDRESS + offset
+                self.transact(bytes((CMD_READ,)) + address.to_bytes(3, "big") + b"\x08")
+                self.wait_idle(expect_hold=held)
+                response = self.transact(bytes((CMD_READ_RESULT,)) + bytes(8))
+                if len(response) < 8:
+                    raise RuntimeError("Incomplete screenshot read response.")
+                if self.reconnect_count != reconnects:
+                    raise RuntimeError("USB reconnected during capture; please take a new screenshot.")
+                frame.extend(response[-8:])
+                if offset % 1024 == 0 or offset + 8 == SCREENSHOT_SIZE:
+                    print(f"\rScreenshot transfer: {(offset + 8) * 100 // SCREENSHOT_SIZE:3d}%", end="", flush=True)
+            print()
+            if not self.screenshot_info()[0]:
+                raise RuntimeError("The screenshot was invalidated during transfer; please retry.")
+            return bytes(frame), flags
+        finally:
+            # This only releases the dedicated image, never halts/resets the CPU.
+            try:
+                self.transact(bytes((CMD_SCREEN_END,)))
+            except (RuntimeError, OSError):
+                pass
+
     def disassembly_near_pc(
         self, state: dict[str, object], instruction_count: int = 10,
         before_count: int = 0,
@@ -2007,23 +2123,27 @@ def service_keyboard_control(link: NanoQLLink, control_file: Path | None,
     request_id = str(request.get("id", ""))
     result: dict[str, object] = {"id": request_id, "ok": False}
     try:
-        if request.get("command") != "mdv-sync":
+        command = request.get("command")
+        if command not in ("mdv-sync", "screenshot"):
             raise ValueError("Unsupported remote-keyboard control command.")
         release_keys()
-        print(
-            "Remote keyboard paused while MDV1 is synchronized...",
-            flush=True,
-        )
-        synchronize_microdrive(
-            link,
-            Path(str(request.get("source", ""))),
-            str(request.get("name", "NANOQL")),
-        )
+        if command == "screenshot":
+            print("Remote keyboard paused during screenshot transfer...", flush=True)
+            result["path"] = str(save_screenshot(
+                link, Path(str(request.get("destination", ".")))
+            ))
+        else:
+            print("Remote keyboard paused while MDV1 is synchronized...", flush=True)
+            synchronize_microdrive(
+                link,
+                Path(str(request.get("source", ""))),
+                str(request.get("name", "NANOQL")),
+            )
         result["ok"] = True
         print("Remote keyboard resumed.", flush=True)
     except Exception as error:
         result["error"] = str(error)
-        print(f"MDV1 synchronization failed: {error}", flush=True)
+        print(f"Remote keyboard operation failed: {error}", flush=True)
     _atomic_json_write(keyboard_control_result_path(control_file), result)
     return True
 
@@ -2796,6 +2916,13 @@ def main() -> int:
     )
     peek_parser.add_argument("address", type=parse_number)
     peek_parser.add_argument("length", type=parse_number, nargs="?", default=16)
+    screenshot_parser = subparsers.add_parser(
+        "screenshot", help="save a complete QL screen as PNG without halting the CPU"
+    )
+    screenshot_parser.add_argument(
+        "destination", type=Path, nargs="?", default=Path.cwd(),
+        help="destination folder for a timestamped PNG file",
+    )
     watch_parser = subparsers.add_parser(
         "watch",
         help="timestamp changes in a small live QL RAM block",
@@ -3179,6 +3306,8 @@ def main() -> int:
                 "  Boundary order:         "
                 + ("valid" if monotonic else "UNUSUAL - report these values")
             )
+        elif args.command == "screenshot":
+            save_screenshot(link, args.destination)
         elif args.command == "peek":
             if args.length < 1 or args.length > 256:
                 raise ValueError("PEEK length must be between 1 and 256 bytes.")
@@ -3386,11 +3515,11 @@ def main() -> int:
                             )
                 except Exception as error:
                     if args.command == "debug-snapshot":
-                        if args.resume and not was_held:
+                        if args.resume:
                             link.resume()
                         raise
                     print(f"Disassembly unavailable: {error}")
-            if args.resume and not was_held:
+            if args.resume:
                 link.resume()
                 print("68000 resumed without reset.")
             else:

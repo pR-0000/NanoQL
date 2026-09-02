@@ -60,6 +60,9 @@ module ql_host_link #(
     input  wire [31:0] cpu_debug_pc,
     input  wire [15:0] cpu_debug_sr,
     input  wire [15:0] cpu_debug_ir,
+    output reg         screenshot_request,
+    input  wire        screenshot_ready,
+    input  wire [2:0]  screenshot_flags,
 
     output reg         cpu_hold,
     output reg         boot_vectors_active,
@@ -84,6 +87,9 @@ module ql_host_link #(
     localparam [7:0] CMD_DEBUG  = 8'h0e;
     localparam [7:0] CMD_DEBUG_RESULT = 8'h0f;
     localparam [7:0] CMD_DEBUG_INFO = 8'h10;
+    localparam [7:0] CMD_SCREEN_START = 8'h11;
+    localparam [7:0] CMD_SCREEN_INFO = 8'h12;
+    localparam [7:0] CMD_SCREEN_END = 8'h13;
 
     localparam [1:0] WR_IDLE = 2'd0;
     localparam [1:0] WR_REQ  = 2'd1;
@@ -118,7 +124,11 @@ module ql_host_link #(
     wire ram_address_valid = (packet_addr >= 24'h020000) &&
                              (packet_addr <= 24'h03ffff);
     wire rom_address_valid = packet_addr <= 24'h00ffff;
-    wire read_address_valid = ram_address_valid || rom_address_valid;
+    wire screenshot_address_valid = screenshot_ready &&
+                                    (packet_addr >= 24'h7d8000) &&
+                                    (packet_addr <= 24'h7dffff);
+    wire read_address_valid = ram_address_valid || rom_address_valid ||
+                              screenshot_address_valid;
     assign mem_we = transfer_write;
 
     function [7:0] status_byte;
@@ -321,6 +331,7 @@ module ql_host_link #(
             mem_ds <= 2'b00;
             mem_wdata <= 16'd0;
             cpu_hold <= 1'b0;
+            screenshot_request <= 1'b0;
             cpu_debug_reg_select <= 5'd0;
             cpu_debug_bit_select <= 5'd0;
             boot_vectors_active <= 1'b0;
@@ -486,6 +497,12 @@ module ql_host_link #(
                             status_index <= 4'd0;
                             data_out <= 8'h44; // D
                         end
+                        CMD_SCREEN_START: screenshot_request <= 1'b1;
+                        CMD_SCREEN_END: screenshot_request <= 1'b0;
+                        CMD_SCREEN_INFO: begin
+                            status_index <= 4'd0;
+                            data_out <= 8'h53; // S
+                        end
                         CMD_RESULT: begin
                             result_index <= 4'd1;
                             data_out <= read_payload[0];
@@ -545,6 +562,16 @@ module ql_host_link #(
                         endcase
                         if (status_index != 4'd15)
                             status_index <= status_index + 4'd1;
+                    end else if (command == CMD_SCREEN_INFO) begin
+                        case (status_index)
+                            4'd0: data_out <= 8'h43; // C
+                            4'd1: data_out <= 8'h31; // protocol 1
+                            4'd2: data_out <= {7'd0, screenshot_ready};
+                            4'd3: data_out <= {5'd0, screenshot_flags};
+                            default: data_out <= 8'd0;
+                        endcase
+                        if (status_index != 4'd15)
+                            status_index <= status_index + 4'd1;
                     end else if (command == CMD_RESULT) begin
                         if (result_index < 4'd8) begin
                             data_out <= read_payload[result_index];
@@ -598,7 +625,10 @@ module ql_host_link #(
                                       25'h0010000)) ||
                                     (ram_address_valid &&
                                      ({1'b0, packet_addr} + data_in >
-                                      25'h0040000))) begin
+                                      25'h0040000)) ||
+                                    (screenshot_address_valid &&
+                                     ({1'b0, packet_addr} + data_in >
+                                      25'h07e0000))) begin
                                     protocol_error <= 1'b1;
                                 end else begin
                                     protocol_error <= 1'b0;

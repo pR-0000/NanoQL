@@ -10,7 +10,7 @@ Les ROM et firmwares dont la redistribution n'est pas clairement autorisée ne d
 
 ### Contraintes actuelles
 
-- FPGA : 16 783 / 20 736 cellules logiques utilisées (81 %), dont 15 706 LUT et 7 537 registres.
+- FPGA : 16 738 / 20 736 cellules logiques utilisées (81 %), dont 15 660 LUT et 7 549 registres.
 - BSRAM : 21 / 46 blocs utilisés (46 %), dont les tampons sectoriels QL-SD et Microdrive et la ROM QSound optionnelle.
 - SDRAM : 8 Mo disponibles, avec 128, 640 ou 896 Kio présentés comme RAM QL selon le réglage OSD.
 - Domaine système : 48 MHz, avec une Fmax estimée de 50,877 MHz.
@@ -95,6 +95,7 @@ Le support d'une vraie seconde carte QL-SD nécessitera un connecteur microSD su
 
 #### 7. Capture d'écran et vidéo
 
+- Implémenté, à valider sur carte : capture PNG sur PC/Mac par NanoQL Link, depuis **Contrôle à distance** ou `screenshot`. Tampon dédié de 32 Kio dans la SDRAM, sans arrêt CPU ; les entrées du clavier distant sont suspendues uniquement pendant le transfert. Décodage PNG côté Python, modes 4/8 et phase de flash, sans overlay ni correction d'aspect HDMI.
 - Ajouter `Save screenshot` dans l'OSD.
 - Capturer une image cohérente entre deux trames et l'enregistrer sur microSD avec un nom horodaté.
 - Commencer par un format simple et robuste, puis proposer PNG si son coût côté BL616 reste raisonnable.
@@ -142,7 +143,7 @@ ROMs and firmware without explicit redistribution permission must not be publish
 
 ### Current constraints
 
-- FPGA: 16,783 / 20,736 logic cells used (81%), including 15,706 LUTs and 7,537 registers.
+- FPGA: 16,738 / 20,736 logic cells used (81%), including 15,660 LUTs and 7,549 registers.
 - BSRAM: 21 / 46 blocks used (46%), including QL-SD and Microdrive sector buffers and the optional QSound ROM.
 - SDRAM: 8 MiB available, exposing 128, 640, or 896 KiB as QL RAM according to the OSD setting.
 - System domain: 48 MHz, with an estimated Fmax of 50.877 MHz.
@@ -227,6 +228,7 @@ A real secondary QL-SD card requires an additional microSD connector on an exter
 
 #### 7. Screenshot and video capture
 
+- Implemented, pending hardware validation: PNG screenshots on PC/Mac via NanoQL Link, through **Remote control** or `screenshot`. A dedicated 32 KiB SDRAM buffer avoids halting the CPU; remote keyboard input is paused only during transfer. Python handles PNG encoding, modes 4/8 and flash phase, without overlay or HDMI aspect correction.
 - Add `Save screenshot` to the OSD.
 - Capture a coherent image between frames and save it to microSD with a timestamped name.
 - Start with a simple robust format, then add PNG if its BL616 cost is reasonable.

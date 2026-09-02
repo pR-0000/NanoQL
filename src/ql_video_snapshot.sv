@@ -9,6 +9,10 @@ module ql_video_snapshot #(
     input  wire        native_frame,
     input  wire        membase,
     input  wire        scanout_buffer_select,
+    input  wire [2:0]  video_flags,
+    input  wire        screenshot_request,
+    output reg         screenshot_ready,
+    output reg  [2:0]  screenshot_flags,
 
     output reg         snapshot_valid,
     output reg         snapshot_buffer_select,
@@ -43,11 +47,18 @@ module ql_video_snapshot #(
     reg target_buffer_select;
     reg [14:0] word_index;
     reg [15:0] copy_word;
+    reg screenshot_copy;
+    reg screenshot_source_select;
+    reg [2:0] capture_flags;
+    reg [2:0] completed_flags;
+    // Dedicated 32 KiB below the HDMI buffers, outside all QL RAM profiles.
+    localparam [21:0] SCREENSHOT_BASE = 22'h3ec000;
 
-    wire [21:0] source_base = captured_membase ?
-                              QL_SCREEN_BASE_1 : QL_SCREEN_BASE_0;
-    wire [21:0] target_base = target_buffer_select ?
-                              SNAPSHOT_BASE_1 : SNAPSHOT_BASE_0;
+    wire [21:0] source_base = screenshot_copy ?
+                             (screenshot_source_select ? SNAPSHOT_BASE_1 : SNAPSHOT_BASE_0) :
+                             (captured_membase ? QL_SCREEN_BASE_1 : QL_SCREEN_BASE_0);
+    wire [21:0] target_base = screenshot_copy ? SCREENSHOT_BASE :
+                             (target_buffer_select ? SNAPSHOT_BASE_1 : SNAPSHOT_BASE_0);
     wire target_is_free = !snapshot_valid ||
                           (scanout_buffer_select == snapshot_buffer_select);
 
@@ -70,7 +81,15 @@ module ql_video_snapshot #(
             snapshot_buffer_select <= 1'b0;
             word_index <= 15'd0;
             copy_word <= 16'd0;
+            screenshot_copy <= 1'b0;
+            screenshot_source_select <= 1'b0;
+            screenshot_ready <= 1'b0;
+            screenshot_flags <= 3'd0;
+            capture_flags <= 3'd0;
+            completed_flags <= 3'd0;
         end else begin
+            if (!screenshot_request)
+                screenshot_ready <= 1'b0;
             // Capture at native frame boundaries for single-buffer software,
             // and immediately after MC_STAT page changes for double buffering.
             if (native_frame || (membase != observed_membase)) begin
@@ -80,7 +99,17 @@ module ql_video_snapshot #(
 
             case (state)
                 ST_IDLE: begin
-                    if (enable && capture_pending && target_is_free) begin
+                    if (enable && screenshot_request && !screenshot_ready && snapshot_valid) begin
+                        // Publish no new HDMI frame until this bounded copy
+                        // finishes. The USB transfer then reads its own buffer.
+                        screenshot_copy <= 1'b1;
+                        screenshot_source_select <= snapshot_buffer_select;
+                        screenshot_flags <= {video_flags[2], completed_flags[1:0]};
+                        word_index <= 15'd0;
+                        state <= ST_READ_REQ;
+                    end else if (enable && capture_pending && target_is_free) begin
+                        screenshot_copy <= 1'b0;
+                        capture_flags <= video_flags;
                         captured_membase <= membase;
                         target_buffer_select <= snapshot_valid ?
                                                 ~snapshot_buffer_select : 1'b0;
@@ -100,7 +129,7 @@ module ql_video_snapshot #(
 
                 ST_READ_WAIT: begin
                     if (data_valid) begin
-                        if (!enable || (membase != captured_membase)) begin
+                        if (!enable || (!screenshot_copy && (membase != captured_membase))) begin
                             capture_pending <= 1'b1;
                             state <= ST_IDLE;
                         end else begin
@@ -129,12 +158,17 @@ module ql_video_snapshot #(
 
                 ST_WRITE_WAIT: begin
                     if (write_done) begin
-                        if (!enable || (membase != captured_membase)) begin
+                        if (!enable || (!screenshot_copy && (membase != captured_membase))) begin
                             capture_pending <= 1'b1;
                             state <= ST_IDLE;
                         end else if (word_index == FRAME_WORDS - 1'b1) begin
-                            snapshot_buffer_select <= target_buffer_select;
-                            snapshot_valid <= 1'b1;
+                            if (screenshot_copy) begin
+                                screenshot_ready <= screenshot_request;
+                            end else begin
+                                snapshot_buffer_select <= target_buffer_select;
+                                snapshot_valid <= 1'b1;
+                                completed_flags <= capture_flags;
+                            end
                             state <= ST_IDLE;
                         end else begin
                             word_index <= word_index + 15'd1;

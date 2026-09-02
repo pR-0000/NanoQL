@@ -72,9 +72,19 @@ Le PC exposé est celui du pipeline matériel fx68k et peut donc se trouver en a
 
 Dans l'Assistant, le port série est choisi une seule fois au-dessus des sous-onglets de **NanoQL Link**. Son sous-onglet **Débogueur** conserve la dernière capture des registres et flags dans des champs en lecture seule mais copiables. Ses deux vues synchronisées séparent les adresses et opcodes bruts du désassemblage lisible. Par défaut, la capture demande 20 instructions avant et 20 après le PC ; ces deux valeurs et une adresse de code facultative sont réglables.
 
+L'interface regroupe séparément les registres de données, d'adresses et l'état du processeur, avec chaque groupe présenté sur une seule ligne et des champs monospace dimensionnés pour afficher leurs huit chiffres. Le guide illustré complet de la Tang Nano reste visible à droite des contrôles de connexion, tandis que les sous-onglets NanoQL Link occupent toute la largeur en dessous. Le journal inférieur peut être masqué ou redimensionné avec sa barre de séparation ; sa visibilité et sa hauteur sont conservées dans les paramètres utilisateur. Les listes de code gardent leur propre défilement, y compris lorsque la fenêtre entière doit défiler sur un petit écran.
+
 La section mémoire exporte n'importe quelle plage valide de ROM système ou de RAM QL sous forme binaire, hexadécimale ou désassemblée. Le format désassemblé ne contient que les instructions lisibles, chacune précédée d'une tabulation, sans adresses ni opcodes bruts, afin de pouvoir être copié directement dans un source assembleur ; utilisez le format hexadécimal pour conserver les octets. **Redémarrer le CPU au PC** réinitialise proprement le cœur 68000 avec le PC et le SSP choisis ; l'adresse peut se trouver dans la ROM système ou la RAM QL de base. Il ne s'agit pas d'une modification à chaud : l'état interne, les registres et l'instruction partiellement exécutée sont réinitialisés. Modifier arbitrairement D0-D7, A0-A7, SR ou PC pendant une pause entre deux cycles de bus ne serait pas matériellement sûr, car fx68k peut se trouver au milieu d'une instruction ; l'Assistant les laisse donc volontairement en lecture seule.
 
 Le protocole interroge une signature de capacités explicite : si le bitstream actif est trop ancien pour lire la ROM, l'outil demande de programmer le nouveau `.fs` au lieu de renvoyer un code d'état ambigu.
+
+### Captures PNG sur ordinateur
+
+Dans **NanoQL Link > Contrôle à distance**, choisissez le **Dossier des captures**, puis **Capturer l'écran (PNG)**. Le dossier est mémorisé dans le fichier INI de l'assistant. Chaque capture crée un fichier `NanoQL-<date>-<heure>-<identifiant>.png` sans écraser les précédents. Le clavier distant peut rester connecté : ses entrées sont temporairement suspendues pendant le transfert, puis reprises automatiquement.
+
+En ligne de commande : `python tools/nanoql_link.py --port COMx screenshot captures` (sur macOS/Linux, remplacez `COMx` par le port détecté ou omettez `--port`). Le bitstream FPGA doit prendre en charge cette fonction ; aucun nouveau firmware BL616 n'est requis.
+
+Le FPGA copie le dernier instantané QL complet dans un tampon SDRAM réservé de 32 Kio, à l'adresse physique `$7D8000`. Ce tampon est indépendant des deux tampons HDMI et de la RAM visible du QL. Le CPU n'est ni arrêté ni réinitialisé ; la publication vidéo peut être retardée pendant cette copie ponctuelle, puis l'affichage continue pendant le transfert USB. Les couleurs sont converties en PNG sur l'ordinateur avec la bibliothèque standard Python. Le fichier représente les pixels natifs en 512 × 256 (colonnes doublées en mode 8), avec la phase de clignotement capturée, sans overlay, bordures ni correction du rapport des pixels HDMI. Validation matérielle en cours.
 
 ### Utiliser un dossier comme Microdrive
 
@@ -216,9 +226,19 @@ The exposed PC is fx68k's hardware pipeline PC and may therefore be ahead of the
 
 The serial port is selected once above the Assistant's **NanoQL Link** subtabs. Its **Debugger** subtab retains the latest register and flag capture in read-only but copyable fields. Synchronized panes separate raw addresses/opcodes from readable disassembly. A capture requests 20 instructions before and after PC by default; both counts and an optional direct code address are configurable.
 
+The interface groups data registers, address registers, and processor state separately, with each group on one line and portable monospaced fields sized for their eight digits. The complete illustrated Tang Nano guide remains visible to the right of the connection controls, while the NanoQL Link subtabs use the full width below. The bottom log can be hidden or resized with its splitter; visibility and height are retained in the user settings. Code lists keep their own scrolling even when the complete window must scroll on a small display.
+
 The memory section exports any valid system-ROM or QL-RAM range as binary, hexadecimal text, or disassembled text. Disassembly output contains readable instructions only, each prefixed by one tab, without addresses or raw opcodes, so it can be pasted directly into assembly source; use hexadecimal output when byte values are required. **Restart CPU at PC** cleanly resets the 68000 core with the selected PC and SSP; PC may target system ROM or base QL RAM. This is not hot editing: internal state, registers, and any partially executed instruction are reset. Arbitrarily changing D0-D7, A0-A7, SR, or PC while paused between external bus cycles would be unsafe because fx68k may be in the middle of an instruction, so those fields intentionally remain read-only.
 
 An explicit capability signature identifies the active FPGA debugger: an old bitstream produces a clear request to program the new `.fs` instead of an opaque status code.
+
+### PNG screenshots on the computer
+
+In **NanoQL Link > Remote control**, select the **Screenshot folder**, then **Capture screen (PNG)**. The folder is saved in the Assistant's INI settings. Each capture creates a timestamped `NanoQL-<date>-<time>-<identifier>.png` without overwriting earlier files. The remote keyboard can stay connected: its input is temporarily paused during the transfer and then resumed automatically.
+
+Command line: `python tools/nanoql_link.py --port COMx screenshot captures` (on macOS/Linux, use the detected device path or omit `--port`). This requires the screenshot-capable FPGA bitstream, but no new BL616 firmware.
+
+The FPGA copies the latest complete QL snapshot into a dedicated 32 KiB SDRAM buffer at physical address `$7D8000`, separate from both HDMI buffers and QL-visible RAM. The CPU is neither halted nor reset; video publication may be delayed during this one-time copy, then display updates continue throughout the USB transfer. Standard-library Python code converts the captured colors to PNG on the computer. Output contains native pixels at 512 x 256 (mode 8 columns doubled), including the captured flash phase, without overlay, borders, or HDMI pixel-aspect correction. Hardware validation is ongoing.
 
 ### Using a folder as a Microdrive
 

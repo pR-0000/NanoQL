@@ -37,6 +37,7 @@ module ql_zx8301 #(
     output wire        blank,
     output wire        membase,
     output wire        ntsc,
+    output wire        flash_phase_active,
     output wire [23:0] rgb,
 
     // Native QL raster. HSYNC is active high as in QL_MiSTer; VSYNC is the
@@ -114,6 +115,7 @@ module ql_zx8301 #(
 
     reg [5:0] flash_count;
     reg       flash_phase;
+    assign flash_phase_active = flash_phase;
 
     // Counter transitions intentionally match rtl/zx8301.v from QL_MiSTer:
     // vertical timing advances at the beginning of HSYNC, while HBLANK and

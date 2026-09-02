@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.8 - 2026-09-02
+
+- Adds USB PNG screenshots through NanoQL Link and the Assistant's Remote control tab, with a persistent destination folder and timestamped filenames. A dedicated 32 KiB SDRAM buffer preserves a complete QL image without halting or resetting the CPU; Python encodes native 512x256 pixels, modes 4/8 and flash state, without HDMI scaling or the overlay.
+- Allows screenshots while the remote keyboard remains connected: the existing serial owner temporarily pauses input, transfers the image, and resumes keyboard service. Screenshot hardware validation is ongoing.
+- Makes the Assistant more usable on smaller Windows/macOS screens with a resizable and hideable log pane, saved log preferences, a compact two-column NanoQL Link header, and readable embedded board illustrations.
+- Compacts the debugger into single-line register groups with copyable eight-digit fields, puts CPU actions first, enlarges synchronized opcode/disassembly panes, and automatically scrolls to the current instruction marker.
+- Reorders memory-dump controls around the destination path, keeps that field responsive, and preserves independent synchronized code scrolling inside scrollable pages.
+- Links halt/resume button availability to the last confirmed CPU state and makes Capture and continue resume even a previously halted CPU.
+- Includes macOS worker-process launch fixes and refreshed French/English interface text. Complete packages include the unchanged BL616 firmware for each board revision; existing v0.3.7 users only need the updated Assistant/tools and FPGA bitstream.
+
 ## v0.3.7 - 2026-09-01
 
 - Adds a hardware MC68000 debugger under NanoQL Link with one shared serial-port selector, copyable D0-D7/A0-A7/USP/SSP/PC/IR/SR/flags, and synchronized raw-opcode and readable-disassembly views.

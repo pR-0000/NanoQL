@@ -1,9 +1,11 @@
 import base64
 import runpy
 import struct
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -11,14 +13,14 @@ GUI = REPOSITORY / "tools" / "nanoql_setup.pyw"
 
 
 class SetupAssistantTests(unittest.TestCase):
-    def test_embedded_board_guide_is_valid_gif(self) -> None:
+    def test_embedded_board_guide_uses_valid_high_resolution_pngs(self) -> None:
         namespace = runpy.run_path(str(GUI), run_name="nanoql_setup_test")
-        images = namespace["BOARD_GUIDE_GIFS"]
+        images = namespace["BOARD_GUIDE_IMAGES"]
         self.assertEqual(set(images), {"normal", "s1", "update"})
         for image_data in images.values():
             image = base64.b64decode(image_data)
-            self.assertIn(image[:6], (b"GIF87a", b"GIF89a"))
-            self.assertEqual(struct.unpack_from("<HH", image, 6), (360, 174))
+            self.assertEqual(image[:8], b"\x89PNG\r\n\x1a\n")
+            self.assertEqual(struct.unpack_from(">II", image, 16), (810, 320))
 
     def test_beginner_labels_and_compatibility_launcher(self) -> None:
         source = GUI.read_text(encoding="utf-8")
@@ -35,6 +37,26 @@ class SetupAssistantTests(unittest.TestCase):
         self.assertIn('text="4. NanoQL Link"', source)
         self.assertIn('text="Debugger"', source)
         self.assertIn('text="Program injection"', source)
+        self.assertIn('notebook.add(connection, text="Remote control")', source)
+        self.assertIn('"screenshot_folder": self.screenshot_folder', source)
+        self.assertIn('"Capture screen (PNG)", self.capture_screenshot', source)
+        self.assertNotIn('compact=True', source)
+        self.assertIn('self.main_pane = tk.PanedWindow(', source)
+        self.assertIn('self.log_height = tk.StringVar(value="190")', source)
+        self.assertIn('self.log_visible = tk.StringVar(value="1")', source)
+        self.assertIn('self.log_toggle_button', source)
+        self.assertIn('font="TkFixedFont"', source)
+        self.assertIn('self.cpu_halted: bool | None = None', source)
+        self.assertIn('self.halt_cpu_button.configure(state=halt_state)', source)
+        self.assertIn('self.resume_cpu_button.configure(state=resume_state)', source)
+        self.assertIn('68000 captured and halted; Resume 68000 is available', source)
+        self.assertIn('def _popen_for_worker(', source)
+        self.assertIn('elif event == "spawn_process":', source)
+        self.assertIn('options["close_fds"] = False', source)
+        self.assertIn('os.execvp(sys.argv[2], sys.argv[2:])', source)
+        self.assertIn('text="Data registers"', source)
+        self.assertIn('text="Address registers"', source)
+        self.assertNotIn('text="Latest hardware capture"', source)
         self.assertNotIn("self.debugger_tab", source)
         link_start = source.index("    def _build_link_tab")
         link_end = source.index("    def _build_link_connection_tab", link_start)
@@ -46,6 +68,8 @@ class SetupAssistantTests(unittest.TestCase):
         self.assertIn("notebook.add(debugger, text=\"Debugger\")", link_source)
         self.assertIn('text="Raw opcodes"', source)
         self.assertIn('text="MC68000 disassembly"', source)
+        self.assertIn('self.debug_asm, self.debug_raw, first, last', source)
+        self.assertIn('except (KeyError, tk.TclError):', source)
         self.assertIn('"Dump memory", self.debug_dump_memory', source)
         self.assertIn('"Restart CPU at PC", self.debug_restart_at_pc', source)
         self.assertIn('command.extend(["--before"', source)
@@ -54,6 +78,36 @@ class SetupAssistantTests(unittest.TestCase):
         flash_end = source.index("    def flash_bl616_profile", flash_start)
         self.assertNotIn("messagebox.askyesno", source[flash_start:flash_end])
         self.assertTrue((REPOSITORY / "tools" / "nanoql_setup.py").is_file())
+
+    def test_link_header_is_compact_and_board_images_keep_native_size(self) -> None:
+        source = GUI.read_text(encoding="utf-8")
+        self.assertIn('name: image.subsample(2, 2)', source)
+        self.assertIn('activation_help = ttk.Frame(link_controls)', source)
+        self.assertIn('activation_help,\n            text="Official Tang Nano 20K board guide"', source)
+        self.assertIn('"After NanoQL starts, briefly press S1 once."', source)
+        self.assertNotIn(
+            "NanoQL Link then remains active for the remote keyboard, "
+            "MDV synchronization, and program injection.",
+            source,
+        )
+
+    def test_macos_exec_trampoline_preserves_working_directory(self) -> None:
+        namespace = runpy.run_path(str(GUI), run_name="nanoql_setup_test")
+        popen = namespace["NanoQLSetup"]._popen_for_worker
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            probe = folder / "probe.py"
+            probe.write_text("import os; print(os.getcwd())", encoding="utf-8")
+            with mock.patch.object(
+                namespace["platform"], "system", return_value="Darwin"
+            ):
+                process = popen(
+                    object(), [sys.executable, str(probe)], cwd=folder,
+                    stdout=namespace["subprocess"].PIPE, text=True,
+                )
+                output, _ = process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 0)
+            self.assertEqual(Path(output.strip()).resolve(), folder.resolve())
 
     def test_french_catalog_covers_beginner_workflow(self) -> None:
         namespace = runpy.run_path(str(GUI), run_name="nanoql_setup_test")
@@ -72,6 +126,10 @@ class SetupAssistantTests(unittest.TestCase):
             "Select file...",
             "Install / update NanoQL firmware",
             "Inject and execute",
+            "Hide log",
+            "Show log",
+            "Data registers",
+            "Address registers",
         ):
             self.assertIn(text, translations)
 

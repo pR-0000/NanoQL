@@ -81,6 +81,10 @@ module nanoql_top(
     wire [9:0] y;
     wire mode8_active;
     wire blank_active;
+    wire video_flash_phase;
+    wire screenshot_request;
+    wire screenshot_ready;
+    wire [2:0] screenshot_flags;
     wire fetch_underflow;
 
     wire [21:0] video_mem_addr;
@@ -467,6 +471,10 @@ module nanoql_top(
         .native_frame(ql_native_frame),
         .membase(video_membase_active),
         .scanout_buffer_select(video_scanout_buffer_select),
+        .video_flags({video_flash_phase, blank_active, mode8_active}),
+        .screenshot_request(screenshot_request),
+        .screenshot_ready(screenshot_ready),
+        .screenshot_flags(screenshot_flags),
         .snapshot_valid(video_snapshot_valid),
         .snapshot_buffer_select(video_snapshot_buffer_select),
         .snapshot_base(video_snapshot_base),
@@ -558,6 +566,9 @@ module nanoql_top(
         .cpu_debug_pc(cpu_debug_pc),
         .cpu_debug_sr(cpu_debug_sr),
         .cpu_debug_ir(cpu_debug_ir),
+        .screenshot_request(screenshot_request),
+        .screenshot_ready(screenshot_ready),
+        .screenshot_flags(screenshot_flags),
         .cpu_hold(host_cpu_hold),
         .boot_vectors_active(host_boot_vectors_active),
         .boot_ssp(host_boot_ssp),
@@ -1041,6 +1052,7 @@ module nanoql_top(
         .rgb(rgb),
         .mode8_active(mode8_active),
         .blank_active(blank_active),
+        .flash_phase_active(video_flash_phase),
         .ql_ce(ql_native_ce),
         .ql_h(ql_native_h),
         .ql_v(ql_native_v),
