@@ -84,7 +84,9 @@ Dans **NanoQL Link > Contrôle à distance**, choisissez le **Dossier des captur
 
 En ligne de commande : `python tools/nanoql_link.py --port COMx screenshot captures` (sur macOS/Linux, remplacez `COMx` par le port détecté ou omettez `--port`). Le bitstream FPGA doit prendre en charge cette fonction ; aucun nouveau firmware BL616 n'est requis.
 
-Le FPGA copie le dernier instantané QL complet dans un tampon SDRAM réservé de 32 Kio, à l'adresse physique `$7D8000`. Ce tampon est indépendant des deux tampons HDMI et de la RAM visible du QL. Le CPU n'est ni arrêté ni réinitialisé ; la publication vidéo peut être retardée pendant cette copie ponctuelle, puis l'affichage continue pendant le transfert USB. Les couleurs sont converties en PNG sur l'ordinateur avec la bibliothèque standard Python. Le fichier représente les pixels natifs en 512 × 256 (colonnes doublées en mode 8), avec la phase de clignotement capturée, sans overlay, bordures ni correction du rapport des pixels HDMI. Validation matérielle en cours.
+Le FPGA copie le dernier instantané QL complet dans un tampon SDRAM réservé de 32 Kio, à l'adresse physique `$7D8000`. Ce tampon est indépendant des deux tampons HDMI et de la RAM visible du QL. Le CPU n'est ni arrêté ni réinitialisé ; la publication vidéo peut être retardée pendant cette copie ponctuelle, puis l'affichage continue pendant le transfert USB. Les couleurs sont converties en PNG sur l'ordinateur avec la bibliothèque standard Python. Le PNG de 1024 × 698 reprend la géométrie du mode HDMI **Sharp**, sans lissage ni recadrage, avec la phase de clignotement capturée et sans overlay ni bordures. Cette correction s'applique aux modes QL 4 et 8 et ne nécessite pas de reflasher les firmwares.
+
+Pour conserver les pixels bruts de 512 × 256, destinés au débogage plutôt qu'à un affichage proportionné : `python tools/nanoql_link.py --port COMx screenshot captures --native`. La correction est normalement intégrée aux dimensions du PNG, car certains visualiseurs ignorent les métadonnées de pixels non carrés.
 
 ### Utiliser un dossier comme Microdrive
 
@@ -238,7 +240,9 @@ In **NanoQL Link > Remote control**, select the **Screenshot folder**, then **Ca
 
 Command line: `python tools/nanoql_link.py --port COMx screenshot captures` (on macOS/Linux, use the detected device path or omit `--port`). This requires the screenshot-capable FPGA bitstream, but no new BL616 firmware.
 
-The FPGA copies the latest complete QL snapshot into a dedicated 32 KiB SDRAM buffer at physical address `$7D8000`, separate from both HDMI buffers and QL-visible RAM. The CPU is neither halted nor reset; video publication may be delayed during this one-time copy, then display updates continue throughout the USB transfer. Standard-library Python code converts the captured colors to PNG on the computer. Output contains native pixels at 512 x 256 (mode 8 columns doubled), including the captured flash phase, without overlay, borders, or HDMI pixel-aspect correction. Hardware validation is ongoing.
+The FPGA copies the latest complete QL snapshot into a dedicated 32 KiB SDRAM buffer at physical address `$7D8000`, separate from both HDMI buffers and QL-visible RAM. The CPU is neither halted nor reset; video publication may be delayed during this one-time copy, then display updates continue throughout the USB transfer. Standard-library Python code converts the captured colors to PNG on the computer. The 1024 x 698 PNG matches HDMI **Sharp** geometry without smoothing or cropping, including the captured flash phase but no overlay or borders. This correction applies to QL modes 4 and 8 and requires no firmware reflash.
+
+For raw 512 x 256 pixels intended for debugging rather than proportioned display, use `python tools/nanoql_link.py --port PORT screenshot captures --native`. By default the correction is baked into PNG dimensions, since some viewers ignore non-square-pixel metadata.
 
 ### Using a folder as a Microdrive
 

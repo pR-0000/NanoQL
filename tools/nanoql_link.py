@@ -42,8 +42,8 @@ SCREENSHOT_ADDRESS = 0x7D8000
 SCREENSHOT_SIZE = 32768
 
 
-def ql_screen_png(frame: bytes, flags: int) -> bytes:
-    """Encode native QL pixels as RGB PNG using the scanout palettes/flash latch."""
+def ql_screen_png(frame: bytes, flags: int, *, native: bool = False) -> bytes:
+    """Encode QL pixels, matching HDMI Sharp geometry unless raw pixels are requested."""
     if len(frame) != SCREENSHOT_SIZE:
         raise ValueError("A QL screen must contain exactly 32768 bytes.")
     palette = (
@@ -76,20 +76,33 @@ def ql_screen_png(frame: bytes, flags: int) -> bytes:
                     rows.extend(mode4[(((high >> shift) & 1) << 1) |
                                       ((low >> shift) & 1)])
 
+    width, height = 512, 256
+    if not native:
+        # Match ql_hdmi_window.sv's Sharp profile. Bake the aspect correction
+        # into the pixels: many PNG viewers ignore pixel-aspect metadata.
+        width, height = 1024, 698
+        scaled_rows = bytearray()
+        for y in range(height):
+            source_start = (y * 256 // height) * 1537 + 1
+            scaled_rows.append(0)
+            for offset in range(source_start, source_start + 1536, 3):
+                scaled_rows.extend(rows[offset:offset + 3] * 2)
+        rows = scaled_rows
+
     def chunk(kind: bytes, data: bytes) -> bytes:
         return (struct.pack(">I", len(data)) + kind + data +
                 struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
 
     return (b"\x89PNG\r\n\x1a\n" +
-            chunk(b"IHDR", struct.pack(">IIBBBBB", 512, 256, 8, 2, 0, 0, 0)) +
+            chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)) +
             chunk(b"IDAT", zlib.compress(bytes(rows))) + chunk(b"IEND", b""))
 
 
-def save_screenshot(link, destination: Path) -> Path:
+def save_screenshot(link, destination: Path, *, native: bool = False) -> Path:
     destination = destination.expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
     frame, flags = link.screenshot()
-    png = ql_screen_png(frame, flags)
+    png = ql_screen_png(frame, flags, native=native)
     name = time.strftime("NanoQL-%Y%m%d-%H%M%S") + f"-{time.time_ns() % 1000000000:09d}.png"
     output = destination / name
     with output.open("xb") as stream:
@@ -2923,6 +2936,10 @@ def main() -> int:
         "destination", type=Path, nargs="?", default=Path.cwd(),
         help="destination folder for a timestamped PNG file",
     )
+    screenshot_parser.add_argument(
+        "--native", action="store_true",
+        help="export raw 512x256 pixels instead of the aspect-corrected 1024x698 image",
+    )
     watch_parser = subparsers.add_parser(
         "watch",
         help="timestamp changes in a small live QL RAM block",
@@ -3307,7 +3324,7 @@ def main() -> int:
                 + ("valid" if monotonic else "UNUSUAL - report these values")
             )
         elif args.command == "screenshot":
-            save_screenshot(link, args.destination)
+            save_screenshot(link, args.destination, native=args.native)
         elif args.command == "peek":
             if args.length < 1 or args.length > 256:
                 raise ValueError("PEEK length must be between 1 and 256 bytes.")

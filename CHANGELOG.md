@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.8 screenshot hotfix - 2026-09-03
+
+- Corrects PNG screenshot geometry on the PC to match the validated HDMI Sharp profile (1024x698). Nearest-neighbour scaling preserves every source pixel without smoothing or cropping; the aspect correction is embedded in the image dimensions rather than relying on viewer-specific metadata support.
+- Keeps raw 512x256 exports available through `screenshot --native`. Both the Assistant and remote-keyboard screenshot path use corrected geometry by default. No FPGA or BL616 update is needed.
+
 ## v0.3.8 - 2026-09-02
 
 - Adds USB PNG screenshots through NanoQL Link and the Assistant's Remote control tab, with a persistent destination folder and timestamped filenames. A dedicated 32 KiB SDRAM buffer preserves a complete QL image without halting or resetting the CPU; Python encodes native 512x256 pixels, modes 4/8 and flash state, without HDMI scaling or the overlay.

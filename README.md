@@ -23,7 +23,7 @@ Le projet privilégie la fidélité matérielle : CPU 68000, timings vidéo nati
 - Microdrive QLAY lisible et inscriptible ;
 - conversion autonome d'un dossier microSD en cartouche `.mdv` ;
 - programmation FPGA temporaire ou permanente et outils de développement par USB ;
-- captures PNG de l'écran QL sur PC/Mac par USB, depuis l'onglet **Contrôle à distance** (validation matérielle en cours) ;
+- captures PNG de l'écran QL sur PC/Mac par USB, depuis l'onglet **Contrôle à distance**, avec correction du rapport des pixels comme en HDMI ;
 - téléchargement automatique de la dernière release et débogage matériel du 68000 dans NanoQL Link, avec registres, flags, dumps mémoire et désassemblage autour du PC.
 
 Les fonctions annoncées comme validées ont été testées sur une Tang Nano 20K révision 3923. La révision 3921 utilise le même bitstream avec un firmware BL616 adapté.
@@ -146,7 +146,7 @@ The project emphasizes hardware fidelity: the 68000 CPU, native video timing, RA
 - readable and writable QLAY Microdrive cartridges;
 - standalone microSD-folder to `.mdv` conversion;
 - temporary or persistent FPGA programming and USB development tools;
-- USB PNG screenshots saved to PC/Mac from the **Remote control** tab (hardware validation pending);
+- USB PNG screenshots saved to PC/Mac from the **Remote control** tab, with pixel-aspect correction matching HDMI;
 - automatic latest-release download and hardware 68000 debugging inside NanoQL Link, with registers, flags, memory dumps, and disassembly around the PC.
 
 Features described as validated were physically tested on a revision 3923 Tang Nano 20K. Revision 3921 uses the same FPGA bitstream with matching BL616 firmware.
