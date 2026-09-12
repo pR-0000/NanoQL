@@ -37,6 +37,15 @@ class CompanionControlTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('"[OK] Saved %s"', source)
 
+    def test_ci_copies_standalone_screenshot_sources(self) -> None:
+        workflow = (
+            REPOSITORY / ".github" / "workflows" / "bl616-companion.yml"
+        ).read_text(encoding="utf-8")
+        for filename in ("nanoql_screenshot.c", "nanoql_screenshot.h"):
+            self.assertIn(
+                f"cp firmware/bl616/nanoql_companion/{filename}", workflow
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
