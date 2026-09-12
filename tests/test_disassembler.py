@@ -49,6 +49,16 @@ class DisassemblerTests(unittest.TestCase):
             ["moveq", "addq.l", "rts"],
         )
 
+    def test_invalid_word_does_not_hide_following_instructions(self) -> None:
+        instructions = disassemble_m68000(
+            bytes.fromhex("0008 e308 670e 7203"), 0x02F80
+        )
+        self.assertEqual(instructions[0][2], "dc.w $0008")
+        self.assertEqual(
+            [item[2].split()[0] for item in instructions[1:]],
+            ["lsl.b", "beq.b", "moveq"],
+        )
+
     def test_ir_match_uses_nearest_aligned_word_before_pc(self) -> None:
         data = bytes.fromhex("4e71 7001 4e71 4e75")
         self.assertEqual(

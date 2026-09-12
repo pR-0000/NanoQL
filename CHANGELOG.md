@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.9 - 2026-09-12
+
+- Adds F11 PNG screenshots while the remote keyboard is active on Windows/macOS/Linux, using the existing serial owner with one capture per press. F6 still exits and F12 still opens the overlay. The Assistant passes its selected screenshot folder to the keyboard session; CLI users can set `keyboard --screenshot-folder`.
+- Adds autonomous PNG screenshots from the overlay to `NanoQL/Screenshots` on the microSD, using the same 1024 x 698 nearest-neighbour geometry as PC captures and an explicit `[OK]` save confirmation.
+- Adds the stateful `Execution: Running/Paused` control as the first overlay entry. F9 changes the same session-only CPU state; native video, audio, HDMI, the overlay, and Companion services remain active.
+- Resynchronizes MC68000 disassembly after undecodable words so inline data or a capture beginning mid-instruction no longer hides all valid instructions that follow.
+- Adds unmounted `.mdv` uploads to `NanoQL/Drive1/Images` from the Assistant or the `mdv-put` command, including while the remote keyboard owns NanoQL Link.
+- Compacts the debugger capture status so it no longer widens the D7/A7 columns.
+
 ## v0.3.8 screenshot hotfix - 2026-09-03
 
 - Corrects PNG screenshot geometry on the PC to match the validated HDMI Sharp profile (1024x698). Nearest-neighbour scaling preserves every source pixel without smoothing or cropping; the aspect correction is embedded in the image dimensions rather than relying on viewer-specific metadata support.

@@ -196,6 +196,7 @@ module nanoql_top(
     wire [63:0] companion_keyboard_matrix;
     wire companion_key_event;
     wire companion_key_press_event;
+    wire companion_execution_paused;
     wire companion_caps_lock_active;
     wire companion_miso;
     wire companion_sd_irq;
@@ -608,7 +609,8 @@ module nanoql_top(
         .host_keyboard_azerty(companion_host_keyboard_azerty),
         .rom_keyboard_french(companion_rom_keyboard_french),
         .status_seen(companion_status_seen),
-        .config_seen(companion_config_seen)
+        .config_seen(companion_config_seen),
+        .execution_paused(companion_execution_paused)
     );
 
     ql_companion_hid companion_hid (
@@ -1085,7 +1087,7 @@ module nanoql_top(
 
     assign ql_system_reset = video_reset || (ql_reset_count != 15'd0);
     assign cpu_run_enable = ql_core_ready && !ql_system_reset &&
-                            !host_cpu_hold;
+                            !host_cpu_hold && !companion_execution_paused;
 
     always @(posedge clk_pixel) begin
         if (ql_system_reset)

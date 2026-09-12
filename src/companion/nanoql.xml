@@ -24,8 +24,16 @@
       <set id="R" value="0"/>
       <hide/>
     </action>
+    <action name="screenshot">
+      <set id="S" value="1"/>
+    </action>
   </actions>
-  <menu label="NanoQL v0.3.8">
+  <menu label="NanoQL v0.3.9">
+    <list label="Execution:" id="P" default="0">
+      <listentry label="Running" value="0"/>
+      <listentry label="Paused" value="1"/>
+    </list>
+    <button label="Screenshot to microSD" action="screenshot"/>
     <menu label="System">
       <fileselector label="QL ROM:" ext="rom;bin" index="0" action="save_reset"/>
       <fileselector label="IPC ROM:" ext="hex;bin;rom" index="4" action="save_reset"/>

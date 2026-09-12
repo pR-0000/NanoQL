@@ -80,6 +80,10 @@ Le protocole interroge une signature de capacités explicite : si le bitstream a
 
 ### Captures PNG sur ordinateur
 
+Lorsque le clavier distant est actif, **F11** enregistre aussi une capture PNG, **F12** ouvre l'overlay et **F6** rend la main à l'ordinateur. Un appui prolongé sur F11 ne produit qu'une capture. Choisissez le dossier des captures avant de démarrer le clavier distant ; relancez ce dernier si vous changez de dossier. Sur certains Mac ou portables, utilisez **Fn + F11** pour transmettre la touche F11 plutôt que sa fonction système.
+
+Depuis le terminal : `python tools/nanoql_link.py --port COMx keyboard --screenshot-folder captures`. Sans cette option, F11 utilise le dossier `Pictures/NanoQL` de votre compte utilisateur. Ce raccourci concerne le clavier distant du PC/Mac, pas le clavier USB branché au hub du Tang Nano.
+
 Dans **NanoQL Link > Contrôle à distance**, choisissez le **Dossier des captures**, puis **Capturer l'écran (PNG)**. Le dossier est mémorisé dans le fichier INI de l'assistant. Chaque capture crée un fichier `NanoQL-<date>-<heure>-<identifiant>.png` sans écraser les précédents. Le clavier distant peut rester connecté : ses entrées sont temporairement suspendues pendant le transfert, puis reprises automatiquement.
 
 En ligne de commande : `python tools/nanoql_link.py --port COMx screenshot captures` (sur macOS/Linux, remplacez `COMx` par le port détecté ou omettez `--port`). Le bitstream FPGA doit prendre en charge cette fonction ; aucun nouveau firmware BL616 n'est requis.
@@ -88,11 +92,19 @@ Le FPGA copie le dernier instantané QL complet dans un tampon SDRAM réservé d
 
 Pour conserver les pixels bruts de 512 × 256, destinés au débogage plutôt qu'à un affichage proportionné : `python tools/nanoql_link.py --port COMx screenshot captures --native`. La correction est normalement intégrée aux dimensions du PNG, car certains visualiseurs ignorent les métadonnées de pixels non carrés.
 
+### Captures autonomes sur microSD
+
+Sans ordinateur ni NanoQL Link, ouvrez l'overlay avec **F12** puis choisissez **Screenshot to microSD**. Le BL616 enregistre `NanoQL/Screenshots/NanoQL0001.png`, puis incrémente le numéro sans écraser les captures existantes. Le PNG utilise la même géométrie corrigée 1024 × 698 que la capture PC, sans lissage ni overlay. Laissez la carte alimentée jusqu'au message `[OK] Saved ...`, qui confirme la fermeture correcte du fichier.
+
+La première option de l'overlay affiche explicitement **Execution: Running** ou **Paused**. **F9** change ce même état depuis un clavier USB physique comme depuis le clavier distant. L'image, l'audio, l'overlay et les services microSD continuent de fonctionner. **F6** reste réservé à la sortie du clavier distant, **F11** à sa capture PNG sur le PC et **F12** à l'overlay.
+
 ### Utiliser un dossier comme Microdrive
 
 Le chemin recommandé ne nécessite ni NanoQL Link ni connexion au PC. Sur la microSD, créez un sous-dossier par cartouche dans `NanoQL/Microdrives`, par exemple `NanoQL/Microdrives/Benchmark`, puis placez-y les fichiers QL. Dans l'overlay `F12`, choisissez **Build MDV1 from:** puis `Benchmark`. Le BL616 crée `NanoQL/Generated/Benchmark.mdv`, monte cette image QLAY comme `mdv1_` en lecture/écriture et redémarre uniquement le QL.
 
 La commande de développement `mdv-sync` remplace également `MDV1.mdv` et le monte sans réinitialiser QDOS. Dans l'assistant graphique, elle peut être lancée pendant que le clavier distant est actif : le processus clavier libère toutes les touches, effectue lui-même le transfert sur sa session série, puis reprend automatiquement la capture. Il n'est donc plus nécessaire d'arrêter et de relancer le clavier, et deux processus ne se disputent jamais le port NanoQL Link.
+
+Pour seulement copier une image existante sans la monter, utilisez **Envoyer le MDV sans le monter** dans le même onglet ou `python tools/nanoql_link.py --port COMx mdv-put image.mdv`. Le fichier est vérifié puis placé dans `NanoQL/Drive1/Images`. QDOS n'est ni arrêté ni réinitialisé; vous pourrez sélectionner l'image plus tard dans l'overlay.
 
 Les sous-dossiers sont aplatis avec `_` ; `tests/README.md` devient `tests_README_md`. Les noms résultants doivent utiliser des caractères ASCII et tenir sur 36 caractères. La conversion accepte au plus 126 fichiers et huit niveaux de sous-dossiers. Une image QLAY mesure toujours 174 930 octets, mais 253 secteurs de 512 octets seulement sont allouables aux en-têtes et aux données. La condition exacte est `ceil((nombre_fichiers + 1) × 64 / 512) + somme(ceil((taille_fichier + 64) / 512)) <= 253` ; un fichier unique peut donc contenir au plus 128 960 octets. À l'invite QDOS, utilisez `DIR mdv1_`, puis par exemple `LRUN mdv1_programme_bas`.
 
@@ -236,6 +248,10 @@ An explicit capability signature identifies the active FPGA debugger: an old bit
 
 ### PNG screenshots on the computer
 
+While the remote keyboard is active, **F11** also saves a PNG screenshot, **F12** opens the overlay, and **F6** returns control to the computer. Holding F11 produces only one screenshot. Choose the screenshot folder before starting the remote keyboard; restart it after changing the folder. Some Macs and laptops require **Fn + F11** to send F11 instead of its system action.
+
+From a terminal: `python tools/nanoql_link.py --port PORT keyboard --screenshot-folder captures`. Without that option, F11 uses `Pictures/NanoQL` under your home directory. This shortcut applies to the PC/Mac remote keyboard, not the USB keyboard connected to the Tang Nano's hub.
+
 In **NanoQL Link > Remote control**, select the **Screenshot folder**, then **Capture screen (PNG)**. The folder is saved in the Assistant's INI settings. Each capture creates a timestamped `NanoQL-<date>-<time>-<identifier>.png` without overwriting earlier files. The remote keyboard can stay connected: its input is temporarily paused during the transfer and then resumed automatically.
 
 Command line: `python tools/nanoql_link.py --port COMx screenshot captures` (on macOS/Linux, use the detected device path or omit `--port`). This requires the screenshot-capable FPGA bitstream, but no new BL616 firmware.
@@ -244,11 +260,19 @@ The FPGA copies the latest complete QL snapshot into a dedicated 32 KiB SDRAM bu
 
 For raw 512 x 256 pixels intended for debugging rather than proportioned display, use `python tools/nanoql_link.py --port PORT screenshot captures --native`. By default the correction is baked into PNG dimensions, since some viewers ignore non-square-pixel metadata.
 
+### Autonomous screenshots on microSD
+
+Without a computer or NanoQL Link, open the overlay with **F12** and select **Screenshot to microSD**. The BL616 writes `NanoQL/Screenshots/NanoQL0001.png`, then increments the number without overwriting earlier captures. It uses the same corrected 1024 x 698 nearest-neighbour geometry as PC capture and excludes the overlay. Keep the board powered until `[OK] Saved ...` confirms that the file was closed correctly.
+
+The overlay's first entry explicitly displays **Execution: Running** or **Paused**. **F9** changes that same state from either a physical USB keyboard or the remote keyboard. Video, audio, overlay, and microSD services keep running. **F6** remains the remote-keyboard exit key, **F11** its PC screenshot shortcut, and **F12** opens the overlay.
+
 ### Using a folder as a Microdrive
 
 The recommended path requires neither NanoQL Link nor a PC connection. Create one cartridge subfolder under `NanoQL/Microdrives` on the microSD, for example `NanoQL/Microdrives/Benchmark`, and place the QL files inside it. In the `F12` overlay, select **Build MDV1 from:** and then `Benchmark`. The BL616 creates `NanoQL/Generated/Benchmark.mdv`, mounts that QLAY image read/write as `mdv1_`, and resets only the QL.
 
 The development `mdv-sync` command replaces `MDV1.mdv` and mounts it like a physical cartridge without resetting QDOS. In the graphical assistant it can run while the remote keyboard is active: the keyboard process releases all keys, performs the transfer through its own serial session, and resumes capture automatically. The keyboard no longer needs to be stopped and restarted, and two processes never compete for the NanoQL Link port. Use `DIR mdv1_` after synchronization.
+
+To copy an existing image without mounting it, use **Upload MDV without mounting** in the same tab or `python tools/nanoql_link.py --port PORT mdv-put image.mdv`. The verified file is stored under `NanoQL/Drive1/Images`; QDOS is neither halted nor reset, and the image can be selected later from the overlay.
 
 Subdirectories are flattened with `_`; for example, `tests/README.md` becomes `tests_README_md`. Resulting names must be ASCII and no longer than 36 characters. Conversion accepts up to 126 files and eight nested directory levels. A QLAY image is always 174,930 bytes, but only 253 512-byte sectors are allocatable to headers and data. The exact condition is `ceil((file_count + 1) × 64 / 512) + sum(ceil((file_size + 64) / 512)) <= 253`; a single file can therefore contain at most 128,960 bytes. At the QDOS prompt, enter `DIR mdv1_`, followed by a command such as `LRUN mdv1_program_bas`.
 

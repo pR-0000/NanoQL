@@ -2,12 +2,18 @@ import contextlib
 import io
 import struct
 import sys
+import types
 import unittest
+from unittest.mock import Mock, patch
 import zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from nanoql_link import NanoQLLink, SCREENSHOT_ADDRESS, ql_screen_png
+from nanoql_link import (
+    NanoQLLink, SCREENSHOT_ADDRESS, ql_screen_png, keyboard_screenshot,
+    interactive_keyboard_windows, interactive_keyboard_pynput,
+    windows_realtime_keymap,
+)
 
 
 def png_rows(data, size=(512, 256)):
@@ -85,6 +91,79 @@ class ScreenshotTests(unittest.TestCase):
                 return bytes(9)
         with self.assertRaisesRegex(RuntimeError, "does not support screenshots"):
             NanoQLLink.screenshot_info(Old())
+
+    def test_f11_capture_releases_keys_even_after_error(self):
+        release = Mock()
+        link = Mock()
+        folder = Path("captures")
+        with patch("nanoql_link.save_screenshot", side_effect=RuntimeError("test error")) as save:
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                keyboard_screenshot(link, folder, release)
+        save.assert_called_once_with(link, folder)
+        self.assertEqual(release.call_count, 2)
+        self.assertIn("Screenshot failed: test error", output.getvalue())
+
+    def test_windows_f11_is_local_and_does_not_repeat_while_held(self):
+        mapping = windows_realtime_keymap()
+        self.assertNotIn(0x7A, mapping)
+        self.assertNotIn(0x75, mapping)
+        self.assertEqual(mapping[0x7B], 0x45)  # F12 still reaches the overlay.
+        f11_states = iter((False, True, True, True, False))
+
+        def get_key(vk):
+            return 0x8000 if vk == 0x7A and next(f11_states) else 0
+
+        link = Mock(ql_layout="uk")
+        windll = types.SimpleNamespace(user32=types.SimpleNamespace(GetAsyncKeyState=get_key))
+        with patch("nanoql_link.ctypes.windll", windll, create=True), \
+                patch("nanoql_link.windows_realtime_keymap", return_value=mapping), \
+                patch.dict(sys.modules, {"msvcrt": types.SimpleNamespace(kbhit=lambda: False)}), \
+                patch("nanoql_link.stop_requested", side_effect=(False, False, False, True)), \
+                patch("nanoql_link.time.sleep"), \
+                patch("nanoql_link.save_screenshot") as save, \
+                contextlib.redirect_stdout(io.StringIO()):
+            interactive_keyboard_windows(link, screenshot_folder=Path("captures"))
+        save.assert_called_once_with(link, Path("captures"))
+        link.key_event.assert_not_called()
+
+    def test_pynput_f11_autorepeat_captures_once_on_serial_owner(self):
+        key_names = types.SimpleNamespace(f6="F6", f11="F11", f12="F12")
+        callback_active = False
+
+        class Listener:
+            def __init__(self, on_press, on_release, **_kwargs):
+                self.on_press = on_press
+
+            def start(self):
+                nonlocal callback_active
+                callback_active = True
+                self.on_press("F11")
+                self.on_press("F11")  # OS key-repeat must not queue a second PNG.
+                callback_active = False
+
+            def is_alive(self):
+                return False
+
+            def stop(self):
+                pass
+
+            def join(self, **_kwargs):
+                pass
+
+        keyboard = types.SimpleNamespace(Key=key_names, Listener=Listener)
+        link = Mock(ql_layout="fr")
+
+        def save_on_owner(*_args):
+            self.assertFalse(callback_active)
+
+        with patch.dict(sys.modules, {"pynput": types.SimpleNamespace(keyboard=keyboard)}), \
+                patch("nanoql_link.sys.platform", "linux"), \
+                patch("nanoql_link.sys.stdin.isatty", return_value=False), \
+                patch("nanoql_link.save_screenshot", side_effect=save_on_owner) as save, \
+                contextlib.redirect_stdout(io.StringIO()):
+            interactive_keyboard_pynput(link, screenshot_folder=Path("captures"))
+        save.assert_called_once_with(link, Path("captures"))
+        link.key_event.assert_not_called()
 
     def test_capture_does_not_change_cpu_state_and_releases_buffer(self):
         class Fake(NanoQLLink):

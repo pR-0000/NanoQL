@@ -184,28 +184,28 @@ def disassemble_m68000(data: bytes, address: int) -> list[tuple[int, bytes, str]
     )
     result = []
     consumed = 0
-    for instruction in decoder.disasm(data, address):
-        relative = instruction.address - address
-        while consumed + 1 < relative:
+    # Capstone stops a streaming decode at the first invalid opcode. Context
+    # captured before PC may legitimately begin in inline data or halfway
+    # through an instruction, so retry at every word instead of turning the
+    # entire remainder into dc.w directives.
+    while consumed + 1 < len(data):
+        instruction = next(decoder.disasm(
+            data[consumed:], address + consumed, count=1
+        ), None)
+        if instruction is None or instruction.address != address + consumed:
             raw = data[consumed:consumed + 2]
             result.append((
                 address + consumed, raw,
                 f"dc.w ${int.from_bytes(raw, 'big'):04x}",
             ))
             consumed += 2
+            continue
         text = instruction.mnemonic
         if instruction.op_str:
             text += " " + instruction.op_str
         raw = bytes(instruction.bytes)
         result.append((instruction.address, raw, text))
-        consumed = relative + len(raw)
-    while consumed + 1 < len(data):
-        raw = data[consumed:consumed + 2]
-        result.append((
-            address + consumed, raw,
-            f"dc.w ${int.from_bytes(raw, 'big'):04x}",
-        ))
-        consumed += 2
+        consumed += len(raw)
     return result
 
 
@@ -452,6 +452,7 @@ REMOTE_MENU_USAGES = {
     0x50,  # Left
     0x51,  # Down
     0x52,  # Up
+    0x42,  # F9: FPGA pause/resume
 }
 
 ASCII_KEYS = {
@@ -755,7 +756,7 @@ def windows_realtime_keymap() -> dict[int, int]:
         0x6F: 0x54,  # Keypad divide
     })
     for virtual_key in range(0x70, 0x7C):
-        if virtual_key != 0x75:  # F6 releases the terminal keyboard.
+        if virtual_key not in (0x75, 0x7A):  # F6 exits; F11 captures on the PC.
             keymap[virtual_key] = 0x3A + virtual_key - 0x70
     return keymap
 
@@ -2109,6 +2110,30 @@ def synchronize_microdrive(link: NanoQLLink, source_path: Path,
     )
 
 
+def upload_microdrive_image(link: NanoQLLink, source_path: Path) -> str:
+    source = source_path.expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    if source.suffix.lower() != ".mdv":
+        raise ValueError("Select a Microdrive image with the .mdv extension.")
+    if source.stat().st_size == 0:
+        raise ValueError("The Microdrive image is empty.")
+    try:
+        link.filesystem_mkdir("Images")
+    except RuntimeError as error:
+        # FatFs reports FR_EXIST through the normal protocol as an error.
+        if "FR_EXIST" not in str(error):
+            raise
+    destination = f"Images/{source.name}"
+    print(
+        f"Uploading {source.name} to /NanoQL/Drive1/{destination} without mounting it...",
+        flush=True,
+    )
+    link.filesystem_put(source, destination)
+    print("Microdrive image uploaded and verified; QDOS was left running.", flush=True)
+    return destination
+
+
 def _atomic_json_write(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
@@ -2137,7 +2162,7 @@ def service_keyboard_control(link: NanoQLLink, control_file: Path | None,
     result: dict[str, object] = {"id": request_id, "ok": False}
     try:
         command = request.get("command")
-        if command not in ("mdv-sync", "screenshot"):
+        if command not in ("mdv-sync", "mdv-put", "screenshot"):
             raise ValueError("Unsupported remote-keyboard control command.")
         release_keys()
         if command == "screenshot":
@@ -2145,12 +2170,17 @@ def service_keyboard_control(link: NanoQLLink, control_file: Path | None,
             result["path"] = str(save_screenshot(
                 link, Path(str(request.get("destination", ".")))
             ))
-        else:
+        elif command == "mdv-sync":
             print("Remote keyboard paused while MDV1 is synchronized...", flush=True)
             synchronize_microdrive(
                 link,
                 Path(str(request.get("source", ""))),
                 str(request.get("name", "NANOQL")),
+            )
+        else:
+            print("Remote keyboard paused during Microdrive upload...", flush=True)
+            result["path"] = upload_microdrive_image(
+                link, Path(str(request.get("source", "")))
             )
         result["ok"] = True
         print("Remote keyboard resumed.", flush=True)
@@ -2165,13 +2195,30 @@ def stop_requested(stop_file: Path | None) -> bool:
     return stop_file is not None and stop_file.exists()
 
 
+def keyboard_screenshot(link: NanoQLLink, destination: Path, release_keys) -> None:
+    """Run on the serial-owner thread, never inside a keyboard callback."""
+    try:
+        release_keys()
+        print("F11: remote keyboard paused during screenshot transfer...", flush=True)
+        save_screenshot(link, destination)
+    except Exception as error:
+        print(f"Screenshot failed: {error}", flush=True)
+    finally:
+        # Discard typing accumulated during transfer, including modifier keys.
+        release_keys()
+    print("Remote keyboard resumed.", flush=True)
+
+
 def interactive_keyboard_windows(link: NanoQLLink,
                                  stop_file: Path | None = None,
-                                 control_file: Path | None = None) -> None:
+                                 control_file: Path | None = None,
+                                 screenshot_folder: Path | None = None) -> None:
     import msvcrt
 
+    screenshot_folder = screenshot_folder or Path.home() / "Pictures" / "NanoQL"
     print(f"NanoQL keyboard active (QL {link.ql_layout.upper()} profile). "
-          "Keys are held in real time; press F6 to return to the terminal.")
+          "F11 saves a PNG screenshot; F12 opens the overlay; F6 returns to the terminal.")
+    print(f"F11 screenshot folder: {screenshot_folder}", flush=True)
     get_async_key_state = ctypes.windll.user32.GetAsyncKeyState
     keymap = windows_realtime_keymap()
     modifier_vks = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5}
@@ -2194,6 +2241,7 @@ def interactive_keyboard_windows(link: NanoQLLink,
     active_bindings: dict[int, tuple[set[int], bool]] = {}
     remote_pressed: set[int] = set()
     f6_previous = bool(get_async_key_state(0x75) & 0x8000)
+    f11_previous = bool(get_async_key_state(0x7A) & 0x8000)
 
     def release_remote_keys() -> None:
         nonlocal remote_pressed, previous_keys, previous_modifiers
@@ -2218,6 +2266,13 @@ def interactive_keyboard_windows(link: NanoQLLink,
             if f6_pressed and not f6_previous:
                 break
             f6_previous = f6_pressed
+
+            f11_pressed = bool(get_async_key_state(0x7A) & 0x8000)
+            if f11_pressed and not f11_previous:
+                keyboard_screenshot(link, screenshot_folder, release_remote_keys)
+                f11_previous = bool(get_async_key_state(0x7A) & 0x8000)
+                continue
+            f11_previous = f11_pressed
 
             current_keys = {
                 virtual_key for virtual_key in ordinary_keymap
@@ -2316,7 +2371,8 @@ def interactive_keyboard_windows(link: NanoQLLink,
 
 def interactive_keyboard_pynput(link: NanoQLLink,
                                 stop_file: Path | None = None,
-                                control_file: Path | None = None) -> None:
+                                control_file: Path | None = None,
+                                screenshot_folder: Path | None = None) -> None:
     try:
         from pynput import keyboard
     except ImportError:
@@ -2360,7 +2416,7 @@ def interactive_keyboard_pynput(link: NanoQLLink,
             special_usages[key] = usage
     for index in range(1, 13):
         key = key_named(f"f{index}")
-        if key is not None and index != 6:
+        if key is not None and index not in (6, 11):
             special_usages[key] = 0x39 + index
 
     modifier_usages = {}
@@ -2385,6 +2441,8 @@ def interactive_keyboard_pynput(link: NanoQLLink,
     remote_pressed: set[int] = set()
     stopping = False
     f6_key = key_named("f6")
+    f11_key = key_named("f11")
+    f11_down = False
     minimum_hold_time = 0.085
 
     terminal_fd: int | None = None
@@ -2410,14 +2468,23 @@ def interactive_keyboard_pynput(link: NanoQLLink,
             terminal_module = None
 
     def on_press(key) -> bool | None:
-        nonlocal stopping
+        nonlocal stopping, f11_down
         if key == f6_key:
             stopping = True
             return False
+        if key == f11_key:
+            if not f11_down:
+                input_events.put((True, key))
+            f11_down = True
+            return None
         input_events.put((True, key))
         return None
 
     def on_release(key) -> None:
+        nonlocal f11_down
+        if key == f11_key:
+            f11_down = False
+            return
         input_events.put((False, key))
 
     def key_identity(key) -> object:
@@ -2526,8 +2593,10 @@ def interactive_keyboard_pynput(link: NanoQLLink,
             except queue.Empty:
                 break
 
+    screenshot_folder = screenshot_folder or Path.home() / "Pictures" / "NanoQL"
     print(f"NanoQL keyboard active (QL {link.ql_layout.upper()} profile). "
-          "Keys are held in real time; press F6 to return to the terminal.")
+          "F11 saves a PNG screenshot; F12 opens the overlay; F6 returns to the terminal.")
+    print(f"F11 screenshot folder: {screenshot_folder}", flush=True)
     listener = None
     try:
         listener = keyboard.Listener(
@@ -2553,6 +2622,10 @@ def interactive_keyboard_pynput(link: NanoQLLink,
             except queue.Empty:
                 if stopping and not pending_releases:
                     break
+                continue
+
+            if key == f11_key:
+                keyboard_screenshot(link, screenshot_folder, release_remote_keys)
                 continue
 
             modifier = modifier_usages.get(key)
@@ -2626,11 +2699,12 @@ def interactive_keyboard_pynput(link: NanoQLLink,
 
 def interactive_keyboard(link: NanoQLLink,
                          stop_file: Path | None = None,
-                         control_file: Path | None = None) -> None:
+                         control_file: Path | None = None,
+                         screenshot_folder: Path | None = None) -> None:
     if os.name == "nt":
-        interactive_keyboard_windows(link, stop_file, control_file)
+        interactive_keyboard_windows(link, stop_file, control_file, screenshot_folder)
     else:
-        interactive_keyboard_pynput(link, stop_file, control_file)
+        interactive_keyboard_pynput(link, stop_file, control_file, screenshot_folder)
 
 
 DEMO_CODE = bytes.fromhex(
@@ -3011,6 +3085,10 @@ def main() -> int:
         "keyboard", help="use the computer keyboard in real time"
     )
     keyboard_parser.add_argument(
+        "--screenshot-folder", type=Path, default=Path.home() / "Pictures" / "NanoQL",
+        help="F11 PNG destination folder (default: ~/Pictures/NanoQL)",
+    )
+    keyboard_parser.add_argument(
         "--stop-file", type=Path,
         help=argparse.SUPPRESS,
     )
@@ -3078,6 +3156,12 @@ def main() -> int:
     mdv_sync_parser.add_argument(
         "--name", default="NANOQL", help="QL Microdrive medium name"
     )
+
+    mdv_put_parser = subparsers.add_parser(
+        "mdv-put",
+        help="upload a .mdv image to NanoQL/Drive1/Images without mounting it",
+    )
+    mdv_put_parser.add_argument("source", type=Path, help="local .mdv image")
 
     mdv_extract_parser = subparsers.add_parser(
         "mdv-extract",
@@ -3560,7 +3644,7 @@ def main() -> int:
                 keyboard_control_result_path(args.control_file).unlink(
                     missing_ok=True
                 )
-            interactive_keyboard(link, args.stop_file, args.control_file)
+            interactive_keyboard(link, args.stop_file, args.control_file, args.screenshot_folder)
         elif args.command == "link-stress":
             run_link_stress(link, args.seconds)
         elif args.command == "sd-info":
@@ -3626,6 +3710,8 @@ def main() -> int:
             print("MDV1.mdv is ready; mount it from the Microdrive 1 menu entry.")
         elif args.command == "mdv-sync":
             synchronize_microdrive(link, args.source, args.name)
+        elif args.command == "mdv-put":
+            upload_microdrive_image(link, args.source)
         elif args.command == "mdv-extract":
             remote_path_bytes(args.source)
             source_name = args.source.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]

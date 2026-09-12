@@ -23,12 +23,13 @@ index e659f09..56a0b1d 100644
  # wifi support
  set(CONFIG_LWIP 1)
  set(CONFIG_WIFI6 1)
-@@ -128,6 +133,9 @@ sdk_add_include_directories(. ../u8g2/csrc)
+@@ -128,6 +133,10 @@ sdk_add_include_directories(. ../u8g2/csrc)
  
  target_sources(app PRIVATE
     	mcu_hw.c
 +    nanoql_drive.c
 +    nanoql_flash.c
++    nanoql_screenshot.c
 +    nanoql_usb.c
     	../hidparser.c
     	../hid.c
@@ -392,7 +393,26 @@ index f58198b..35dbdd8 100644
  void get_keyboard_change(const unsigned char* a, const unsigned char* b, int start ,int length, unsigned char* res) {
    int i1, i2;
    int res_len = 0;
-@@ -136,10 +163,12 @@ void newkbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid
+@@ -106,7 +133,8 @@ void newkbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid
+         {
+           // check if the reported key is the OSD activation hotkey
+           // and suppress reporting it to the core
+-          if (keyboard_change[0][i] != inifile_option_get(INIFILE_OPTION_HOTKEY))
++          if (keyboard_change[0][i] != inifile_option_get(INIFILE_OPTION_HOTKEY) &&
++              keyboard_change[0][i] != 0x42)
+ //        kbd_tx(0x80 | core_map_key(keyboard_change[0][i]));
+           kbd_tx(0x80 | (0x3f & keyboard_change[0][i]));
+         }
+@@ -130,16 +158,20 @@ void newkbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid
+         // Caution: Since the OSD closes on the press event, the following
+         // release event will be sent into the core. The core should thus
+         // cope with release events that did not have a press event before
+-        if (keyboard_change[1][i] == inifile_option_get(INIFILE_OPTION_HOTKEY))
++        if (keyboard_change[1][i] == 0x42) /* F9 */
++          menu_toggle_value('P');
++        else if (keyboard_change[1][i] == inifile_option_get(INIFILE_OPTION_HOTKEY))
+           msg = MENU_EVENT_TOGGLE;
+         else if (osd_is_visible() && keyboard_change[1][i] == 0x29 /* ESC key */)
            msg = MENU_EVENT_BACK;
          else
          {
@@ -445,7 +465,17 @@ index f58198b..35dbdd8 100644
    // check if regular keys have changed
    // key released?
    for(int i=0;i<6;i++) {
-@@ -216,6 +235,19 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
+@@ -208,7 +227,8 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
+       if(!osd_is_visible() ) {
+         // check if the reported key is the OSD activation hotkey
+         // and suppress reporting it to the core
+-        if(state->last_report[2+i] != inifile_option_get(INIFILE_OPTION_HOTKEY))
++        if(state->last_report[2+i] != inifile_option_get(INIFILE_OPTION_HOTKEY) &&
++           state->last_report[2+i] != 0x42)
+           //kbd_tx(0x80 | state->last_report[2+i]);
+           kbd_tx_hid_ps2_break(state->last_report[2+i], 0);
+       } else
+@@ -216,6 +236,19 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
      }
    }
  
@@ -465,7 +495,17 @@ index f58198b..35dbdd8 100644
    // key pressed?
    for(int i=0;i<6;i++) {
      // process all slots that are used in current report
-@@ -240,10 +272,12 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
+@@ -233,17 +266,21 @@ void kbd_parse(__attribute__((unused)) const hid_report_t *report, struct hid_kb
+       // Caution: Since the OSD closes on the press event, the following
+       // release event will be sent into the core. The core should thus
+       // cope with release events that did not have a press event before
+-      if(buffer[2+i] == inifile_option_get(INIFILE_OPTION_HOTKEY)) {
++      if(buffer[2+i] == 0x42) { /* F9 */
++        menu_toggle_value('P');
++      } else if(buffer[2+i] == inifile_option_get(INIFILE_OPTION_HOTKEY)) {
+         // for now, shift-F12 activates the system menu
+         if(buffer[0] & 0x22) msg = MENU_EVENT_SYSTEM;
+         else	  msg = MENU_EVENT_TOGGLE;
        } else if(osd_is_visible() && buffer[2+i] == 0x29 /* ESC key */ )
          msg = MENU_EVENT_BACK;
        else {
@@ -833,6 +873,24 @@ index a53cf9f..af6d4ca 100644
  void mcu_hw_jtag_set_pins(uint8_t dir, uint8_t data);
  uint8_t mcu_hw_jtag_tms(uint8_t tdi, uint8_t data, int len);
  void mcu_hw_jtag_data(uint8_t *txd, uint8_t *rxd, int len);
+diff --git a/src/menu.h b/src/menu.h
+index 04411d4..b9bfcab 100644
+--- a/src/menu.h
++++ b/src/menu.h
+@@ -43,6 +43,7 @@ extern TaskHandle_t menu_handle;
+ void menu_init(void);
+ menu_variable_t *menu_get_variables(void);
+ void menu_set_value(unsigned char id, int8_t value);
++void menu_toggle_value(unsigned char id);
+ void menu_do(int);
+ void menu_notify(unsigned long msg);
+ void menu_joystick_state(unsigned char state);
+@@ -49,4 +49,5 @@ void menu_joystick_state(unsigned char state);
+ void menu_button_state(unsigned char state);
+ void menu_run_current_image_action(void);
++void menu_draw_dialog(const char *title, const char *msg);
+ 
+ #endif // MENU_H
 diff --git a/src/menu.c b/src/menu.c
 index 5b8883d..252420e 100644
 --- a/src/menu.c
@@ -848,6 +906,25 @@ index 5b8883d..252420e 100644
  #ifdef ENABLE_BLUETOOTH
  #include "bluetooth.h"
  #endif
+@@ -197,3 +201,7 @@ void menu_set_value(unsigned char id, int8_t value) {
++  // Execution pause is deliberately session-only. An INI saved while paused
++  // must not leave the emulated machine stopped after the next power-up.
++  if(id == 'P') value = 0;
++
+   // this is called when reading the ini file
+   // We allow values in the ini file which are actually not in the
+   // menu at all. This can be used for "static" changes which are made
+@@ -211,6 +219,10 @@ void menu_set_value(unsigned char id, int8_t value) {
+     menu_variable_set(id, value);
+ }
+ 
++void menu_toggle_value(unsigned char id) {
++  menu_variable_set(id, !menu_variable_get(id));
++}
++
+ // various 8x8 icons
+ static const unsigned char icn_right_bits[]  = { 0x00,0x04,0x0c,0x1c,0x3c,0x1c,0x0c,0x04 };
+ static const unsigned char icn_left_bits[]   = { 0x00,0x20,0x30,0x38,0x3c,0x38,0x30,0x20 };
 @@ -448,9 +452,9 @@ static void menu_draw_title(const char *s, bool arrow, bool selected) {
      // "single button" mode
    
@@ -1271,6 +1348,17 @@ diff --git a/src/sysctrl.c b/src/sysctrl.c
 index 8a1d83e..0c79a1f 100644
 --- a/src/sysctrl.c
 +++ b/src/sysctrl.c
+@@ -17,6 +17,10 @@
+ #include "config.h"
+ #include "mcu_hw.h"
+ #include "at_wifi.h"
++
++#ifdef NANOQL_COMPANION
++#include "bl616/nanoql_screenshot.h"
++#endif
+ 
+ // we are using "puff" to decompress a gzip'd FPGA config as this is a slow, yet
+ // very small and memory efficient implementation of the deflate de-compression
 @@ -269,7 +269,7 @@ static void sys_handle_event(bool ignore_coldboot) {
  
      // the second button controls the OSD, so it can be used in conjunction
@@ -1289,7 +1377,21 @@ index 8a1d83e..0c79a1f 100644
        // Check for USB-JTAG activity and don't reset (and thus break
        // the JTAG activity)
        if(mcu_hw_jtag_is_active()) {
-@@ -379,7 +379,11 @@ void sys_run_action(config_action_t *action) {
+@@ -360,8 +364,13 @@ void sys_run_action(config_action_t *action) {
+   config_action_command_t *command = action->commands;
+   while(command) {
+     switch(command->code) {
+     case CONFIG_ACTION_COMMAND_SET:
+       sys_debugf("SET('%c',%d)", command->set.id, command->set.value);
++#ifdef NANOQL_COMPANION
++      if(command->set.id == 'S' && command->set.value)
++        menu_draw_dialog("Screenshot", nanoql_screenshot_save());
++      else
++#endif
+       sys_set_val(command->set.id, command->set.value);
+       break;
+       
+@@ -379,7 +391,11 @@ void sys_run_action(config_action_t *action) {
        
      case CONFIG_ACTION_COMMAND_SAVE:
        sys_debugf("SAVE %s", command->filename);

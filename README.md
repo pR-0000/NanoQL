@@ -18,12 +18,13 @@ Le projet privilégie la fidélité matérielle : CPU 68000, timings vidéo nati
 - vidéo QL 4/8 couleurs sur HDMI, pixels non carrés corrigés à environ 4,4:3 et profils 50/60 Hz ;
 - son QL et carte QSound optionnelle mixés sur HDMI ;
 - clavier USB QWERTY/AZERTY et clavier distant par NanoQL Link ;
-- overlay `F12` pour les ROM, la RAM, le CPU, la vidéo et les supports ;
+- overlay `F12` pour les ROM, la RAM, le CPU, la vidéo et les supports, avec pause `F9` et capture PNG autonome sur microSD ;
 - images QL-SD en lecture ;
 - Microdrive QLAY lisible et inscriptible ;
 - conversion autonome d'un dossier microSD en cartouche `.mdv` ;
 - programmation FPGA temporaire ou permanente et outils de développement par USB ;
 - captures PNG de l'écran QL sur PC/Mac par USB, depuis l'onglet **Contrôle à distance**, avec correction du rapport des pixels comme en HDMI ;
+- envoi d'images `.mdv` vers `NanoQL/Drive1/Images` sans les monter ni interrompre QDOS ;
 - téléchargement automatique de la dernière release et débogage matériel du 68000 dans NanoQL Link, avec registres, flags, dumps mémoire et désassemblage autour du PC.
 
 Les fonctions annoncées comme validées ont été testées sur une Tang Nano 20K révision 3923. La révision 3921 utilise le même bitstream avec un firmware BL616 adapté.
@@ -119,13 +120,13 @@ Sur le QL original de 128 Kio, `RESPR(65536)` peut normalement produire `Out of 
 
 | Ressource |            Utilisation |
 | --------- | ---------------------: |
-| Logique   | 16 738 / 20 736 (81 %) |
-| LUT       |                 15 660 |
-| Registres |                  7 549 |
+| Logique   | 16 814 / 20 736 (82 %) |
+| LUT       |                 15 736 |
+| Registres |                  7 552 |
 | BSRAM     |         21 / 46 (46 %) |
 | DSP       |               0,5 / 24 |
 
-Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 50,877 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,255 MHz. L'analyse de puissance Gowin estime 327,998 mW et une température de jonction de 34,787 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
+Le domaine système fonctionne à 48 MHz avec un Fmax estimé de 50,877 MHz. Le domaine HDMI fonctionne à 74,25 MHz avec un Fmax estimé de 74,255 MHz. L'analyse de puissance Gowin estime 328,005 mW et une température de jonction de 34,788 °C à 25 °C ambiants ; ces valeurs dépendent des hypothèses d'activité de l'outil et ne remplacent pas une mesure physique.
 
 ## English
 
@@ -141,12 +142,13 @@ The project emphasizes hardware fidelity: the 68000 CPU, native video timing, RA
 - QL 4/8-colour HDMI video with corrected non-square pixels at approximately 4.4:3 and 50/60 Hz profiles;
 - QL sound and optional QSound card mixed into HDMI;
 - QWERTY/AZERTY USB keyboard and NanoQL Link remote keyboard;
-- `F12` overlay for ROMs, RAM, CPU, video, and media;
+- `F12` overlay for ROMs, RAM, CPU, video, and media, with F9 pause and autonomous PNG capture to microSD;
 - read-only QL-SD images;
 - readable and writable QLAY Microdrive cartridges;
 - standalone microSD-folder to `.mdv` conversion;
 - temporary or persistent FPGA programming and USB development tools;
 - USB PNG screenshots saved to PC/Mac from the **Remote control** tab, with pixel-aspect correction matching HDMI;
+- unmounted `.mdv` uploads to `NanoQL/Drive1/Images` without interrupting QDOS;
 - automatic latest-release download and hardware 68000 debugging inside NanoQL Link, with registers, flags, memory dumps, and disassembly around the PC.
 
 Features described as validated were physically tested on a revision 3923 Tang Nano 20K. Revision 3921 uses the same FPGA bitstream with matching BL616 firmware.
@@ -242,13 +244,13 @@ On an original 128 KiB QL, `RESPR(65536)` can normally report `Out of Memory`: Q
 
 | Resource  |                 Usage |
 | --------- | --------------------: |
-| Logic     | 16,738 / 20,736 (81%) |
-| LUT       |                15,660 |
-| Registers |                 7,549 |
+| Logic     | 16,782 / 20,736 (81%) |
+| LUT       |                15,706 |
+| Registers |                 7,550 |
 | BSRAM     |         21 / 46 (46%) |
 | DSP       |              0.5 / 24 |
 
-The system domain runs at 48 MHz with an estimated Fmax of 50.877 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.255 MHz. Gowin power analysis estimates 327.998 mW and a 34.787 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
+The system domain runs at 48 MHz with an estimated Fmax of 50.877 MHz. The HDMI domain runs at 74.25 MHz with an estimated Fmax of 74.255 MHz. Gowin power analysis estimates 327.989 mW and a 34.787 °C junction temperature at 25 °C ambient; these values depend on the tool's activity assumptions and do not replace physical measurement.
 
 ## Credits and licenses
 

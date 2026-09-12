@@ -171,7 +171,7 @@ static const uint8_t device_qualifier_descriptor[] = {
 static const char *string_descriptors[] = {
     (const char[]){0x09, 0x04},
     "NanoQL",
-    "NanoQL Link v0.3.4",
+    "NanoQL Link v0.3.9",
     "NQL0001"
 };
 
@@ -1322,6 +1322,11 @@ static bool remote_menu_event(uint8_t event)
     bool released = (event & 0x80) != 0;
     uint8_t usage = event & 0x7f;
 
+    if (usage == 0x42) { /* F9 */
+        if (!released)
+            menu_toggle_value('P');
+        return true;
+    }
     if (usage == 0x45) { /* F12 */
         menu_notify(released ? MENU_EVENT_KEY_RELEASE : MENU_EVENT_TOGGLE);
         return true;

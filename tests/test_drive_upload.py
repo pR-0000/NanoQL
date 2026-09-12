@@ -15,6 +15,7 @@ from nanoql_link import (  # noqa: E402
     CMD_FS_PUT_COMMIT,
     CMD_FS_PUT_DATA,
     NanoQLLink,
+    upload_microdrive_image,
 )
 
 
@@ -109,6 +110,29 @@ class StalledCommitDriveLink(FakeDriveLink):
 
 
 class DriveUploadTimeoutTests(unittest.TestCase):
+    def test_microdrive_image_upload_uses_unmounted_images_folder(self) -> None:
+        class Link:
+            def __init__(self) -> None:
+                self.paths = []
+
+            def filesystem_mkdir(self, path):
+                self.paths.append(("mkdir", path))
+
+            def filesystem_put(self, source, path):
+                self.paths.append((source.name, path))
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "demo.mdv"
+            source.write_bytes(b"QLAY")
+            link = Link()
+            destination = upload_microdrive_image(link, source)
+
+        self.assertEqual(destination, "Images/demo.mdv")
+        self.assertEqual(
+            link.paths,
+            [("mkdir", "Images"), ("demo.mdv", "Images/demo.mdv")],
+        )
+
     def test_slow_card_timeouts_are_scoped_to_upload(self) -> None:
         payload = bytes(range(256)) * 3
         link = FakeDriveLink(payload)

@@ -16,6 +16,7 @@ module ql_companion_sysctrl(
     output reg        microdrive_turbo,
     output reg        host_keyboard_azerty,
     output reg        rom_keyboard_french,
+    output reg        execution_paused,
     output reg        status_seen,
     output reg        config_seen
 );
@@ -50,6 +51,7 @@ module ql_companion_sysctrl(
             microdrive_turbo <= 1'b0;
             host_keyboard_azerty <= 1'b0;
             rom_keyboard_french <= 1'b0;
+            execution_paused <= 1'b0;
             status_seen <= 1'b0;
             config_seen <= 1'b0;
         end else begin
@@ -99,6 +101,8 @@ module ql_companion_sysctrl(
                                     host_keyboard_azerty <= data_in[0];
                                 else if (config_id == "K")
                                     rom_keyboard_french <= data_in[0];
+                                else if (config_id == "P")
+                                    execution_paused <= data_in[0];
                             end
                         end
 

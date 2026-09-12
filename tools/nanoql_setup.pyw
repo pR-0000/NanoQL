@@ -76,7 +76,7 @@ HOMEBREW_URL = "https://brew.sh/"
 AUTO_PORT = "Automatic detection"
 SELECT_PORT = "Select a serial port"
 WORKFLOW_REVISION = "7"
-CURRENT_RELEASE_TAG = "v0.3.8"
+CURRENT_RELEASE_TAG = "v0.3.9"
 GITHUB_RELEASE_API = (
     "https://api.github.com/repos/pR-0000/NanoQL/releases/latest"
 )
@@ -99,6 +99,7 @@ TRANSLATIONS = {
         "Remote control": "Contrôle à distance",
         "Screenshot folder": "Dossier des captures",
         "Capture screen (PNG)": "Capturer l'écran (PNG)",
+        "F11 also captures while the remote keyboard is active.": "F11 capture aussi l'écran lorsque le clavier distant est actif.",
         "Capturing QL screen": "Capture de l'écran QL",
         "Select the screenshot folder": "Choisir le dossier des captures",
         "Remote keyboard operation did not complete within 300 seconds.": "L'opération du clavier distant n'a pas abouti dans les 300 secondes.",
@@ -153,6 +154,10 @@ TRANSLATIONS = {
         "Debugger": "Débogueur",
         "Connection and remote keyboard": "Connexion et clavier distant",
         "Microdrive synchronization": "Synchronisation Microdrive",
+        "Microdrive image": "Image Microdrive",
+        "Upload MDV without mounting": "Envoyer le MDV sans le monter",
+        "Select a Microdrive image": "Choisir une image Microdrive",
+        "Uploading Microdrive image": "Envoi de l'image Microdrive",
         "Program injection": "Injection de programme",
         "Capture and halt": "Capturer et arrêter",
         "Capture and continue": "Capturer et continuer",
@@ -182,9 +187,9 @@ TRANSLATIONS = {
         "The code address is invalid.": "L'adresse du code est invalide.",
         "The dump address or length is invalid.": "L'adresse ou la longueur du dump est invalide.",
         "PC must be an even ROM/base-RAM address and SSP must be an even base-RAM address.": "Le PC doit être une adresse paire de ROM/RAM de base et le SSP une adresse paire de RAM de base.",
-        "68000 was already halted; Resume 68000 is available": "Le 68000 était déjà arrêté ; Reprendre 68000 est disponible",
-        "68000 captured and halted; Resume 68000 is available": "68000 capturé et arrêté ; Reprendre 68000 est disponible",
-        "68000 captured and resumed; Halt 68000 is available": "68000 capturé puis relancé ; Arrêter 68000 est disponible",
+        "68k already halted": "68k déjà arrêté",
+        "68k captured & halted": "68k capturé et arrêté",
+        "68k captured & resumed": "68k capturé et relancé",
         "Advanced": "Avancé",
         "External JTAG (recovery)": "JTAG externe (récupération)",
         "NanoQL Link (normal updates)": "NanoQL Link (mises à jour normales)",
@@ -1150,6 +1155,7 @@ class NanoQLSetup(tk.Tk):
         self.ipc_path = tk.StringVar()
         self.mdv_folder = tk.StringVar()
         self.mdv_name = tk.StringVar(value="NANOQL")
+        self.mdv_image_path = tk.StringVar()
         self.screenshot_folder = tk.StringVar(value=str(Path.home() / "Pictures" / "NanoQL"))
         self.binary_path = tk.StringVar()
         self.binary_address = tk.StringVar(value="0x030000")
@@ -1212,6 +1218,7 @@ class NanoQLSetup(tk.Tk):
             "ipc_path": self.ipc_path,
             "mdv_folder": self.mdv_folder,
             "mdv_name": self.mdv_name,
+            "mdv_image_path": self.mdv_image_path,
             "screenshot_folder": self.screenshot_folder,
             "binary_path": self.binary_path,
             "binary_address": self.binary_address,
@@ -2303,6 +2310,10 @@ class NanoQLSetup(tk.Tk):
             parent, "Capture screen (PNG)", self.capture_screenshot,
         )
         self.screenshot_button.grid(row=7, column=1, sticky="w", padx=8, pady=8)
+        ttk.Label(
+            parent, text=self._t("F11 also captures while the remote keyboard is active."),
+            wraplength=440,
+        ).grid(row=8, column=1, columnspan=2, sticky="w", padx=8, pady=(0, 8))
 
     def _browse_screenshot_folder(self) -> None:
         folder = filedialog.askdirectory(title=self._t("Select the screenshot folder"))
@@ -2629,19 +2640,27 @@ class NanoQLSetup(tk.Tk):
         ttk.Entry(parent, textvariable=self.mdv_name, width=16).grid(
             row=1, column=1, sticky="w", padx=8, pady=8
         )
+        actions = ttk.Frame(parent)
+        actions.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(18, 8))
         self.sync_microdrive_button = self._button(
-            parent, "Synchronize and mount MDV1", self.sync_microdrive
+            actions, "Synchronize and mount MDV1", self.sync_microdrive
         )
-        self.sync_microdrive_button.grid(
-            row=2, column=0, columnspan=3, sticky="w", pady=(18, 8)
+        self.sync_microdrive_button.pack(side="left", padx=(0, 8))
+        self.upload_mdv_button = self._button(
+            actions, "Upload MDV without mounting", self.upload_microdrive
+        )
+        self.upload_mdv_button.pack(side="left")
+        self._path_row(
+            parent, 3, "Microdrive image", self.mdv_image_path,
+            self._browse_mdv_image,
         )
         self._instruction(
-            parent, 3, "Remote keyboard",
-            "The active remote keyboard is paused automatically during synchronization and resumes immediately afterward.",
+            parent, 4, "Remote keyboard",
+            "The active remote keyboard is paused automatically during transfers and resumes immediately afterward.",
             columnspan=3, wraplength=720,
         )
         self._instruction(
-            parent, 4, "Alternative",
+            parent, 5, "Alternative",
             "Normal users can copy folders to NanoQL/Microdrives on the microSD and build MDV1 from the F12 overlay without NanoQL Link.",
             columnspan=3, wraplength=720,
         )
@@ -2702,6 +2721,14 @@ class NanoQLSetup(tk.Tk):
         path = filedialog.askdirectory(title=self._t("Select the folder exposed as MDV1"))
         if path:
             self.mdv_folder.set(path)
+
+    def _browse_mdv_image(self) -> None:
+        path = filedialog.askopenfilename(
+            title=self._t("Select a Microdrive image"),
+            filetypes=(("Microdrive images", "*.mdv"), ("All files", "*")),
+        )
+        if path:
+            self.mdv_image_path.set(path)
 
     def _browse_gowin(self) -> None:
         path = filedialog.askopenfilename(title=self._t("Select gw_sh"))
@@ -3176,6 +3203,7 @@ class NanoQLSetup(tk.Tk):
         command.extend([
             "--stop-file", str(self.keyboard_stop_file),
             "--control-file", str(self.keyboard_control_file),
+            "--screenshot-folder", self.screenshot_folder.get().strip() or str(Path.home() / "Pictures" / "NanoQL"),
         ])
         self._append_log(f"\n> {' '.join(command)}\n")
         try:
@@ -3478,11 +3506,11 @@ class NanoQLSetup(tk.Tk):
         self.debug_restart_ssp.set(f"0x{active_a7:08X}")
         resumed = bool(snapshot.get("nanoql_resumed"))
         if resumed:
-            state = "68000 captured and resumed; Halt 68000 is available"
+            state = "68k captured & resumed"
         elif snapshot.get("was_held"):
-            state = "68000 was already halted; Resume 68000 is available"
+            state = "68k already halted"
         else:
-            state = "68000 captured and halted; Resume 68000 is available"
+            state = "68k captured & halted"
         self.debug_state.set(self._t(state))
         self._set_cpu_halted(not resumed)
 
@@ -3716,6 +3744,24 @@ class NanoQLSetup(tk.Tk):
             "mdv-sync", self.mdv_folder.get(), "--name", self.mdv_name.get()
         ])
         self._run(command, "Synchronizing MDV1")
+
+    def upload_microdrive(self) -> None:
+        source = self.mdv_image_path.get().strip()
+        if not source:
+            self._browse_mdv_image()
+            source = self.mdv_image_path.get().strip()
+            if not source:
+                return
+        self.log.focus_set()
+        if self._keyboard_active():
+            self._request_keyboard_operation({
+                "command": "mdv-put",
+                "source": str(Path(source).expanduser().resolve()),
+            }, "Uploading Microdrive image")
+            return
+        command = self._link_command("mdv-put")
+        command.append(source)
+        self._run(command, "Uploading Microdrive image")
 
     def _request_keyboard_microdrive_sync(self) -> None:
         request = {
